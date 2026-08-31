@@ -356,7 +356,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.3.0';
+var VERSION = 'v0.3.1';
 var MAX_PTS   = 400000;   // tope de puntos en memoria
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
@@ -492,11 +492,15 @@ function iniciarEscaneo(){
   E.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 60);
 
   var geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(E.pos, 3));
-  geo.setAttribute('color',    new THREE.BufferAttribute(E.col, 3));
+  var attrPos = new THREE.BufferAttribute(E.pos, 3);
+  var attrCol = new THREE.BufferAttribute(E.col, 3);
+  attrPos.setUsage(THREE.DynamicDrawUsage);
+  attrCol.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', attrPos);
+  geo.setAttribute('color',    attrCol);
   geo.setDrawRange(0, E.n);
   E.puntos = new THREE.Points(geo, new THREE.PointsMaterial({
-    size: 0.022, vertexColors: true, sizeAttenuation: true
+    size: 0.014, vertexColors: true, sizeAttenuation: true
   }));
   E.puntos.frustumCulled = false;
   E.scene.add(E.puntos);
@@ -613,12 +617,17 @@ function arrancarSesion(session, renderer){
           agregarPunto(rp.elements[12], rp.elements[13], rp.elements[14]);
         }
       }
-      // subir el buffer a la GPU solo cuando entraron puntos nuevos:
-      // hacerlo en cada frame con 400k puntos fundía el teléfono
+      // subir a la GPU SOLO los puntos nuevos del cuadro: re-subir el buffer
+      // entero (400k pts ≈ 10 MB × 2) en cada frame colgaba Chrome entero
+      // ("Chrome no responde" en pleno escaneo)
       if(E.n !== lastN){
+        var ap = E.puntos.geometry.attributes.position;
+        var ac = E.puntos.geometry.attributes.color;
+        ap.updateRange.offset = lastN * 3; ap.updateRange.count = (E.n - lastN) * 3;
+        ac.updateRange.offset = lastN * 3; ac.updateRange.count = (E.n - lastN) * 3;
+        ap.needsUpdate = true;
+        ac.needsUpdate = true;
         E.puntos.geometry.setDrawRange(0, E.n);
-        E.puntos.geometry.attributes.position.needsUpdate = true;
-        E.puntos.geometry.attributes.color.needsUpdate = true;
         lastN = E.n;
       }
       hud();
