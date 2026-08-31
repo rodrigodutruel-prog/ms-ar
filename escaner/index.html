@@ -356,8 +356,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.3.3';
-var MAX_PTS   = 400000;   // tope de puntos en memoria
+var VERSION = 'v0.3.4';
+var MAX_PTS   = 250000;   // tope de puntos: más que esto ahoga al teléfono
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
 var D_MAX     = 7.0;      // m — el sensor de ARCore no da mucho más
@@ -385,7 +385,7 @@ var E = {
 function fmt(n){ return n.toLocaleString('es-AR'); }
 
 function bajar(nombre, texto, tipo){
-  var blob = new Blob([texto], { type: tipo || 'text/plain' });
+  var blob = (texto instanceof Blob) ? texto : new Blob([texto], { type: tipo || 'text/plain' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url; a.download = nombre;
@@ -409,7 +409,7 @@ function iniciarNube(){
 }
 
 function agregarPunto(x, y, z){
-  if(E.n >= MAX_PTS) return false;
+  if(E.n >= MAX_PTS){ E.llena = true; return false; }
   // clave numérica (no string): con 400k celdas los strings hacían tormenta de GC
   var cx = Math.round(x / CELDA) + 2048, cy = Math.round(y / CELDA) + 2048, cz = Math.round(z / CELDA) + 2048;
   if(cx < 0 || cy < 0 || cz < 0 || cx > 4095 || cy > 4095 || cz > 4095) return false;
@@ -570,7 +570,7 @@ function arrancarSesion(session, renderer){
   E.session = session;
   E.pausado = false;
   E.cerrando = false;
-  E.framesTot = 0; E.framesDepth = 0; E.sinDepth = false;
+  E.framesTot = 0; E.framesDepth = 0; E.sinDepth = false; E.avisoLleno = false;
   // 'local-floor' (el 0 en el piso real) y si la sesión no lo otorgó, 'local';
   // sin este fallback setSession revienta y la pantalla queda muda
   renderer.xr.setReferenceSpaceType('local-floor');
@@ -612,7 +612,12 @@ function arrancarSesion(session, renderer){
       var pose = frame.getViewerPose(E.refSpace);
       if(pose){
         E.framesTot++;
-        if(!E.pausado) capturarProfundidad(frame, pose, mat4, vec);
+        if(!E.pausado && !E.llena) capturarProfundidad(frame, pose, mat4, vec);
+        if(E.llena && !E.avisoLleno){
+          E.avisoLleno = true;
+          $('hudMsg').style.display = 'block';
+          $('hudMsg').textContent = 'Nube llena (' + fmt(MAX_PTS) + ' puntos): tope del teléfono. Terminá y exportá.';
+        }
         actualizarReticula(frame);
         // sin mapa de profundidad tras ~3 s de sesión: este equipo no lo
         // entrega. Avisamos y pasamos al modo punto-por-punto con la retícula.
@@ -640,7 +645,7 @@ function arrancarSesion(session, renderer){
         E.puntos.geometry.setDrawRange(0, E.n);
         lastN = E.n;
       }
-      hud();
+      if(E.framesTot % 10 === 0) hud();
     }
     renderer.render(E.scene, E.camera);
   });
@@ -662,7 +667,12 @@ function capturarProfundidad(frame, pose, mat4, vec){
 
     var W = dep.width, H = dep.height;
     var paso = E.paso;
-    for(var py = 0; py < H; py += paso){
+    // presupuesto por cuadro: en densidad alta repartimos las filas del mapa
+    // entre varios cuadros (mismo detalle total, sin picos que cuelguen Chrome)
+    var tajadas = (paso === 3) ? 4 : (paso === 6 ? 2 : 1);
+    var fila0 = (E.framesTot % tajadas) * paso;
+    var saltoFila = paso * tajadas;
+    for(var py = fila0; py < H; py += saltoFila){
       for(var px = 0; px < W; px += paso){
         var u = px / W, vv = py / H;
         var d;
@@ -850,21 +860,34 @@ function refrescarPanel(){
 
 /* ---------- exportadores ---------- */
 function exportarPLY(){
-  var l = [];
-  l.push('ply', 'format ascii 1.0',
-    'comment Escaner 3D MS - Depto. Innovacion y Desarrollo',
-    'element vertex ' + E.n,
-    'property float x','property float y','property float z',
-    'property uchar red','property uchar green','property uchar blue',
-    'end_header');
-  for(var i = 0; i < E.n; i++){
-    var j = i*3;
-    l.push(
-      E.pos[j].toFixed(3) + ' ' + E.pos[j+1].toFixed(3) + ' ' + E.pos[j+2].toFixed(3) + ' ' +
-      Math.round(E.col[j]*255) + ' ' + Math.round(E.col[j+1]*255) + ' ' + Math.round(E.col[j+2]*255)
-    );
-  }
-  bajar('nube_' + Date.now() + '.ply', l.join('\n'), 'application/octet-stream');
+  // armado POR PARTES con respiro entre tandas: con 250k puntos, hacerlo de
+  // un tirón bloqueaba el hilo principal varios segundos (ANR de Android)
+  var btn = $('btnPLY');
+  btn.disabled = true;
+  var partes = [
+    'ply\nformat ascii 1.0\ncomment Escaner 3D MS - Depto. Innovacion y Desarrollo\n' +
+    'element vertex ' + E.n + '\n' +
+    'property float x\nproperty float y\nproperty float z\n' +
+    'property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n'
+  ];
+  var i = 0, total = E.n;
+  (function tanda(){
+    var fin = Math.min(total, i + 30000), s = '';
+    for(; i < fin; i++){
+      var j = i*3;
+      s += E.pos[j].toFixed(3) + ' ' + E.pos[j+1].toFixed(3) + ' ' + E.pos[j+2].toFixed(3) + ' ' +
+           Math.round(E.col[j]*255) + ' ' + Math.round(E.col[j+1]*255) + ' ' + Math.round(E.col[j+2]*255) + '\n';
+    }
+    partes.push(s);
+    if(i < total){
+      btn.textContent = 'Armando… ' + Math.round(i*100/total) + '%';
+      setTimeout(tanda, 0);
+    }else{
+      bajar('nube_' + Date.now() + '.ply', new Blob(partes, { type:'application/octet-stream' }));
+      btn.textContent = 'Exportar nube (.ply)';
+      btn.disabled = false;
+    }
+  })();
 }
 
 function dxfLinea(l, cap, x1, y1, x2, y2){
