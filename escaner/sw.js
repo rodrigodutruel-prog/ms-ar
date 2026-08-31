@@ -1,5 +1,5 @@
 /* Service worker del Escáner 3D MS — cachea todo para uso offline en planta */
-const CACHE = 'escaner-ms-v3';
+const CACHE = 'escaner-ms-v4';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
@@ -20,7 +20,9 @@ self.addEventListener('fetch', e => {
   const esPagina = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html');
   if(esPagina){
     e.respondWith(
-      fetch(e.request).then(resp => {
+      // no-cache: revalida SIEMPRE contra el servidor (GitHub Pages manda
+      // max-age=600 y el celu quedaba pegado 10 min a la versión vieja)
+      fetch(e.request, { cache: 'no-cache' }).then(resp => {
         const copia = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, copia));
         return resp;
