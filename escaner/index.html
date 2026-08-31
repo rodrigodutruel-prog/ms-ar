@@ -356,7 +356,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.3.2';
+var VERSION = 'v0.3.3';
 var MAX_PTS   = 400000;   // tope de puntos en memoria
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
@@ -475,19 +475,29 @@ function revisarSoporte(){
 }
 
 /* ---------- sesión de escaneo ---------- */
+/* UN solo renderer para toda la vida de la app: crear y destruir contextos
+   WebGL alrededor de sesiones ARCore mataba el proceso de GPU (la app se
+   cerraba sola al abrir el visor 3D después de escanear). */
+function obtenerRenderer(){
+  if(!E.renderer){
+    var cv = document.createElement('canvas');
+    E.renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: false });
+    E.renderer.xr.enabled = true;
+  }
+  E.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  E.renderer.setSize(window.innerWidth, window.innerHeight);
+  return E.renderer;
+}
+
 function iniciarEscaneo(){
   if(!E.pos) iniciarNube();
 
-  var canvas = document.createElement('canvas');
-  var renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
+  var renderer = obtenerRenderer();
+  var canvas = renderer.domElement;
   canvas.style.position = 'fixed'; canvas.style.top = '0'; canvas.style.left = '0';
   canvas.style.zIndex = '45';
   document.body.appendChild(canvas);
 
-  E.renderer = renderer;
   E.scene = new THREE.Scene();
   E.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 60);
 
@@ -783,20 +793,20 @@ $('btnSalirAR').addEventListener('click', function(){
 function terminarEscaneo(){
   if(E.cerrando) return;          // el botón y el evento 'end' pueden llegar los dos
   E.cerrando = true;              // se rearma en arrancarSesion()
-  var r = E.renderer;
-  E.renderer = null; E.session = null; E.hitSource = null; E.refSpace = null;
-  // primero devolvemos la pantalla al usuario, después limpiamos WebGL
+  E.session = null; E.hitSource = null; E.refSpace = null;
+  // primero devolvemos la pantalla al usuario, después limpiamos
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
   $('hudMsg').style.display = 'block';
   try{ refrescarPanel(); }catch(e){}
-  if(r){
-    try{ r.setAnimationLoop(null); }catch(e){}
-    try{ r.domElement.remove(); }catch(e){}
-    // dispose() en el mismo instante del cierre de la sesión AR colgaba
-    // Chrome en algunos equipos: lo diferimos bastante
-    setTimeout(function(){ try{ r.dispose(); }catch(e){} }, 1200);
+  // el renderer NO se destruye (se reusa para el visor 3D y otro escaneo);
+  // solo paramos el loop, sacamos el canvas y soltamos la geometría de GPU
+  if(E.renderer){
+    try{ E.renderer.setAnimationLoop(null); }catch(e){}
+    try{ E.renderer.domElement.remove(); }catch(e){}
   }
+  if(E.puntos){ try{ E.puntos.geometry.dispose(); }catch(e){} E.puntos = null; }
+  E.scene = null;
 }
 
 /* ---------- panel de datos ---------- */
@@ -915,10 +925,12 @@ function verNube3D(){
   cont.classList.remove('oculto');
   $('capaUI').classList.add('oculto');
 
-  var renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  cont.appendChild(renderer.domElement);
+  // mismo renderer que el escaneo: nada de contextos nuevos
+  var renderer = obtenerRenderer();
+  var el = renderer.domElement;
+  el.style.position = 'fixed'; el.style.top = '0'; el.style.left = '0';
+  el.style.zIndex = '41';
+  cont.appendChild(el);
 
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x05070A);
@@ -969,26 +981,26 @@ function verNube3D(){
   ubicarCam();
 
   var px=0, py=0, arr=false, dPrev=0, rafId=null;
-  var el = renderer.domElement;
   function dist2(e){ return Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }
-  el.addEventListener('pointerdown', function(e){ arr=true; px=e.clientX; py=e.clientY; });
-  el.addEventListener('pointerup',   function(){ arr=false; });
-  el.addEventListener('pointercancel', function(){ arr=false; });
-  el.addEventListener('pointermove', function(e){
+  // propiedades on* (no addEventListener): el canvas se reusa entre pantallas
+  // y así cada apertura del visor pisa los controles de la anterior
+  el.onpointerdown = function(e){ arr=true; px=e.clientX; py=e.clientY; };
+  el.onpointerup = el.onpointercancel = function(){ arr=false; };
+  el.onpointermove = function(e){
     if(!arr) return;
     ang -= (e.clientX-px)*.006;
     alt = Math.min(Math.PI/2-.05, Math.max(.05, alt + (e.clientY-py)*.005));
     px=e.clientX; py=e.clientY; ubicarCam();
-  });
-  el.addEventListener('wheel', function(e){ dist = Math.min(R*3, Math.max(.5, dist + e.deltaY*.01*R*.1)); ubicarCam(); }, {passive:true});
-  el.addEventListener('touchstart', function(e){ if(e.touches.length===2){ arr=false; dPrev=dist2(e); } }, {passive:true});
-  el.addEventListener('touchmove',  function(e){
+  };
+  el.onwheel = function(e){ dist = Math.min(R*3, Math.max(.5, dist + e.deltaY*.01*R*.1)); ubicarCam(); };
+  el.ontouchstart = function(e){ if(e.touches.length===2){ arr=false; dPrev=dist2(e); } };
+  el.ontouchmove = function(e){
     if(e.touches.length===2){
       var d = dist2(e);
       dist = Math.min(R*3, Math.max(.5, dist * (dPrev/d)));
       dPrev = d; ubicarCam();
     }
-  }, {passive:true});
+  };
 
   (function loop(){
     renderer.render(scene, cam);
@@ -1005,8 +1017,9 @@ function verNube3D(){
   $('btnSalir3D').onclick = function(){
     cancelAnimationFrame(rafId);
     window.removeEventListener('resize', ajustar);
-    geo.dispose();
-    renderer.dispose();
+    geo.dispose();          // suelta los buffers de GPU; el renderer se conserva
+    el.onpointerdown = el.onpointerup = el.onpointercancel = el.onpointermove = null;
+    el.onwheel = el.ontouchstart = el.ontouchmove = null;
     el.remove();
     cont.classList.add('oculto');
     $('capaUI').classList.remove('oculto');
@@ -1033,6 +1046,16 @@ window.addEventListener('error', function(e){
 });
 
 iniciarNube();
+
+// gancho de prueba: abrir con #test llena la nube con puntos falsos para
+// poder ejercitar el visor 3D y los exportadores sin escanear
+if(location.hash === '#test'){
+  for(var ti = 0; ti < 20000; ti++){
+    agregarPunto(Math.random()*8 - 4, Math.random()*3, Math.random()*8 - 4);
+  }
+  E.maquinas.push({ nombre:'MAQ-01', x:1, z:1, alto:1.2 });
+}
+
 refrescarPanel();
 revisarSoporte();
 
