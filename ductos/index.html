@@ -280,7 +280,7 @@ body{
         <label class="opt"><input type="radio" name="modo" value="50"><span>Maqueta 1:50<small>sala de reuniones</small></span></label>
       </div>
       <button id="btnAR" class="btn-neon" disabled>Iniciar AR</button>
-      <button id="btnSensor" class="btn-neon">AR con sensores (sin ARCore)</button>
+      <button id="btnSensor" class="btn-neon">AR con sensores (no queda fijo al caminar)</button>
       <button id="btn3D" class="btn-neon secundario">Ver en 3D (sin AR)</button>
       <div id="estadoAR" class="nota">Comprobando soporte WebXR…</div>
       <button id="btnDiag" class="btn-neon secundario" style="width:100%;margin-top:8px">Diagnóstico</button>
@@ -359,7 +359,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.3.0-single';
+const VERSION = 'v0.4.0-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1059,7 +1059,9 @@ async function iniciarARSensor(){
   $('capaUI').classList.add('oculto');
   $('capaAR').classList.remove('oculto');
   $('panelAR').classList.remove('oculto');
-  $('hudMsg').textContent = 'Modo sensores. Girá el celu para mirar alrededor y tocá la pantalla para poner el trazado al frente.';
+  $('hudMsg').textContent = 'MODO SENSORES: girá el celu para mirar alrededor y tocá para colocar. ' +
+    'OJO: este modo no sabe dónde caminás — si te movés, el trazado se mueve con vos. ' +
+    'El AR fijo de verdad es "Iniciar AR" (necesita ARCore).';
 
   // 4. orientación — SOLO giroscopio (evento relativo). El evento "absolute"
   // usa la brújula, y en una nave metalúrgica el magnetómetro delira con el

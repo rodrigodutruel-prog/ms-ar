@@ -1,5 +1,5 @@
 /* Service worker del Escáner 3D MS — cachea todo para uso offline en planta */
-const CACHE = 'escaner-ms-v2';
+const CACHE = 'escaner-ms-v3';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {

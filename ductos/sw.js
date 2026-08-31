@@ -1,5 +1,5 @@
 /* Service worker de AR Conductería MS — cachea todo para uso offline en planta */
-const CACHE = 'ar-ductos-v2';
+const CACHE = 'ar-ductos-v3';
 const ASSETS = ['./', './index.html', './manifest.json', './trazado_demo.json'];
 
 self.addEventListener('install', e => {

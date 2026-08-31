@@ -327,7 +327,7 @@ body{
     </div>
     <div class="pgrupo">
       <button class="bctrl" data-act="deshacer">Deshacer marca</button>
-      <button class="bctrl" data-act="densidad">Densidad</button>
+      <button class="bctrl" data-act="densidad">Densidad: media</button>
     </div>
     <button id="btnSalirAR" class="bctrl salir">Terminar escaneo</button>
   </div>
@@ -356,7 +356,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.2.0';
+var VERSION = 'v0.3.0';
 var MAX_PTS   = 400000;   // tope de puntos en memoria
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
@@ -375,7 +375,10 @@ var E = {
   altMax: 0,
   renderer:null, scene:null, camera:null, session:null,
   puntos:null, retic:null, refSpace:null, hitSource:null,
-  marcasGrupo:null
+  marcasGrupo:null,
+  framesTot: 0,                      // frames procesados en la sesión
+  framesDepth: 0,                    // frames que SÍ trajeron mapa de profundidad
+  sinDepth: false                    // true = caemos al modo punto-por-punto
 };
 
 /* ---------- utilidades ---------- */
@@ -407,8 +410,10 @@ function iniciarNube(){
 
 function agregarPunto(x, y, z){
   if(E.n >= MAX_PTS) return false;
-  var cx = Math.round(x / CELDA), cy = Math.round(y / CELDA), cz = Math.round(z / CELDA);
-  var clave = cx + ',' + cy + ',' + cz;
+  // clave numérica (no string): con 400k celdas los strings hacían tormenta de GC
+  var cx = Math.round(x / CELDA) + 2048, cy = Math.round(y / CELDA) + 2048, cz = Math.round(z / CELDA) + 2048;
+  if(cx < 0 || cy < 0 || cz < 0 || cx > 4095 || cy > 4095 || cz > 4095) return false;
+  var clave = (cx * 4096 + cy) * 4096 + cz;
   if(E.ocupadas.has(clave)) return false;
   E.ocupadas.add(clave);
   var i = E.n * 3;
@@ -551,6 +556,7 @@ function arrancarSesion(session, renderer){
   E.session = session;
   E.pausado = false;
   E.cerrando = false;
+  E.framesTot = 0; E.framesDepth = 0; E.sinDepth = false;
   // 'local-floor' (el 0 en el piso real) y si la sesión no lo otorgó, 'local';
   // sin este fallback setSession revienta y la pantalla queda muda
   renderer.xr.setReferenceSpaceType('local-floor');
@@ -561,8 +567,14 @@ function arrancarSesion(session, renderer){
     E.refSpace = renderer.xr.getReferenceSpace();
     session.requestReferenceSpace('viewer').then(function(rv){
       if(session.requestHitTestSource){
-        session.requestHitTestSource({ space: rv }).then(function(hs){ E.hitSource = hs; })
-          .catch(function(){ E.hitSource = null; });
+        // 'point' además de 'plane': los feature points de ARCore pegan en
+        // cualquier superficie y son la base del modo punto-por-punto
+        session.requestHitTestSource({ space: rv, entityTypes: ['plane','point'] })
+          .then(function(hs){ E.hitSource = hs; })
+          .catch(function(){
+            session.requestHitTestSource({ space: rv }).then(function(hs){ E.hitSource = hs; })
+              .catch(function(){ E.hitSource = null; });
+          });
       }
     });
     $('hudMsg').textContent = 'Escaneando (' + E.modo + '). Caminá despacio barriendo la nave.';
@@ -585,8 +597,21 @@ function arrancarSesion(session, renderer){
     if(frame && E.refSpace){
       var pose = frame.getViewerPose(E.refSpace);
       if(pose){
+        E.framesTot++;
         if(!E.pausado) capturarProfundidad(frame, pose, mat4, vec);
         actualizarReticula(frame);
+        // sin mapa de profundidad tras ~3 s de sesión: este equipo no lo
+        // entrega. Avisamos y pasamos al modo punto-por-punto con la retícula.
+        if(!E.sinDepth && E.framesTot === 150 && E.framesDepth === 0){
+          E.sinDepth = true;
+          $('hudMsg').style.display = 'block';
+          $('hudMsg').textContent = 'Tu cámara NO entrega mapa de profundidad. ' +
+            'Modo punto por punto: apuntá la retícula a cada superficie y barré despacio (junta ~60 puntos por segundo).';
+        }
+        if(E.sinDepth && !E.pausado && E.retic.visible){
+          var rp = E.retic.matrix;
+          agregarPunto(rp.elements[12], rp.elements[13], rp.elements[14]);
+        }
       }
       // subir el buffer a la GPU solo cuando entraron puntos nuevos:
       // hacerlo en cada frame con 400k puntos fundía el teléfono
@@ -610,6 +635,7 @@ function capturarProfundidad(frame, pose, mat4, vec){
     var dep;
     try{ dep = frame.getDepthInformation(view); }catch(e){ continue; }
     if(!dep) continue;
+    E.framesDepth++;
 
     // inversa de la proyección: NDC -> espacio de vista
     mat4.fromArray(view.projectionMatrix).invert();
@@ -694,9 +720,12 @@ function marcarMaquina(){
 
 /* ---------- HUD ---------- */
 function hud(){
+  var depth = (E.framesTot < 150) ? '…'
+            : (E.sinDepth ? 'SIN DEPTH (punto x punto)' : 'DEPTH OK');
   $('hudDatos').textContent =
     fmt(E.n) + ' pts · ' + E.maquinas.length + ' máq · alto máx ' +
-    E.altMax.toFixed(2) + ' m · paso ' + E.paso + (E.pausado ? ' · PAUSA' : '');
+    E.altMax.toFixed(2) + ' m · paso ' + E.paso + ' · ' + depth +
+    (E.pausado ? ' · PAUSA' : '');
 }
 
 // que los toques en los botones del panel no disparen 'select' de WebXR
@@ -718,6 +747,7 @@ $('capaAR').addEventListener('click', function(ev){
   }
   if(a === 'densidad'){
     E.paso = E.paso === 6 ? 3 : (E.paso === 3 ? 12 : 6);
+    b.textContent = 'Densidad: ' + (E.paso === 3 ? 'ALTA' : (E.paso === 6 ? 'media' : 'baja'));
   }
 });
 
