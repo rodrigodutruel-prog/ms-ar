@@ -362,7 +362,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.6.0-single';
+const VERSION = 'v0.6.1-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -610,9 +610,22 @@ function construirGrupoMS(tz){
   const ejeY = new THREE.Vector3(0,1,0);
   const quatDir = dir => new THREE.Quaternion().setFromUnitVectors(ejeY, dir.clone().normalize());
 
-  // chapa galvanizada; bridas más presentes; manguera de goma corrugada
-  const matMetal = new THREE.MeshStandardMaterial({ color:0xc9ced4, metalness:.85, roughness:.38,
-    transparent:true, opacity:S.opacidad, side:THREE.DoubleSide, depthWrite:false });
+  // chapa metálica TEÑIDA POR DIÁMETRO (cyan→rojo, la misma escala de la
+  // leyenda): se distingue cada Ø de un vistazo sin perder el aspecto real
+  const dsTodos = (paq.tramos||[]).map(t => t.d_mm||0).filter(d => d>0);
+  const dMinMS = dsTodos.length ? Math.min.apply(null, dsTodos) : 100;
+  const dMaxMS = dsTodos.length ? Math.max.apply(null, dsTodos) : 500;
+  const _matsD = {};
+  function matD(d){
+    const k = Math.round(d);
+    if(_matsD[k]) return _matsD[k];
+    const col = colorPorDiametro(d/1000, dMinMS/1000, dMaxMS/1000)
+      .lerp(new THREE.Color(0xc9ced4), 0.35);        // tinte + un toque de chapa
+    _matsD[k] = new THREE.MeshStandardMaterial({ color:col, metalness:.75, roughness:.4,
+      emissive: col, emissiveIntensity:.18,
+      transparent:true, opacity:S.opacidad, side:THREE.DoubleSide, depthWrite:false });
+    return _matsD[k];
+  }
   const matBrida = new THREE.MeshStandardMaterial({ color:0x878e97, metalness:.9, roughness:.3,
     transparent:true, opacity:Math.min(1, S.opacidad + .3), depthWrite:false });
   const matAguj  = new THREE.MeshBasicMaterial({ color:0x0c0f14, transparent:true, opacity:.95 });
@@ -622,7 +635,7 @@ function construirGrupoMS(tz){
   function tubo(A, B, d, seg){
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
     if(L < 0.004) return null;
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(d/2000, d/2000, L, seg||22, 1, true), matMetal);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(d/2000, d/2000, L, seg||22, 1, true), matD(d));
     m.position.copy(A).addScaledVector(dir, .5);
     m.quaternion.copy(quatDir(dir));
     m.userData.esTubo = true;
@@ -758,7 +771,7 @@ function construirGrupoMS(tz){
       const dirC = new THREE.Vector3().subVectors(sal.p, ent.p), Lc = dirC.length();
       if(Lc > 0.004){
         dirC.normalize();
-        const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, ent.d/2000, Lc, 22, 1, true), matMetal);
+        const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, ent.d/2000, Lc, 22, 1, true), matD(ent.d));
         cuerpo.position.copy(ent.p).addScaledVector(dirC, Lc/2);
         cuerpo.quaternion.copy(quatDir(dirC));
         cuerpo.userData.esTubo = true;
@@ -767,7 +780,19 @@ function construirGrupoMS(tz){
       bocas.forEach((b, idx) => {
         addBrida(b.p, b.u.clone().negate(), b.d);
         if(idx === iA || idx === iB) return;
-        tubo(b.p, segCierra(ent.p, sal.p, b.p), b.d, 18);   // la rama, al cuerpo
+        // LA RAMA SIGUE SU PROPIO ÁNGULO (los 30° de la Y MS) hasta
+        // encontrarse con el eje del cuerpo — antes iba derecho al eje,
+        // perpendicular, y la derivación quedaba dibujada mal.
+        const dirRama = b.u.clone().negate();       // de la boca hacia adentro
+        const u = new THREE.Vector3().subVectors(sal.p, ent.p);
+        const w0 = new THREE.Vector3().subVectors(ent.p, b.p);
+        const A2 = u.dot(u), B2 = u.dot(dirRama), C2 = dirRama.dot(dirRama);
+        const D2 = u.dot(w0), E2 = dirRama.dot(w0);
+        const den = A2*C2 - B2*B2;
+        let sPar = (den > 1e-9) ? (B2*E2 - C2*D2) / den : .5;
+        sPar = Math.max(0, Math.min(1, sPar));
+        const encuentro = ent.p.clone().addScaledVector(u, sPar);
+        tubo(b.p, encuentro, b.d, 18);
       });
       return;
     }
@@ -776,7 +801,7 @@ function construirGrupoMS(tz){
       const sal = bocas.reduce((a,b) => (!a || b.d > a.d) ? b : a, null);
       if(sal){
         const hP = .33;
-        const cono = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, sal.d/1000*.95, hP, 20, 1, true), matMetal);
+        const cono = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, sal.d/1000*.95, hP, 20, 1, true), matD(sal.d));
         cono.position.copy(sal.p).addScaledVector(sal.u, -hP/2);
         cono.quaternion.copy(quatDir(sal.u));
         cono.userData.esTubo = true;
