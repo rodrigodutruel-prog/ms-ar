@@ -359,7 +359,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.4.1-single';
+const VERSION = 'v0.5.0-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -472,6 +472,7 @@ function etiqueta(texto, color){
 }
 
 function construirGrupo(tz){
+  if(tz && tz.esMS) return construirGrupoMS(tz);
   const g = new THREE.Group();
   const ds = tz.tramos.map(t => t.d);
   const dMin = Math.min(...ds), dMax = Math.max(...ds);
@@ -569,6 +570,262 @@ function construirGrupo(tz){
 }
 
 /* ------------------------------------------------------------
+   4bis. PAQUETE MS COMPLETO (export "AR" de la Calculadora v2)
+   El mismo paquete de fabricación que lee Inventor: tramos boca a
+   boca, nudos con accesorios, máquinas, galpón y la tabla de
+   bridas MS. Acá se dibuja PIEZA POR PIEZA: caños en tiras de 3 m
+   con sus bridas (agujeros incluidos), codos facetados, derivaciones
+   con cuerpo cónico y rama, pantalones y mangueras corrugadas.
+   ------------------------------------------------------------ */
+function parsePaqueteMS(raw){
+  if(!raw.tramos || !raw.tramos.length) throw new Error('El paquete no tiene tramos.');
+  let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9,maxz=0;
+  raw.tramos.forEach(t => [t.a,t.b].forEach(p => {
+    if(!p) return;
+    if(p.x<minx)minx=p.x; if(p.x>maxx)maxx=p.x;
+    if(p.y<miny)miny=p.y; if(p.y>maxy)maxy=p.y;
+    if(p.z>maxz)maxz=p.z;
+  }));
+  const g = raw.galpon;
+  const cx = (g && g.ancho_m>0) ? g.ancho_m/2 : (minx+maxx)/2;
+  const cz = (g && g.largo_m>0) ? g.largo_m/2 : (miny+maxy)/2;
+  return {
+    esMS: true, paq: raw, cx: cx, cz: cz,
+    obra: (raw.proyecto && (raw.proyecto.cliente || raw.proyecto.ot)) || 'Calculadora MS',
+    medidas: new THREE.Vector3((g&&g.ancho_m)||maxx-minx, maxz||4, (g&&g.largo_m)||maxy-miny)
+  };
+}
+
+function construirGrupoMS(tz){
+  const paq = tz.paq, cx = tz.cx, cz = tz.cz;
+  const V = p => new THREE.Vector3(p.x - cx, (p.z||0), p.y - cz);
+  const g = new THREE.Group();
+  const grpTubos = new THREE.Group(), grpEtiq = new THREE.Group(), grpMaq = new THREE.Group();
+  grpEtiq.userData.rol = 'etiquetas';
+  grpMaq.userData.rol  = 'maquinas';
+  const ejeY = new THREE.Vector3(0,1,0);
+  const quatDir = dir => new THREE.Quaternion().setFromUnitVectors(ejeY, dir.clone().normalize());
+
+  // chapa galvanizada; bridas más presentes; manguera de goma corrugada
+  const matMetal = new THREE.MeshStandardMaterial({ color:0xc9ced4, metalness:.85, roughness:.38,
+    transparent:true, opacity:S.opacidad, side:THREE.DoubleSide, depthWrite:false });
+  const matBrida = new THREE.MeshStandardMaterial({ color:0x878e97, metalness:.9, roughness:.3,
+    transparent:true, opacity:Math.min(1, S.opacidad + .3), depthWrite:false });
+  const matAguj  = new THREE.MeshBasicMaterial({ color:0x0c0f14, transparent:true, opacity:.95 });
+  const matHose  = new THREE.MeshStandardMaterial({ color:0x2f343b, metalness:.15, roughness:.85,
+    transparent:true, opacity:Math.min(1, S.opacidad + .25), side:THREE.DoubleSide, depthWrite:false });
+
+  function tubo(A, B, d, seg){
+    const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
+    if(L < 0.004) return null;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(d/2000, d/2000, L, seg||22, 1, true), matMetal);
+    m.position.copy(A).addScaledVector(dir, .5);
+    m.quaternion.copy(quatDir(dir));
+    m.userData.esTubo = true;
+    grpTubos.add(m);
+    return m;
+  }
+
+  /* ── BRIDAS con agujeros, instanciadas (cientos de piezas sin matar el celu) ── */
+  const tabla = (paq.ar && paq.ar.bridas_tabla) || [];
+  const bridaCol = {}, agujeros = [], anillos = {};
+  function specBrida(d){
+    for(let i=0;i<tabla.length;i++) if(tabla[i].d >= d-1) return tabla[i];
+    return tabla.length ? tabla[tabla.length-1] : { d:d, esp:4, ancho:32, agujeros:8 };
+  }
+  // p = la boca; hacia = unitario apuntando hacia el CUERPO de la pieza dueña de la brida
+  function addBrida(p, hacia, d){
+    const s = specBrida(d), esp = Math.max(s.esp, 3)/1000;
+    const u = hacia.clone().normalize();
+    const pc = p.clone().addScaledVector(u, esp/2);
+    const q = quatDir(u);
+    (bridaCol[s.d] = bridaCol[s.d] || { spec:s, dInt:d, items:[] }).items.push({ p:pc, q:q });
+    const rB = (d/2 + s.ancho/2)/1000;
+    const aux = Math.abs(u.y) < .9 ? ejeY : new THREE.Vector3(1,0,0);
+    const e1 = new THREE.Vector3().crossVectors(u, aux).normalize();
+    const e2 = new THREE.Vector3().crossVectors(u, e1).normalize();
+    for(let i=0;i<s.agujeros;i++){
+      const a = i/s.agujeros * Math.PI*2;
+      agujeros.push({ p: pc.clone().addScaledVector(e1, Math.cos(a)*rB).addScaledVector(e2, Math.sin(a)*rB), q:q, esp:esp });
+    }
+  }
+  function volcarInstancias(){
+    const m4 = new THREE.Matrix4(), esc1 = new THREE.Vector3(1,1,1);
+    Object.keys(bridaCol).forEach(k => {
+      const b = bridaCol[k], s = b.spec;
+      const rExt = (b.dInt/2 + s.ancho)/1000, esp = Math.max(s.esp,3)/1000;
+      const im = new THREE.InstancedMesh(new THREE.CylinderGeometry(rExt, rExt, esp, 28), matBrida, b.items.length);
+      b.items.forEach((it,i) => { m4.compose(it.p, it.q, esc1); im.setMatrixAt(i, m4); });
+      grpTubos.add(im);
+    });
+    if(agujeros.length){
+      const im = new THREE.InstancedMesh(new THREE.CylinderGeometry(.0055, .0055, 1, 8), matAguj, agujeros.length);
+      agujeros.forEach((it,i) => { m4.compose(it.p, it.q, new THREE.Vector3(1, it.esp*2.4, 1)); im.setMatrixAt(i, m4); });
+      grpTubos.add(im);
+    }
+    Object.keys(anillos).forEach(k => {
+      const lst = anillos[k]; if(!lst.length) return;
+      const r = (+k)/2000 * 1.14;
+      const im = new THREE.InstancedMesh(new THREE.CylinderGeometry(r, r, .022, 14, 1, true), matHose, lst.length);
+      lst.forEach((it,i) => { m4.compose(it.p, it.q, esc1); im.setMatrixAt(i, m4); });
+      grpTubos.add(im);
+    });
+  }
+
+  /* ── TRAMOS: caños boca a boca, en tiras de 3 m con junta bridada ── */
+  const bocasTramo = {};
+  (paq.bocas_planas||[]).forEach(b => {
+    (bocasTramo[b.tramo] = bocasTramo[b.tramo] || []).push(b);
+  });
+  (paq.tramos||[]).forEach(t => {
+    const bs = bocasTramo[t.id] || [];
+    let A, B;
+    if(bs.length >= 2){
+      A = new THREE.Vector3(bs[0].x - cx, bs[0].z, bs[0].y - cz);
+      B = new THREE.Vector3(bs[1].x - cx, bs[1].z, bs[1].y - cz);
+    }else{ A = V(t.a); B = V(t.b); }
+    const d = t.d_mm || 150;
+    const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
+    if(L < 0.003 || t.fabricar === false) return;   // conexión directa: las bridas de las piezas se juntan solas
+    dir.normalize();
+    if(t.tipo === 'manguera'){
+      const m = tubo(A, B, d, 18); if(m) m.material = matHose;
+      const lst = (anillos[d] = anillos[d] || []);
+      for(let s=.05; s<L; s+=.085) lst.push({ p: A.clone().addScaledVector(dir, s), q: quatDir(dir) });
+      return;
+    }
+    tubo(A, B, d);
+    addBrida(A, dir, d);                       // brida de cada punta, mirando al caño
+    addBrida(B, dir.clone().negate(), d);
+    const n = Math.ceil(L / 3);                // los caños MS vienen en tiras de 3 m
+    for(let i=1;i<n;i++){
+      const pC = A.clone().addScaledVector(dir, i*L/n);
+      addBrida(pC, dir.clone().negate(), d);   // junta: par de bridas espalda con espalda
+      addBrida(pC, dir, d);
+    }
+    if(L > 1.1){
+      const largoTxt = (t.largo_util_m != null ? t.largo_util_m : L);
+      const et = etiqueta('Ø' + Math.round(d) + ' · ' + largoTxt.toFixed(2).replace('.', ',') + ' m', new THREE.Color(0x00AEEF));
+      et.position.copy(A).addScaledVector(dir, L/2).add(new THREE.Vector3(0, d/2000 + .14, 0));
+      et.scale.set(.55, .13, 1);
+      grpEtiq.add(et);
+    }
+  });
+
+  /* ── ACCESORIOS desde los nudos: codo facetado, derivación, pantalón ── */
+  const segCierra = (a, b, p) => {         // punto del eje a-b más cercano a p
+    const ab = new THREE.Vector3().subVectors(b, a);
+    const tt = Math.max(0, Math.min(1, new THREE.Vector3().subVectors(p, a).dot(ab) / ab.lengthSq()));
+    return a.clone().addScaledVector(ab, tt);
+  };
+  (paq.nodos||[]).forEach(n => {
+    const acc = n.accesorio; if(!acc) return;
+    const bocas = (n.bocas||[]).map(b => ({
+      p: new THREE.Vector3(b.pos.x - cx, b.pos.z, b.pos.y - cz),
+      u: new THREE.Vector3(b.dir.x, b.dir.z, b.dir.y).normalize(),   // apunta del nudo HACIA su caño
+      d: b.d_mm || acc.d || 150
+    }));
+    if(!bocas.length) return;
+
+    if(acc.tipo === 'codo' && bocas.length >= 2){
+      const A = bocas[0], B = bocas[1];
+      const dC = Math.max(A.d, B.d);
+      const ang = (acc.angulo_gr != null) ? acc.angulo_gr : 90;
+      const nSeg = Math.max(2, Math.round(ang / 25));      // codo FACETADO: gajos rectos
+      const h = A.p.distanceTo(B.p) * .42;
+      const curva = new THREE.CubicBezierCurve3(
+        A.p, A.p.clone().addScaledVector(A.u, -h),
+        B.p.clone().addScaledVector(B.u, -h), B.p);
+      const pts = curva.getPoints(nSeg);
+      for(let i=0;i<pts.length-1;i++) tubo(pts[i], pts[i+1], dC, 18);
+      addBrida(A.p, A.u.clone().negate(), A.d);
+      addBrida(B.p, B.u.clone().negate(), B.d);
+      return;
+    }
+
+    if(acc.tipo === 'derivacion' && bocas.length >= 3){
+      let iA=0, iB=1, mejor=-2;
+      for(let i=0;i<bocas.length;i++) for(let j=i+1;j<bocas.length;j++){
+        const op = -bocas[i].u.dot(bocas[j].u);
+        if(op > mejor){ mejor = op; iA=i; iB=j; }
+      }
+      const ent = bocas[iA].d >= bocas[iB].d ? bocas[iA] : bocas[iB];
+      const sal = (ent === bocas[iA]) ? bocas[iB] : bocas[iA];
+      const dirC = new THREE.Vector3().subVectors(sal.p, ent.p), Lc = dirC.length();
+      if(Lc > 0.004){
+        dirC.normalize();
+        const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, ent.d/2000, Lc, 22, 1, true), matMetal);
+        cuerpo.position.copy(ent.p).addScaledVector(dirC, Lc/2);
+        cuerpo.quaternion.copy(quatDir(dirC));
+        cuerpo.userData.esTubo = true;
+        grpTubos.add(cuerpo);
+      }
+      bocas.forEach((b, idx) => {
+        addBrida(b.p, b.u.clone().negate(), b.d);
+        if(idx === iA || idx === iB) return;
+        tubo(b.p, segCierra(ent.p, sal.p, b.p), b.d, 18);   // la rama, al cuerpo
+      });
+      return;
+    }
+
+    if(acc.tipo === 'pantalon'){
+      const sal = bocas.reduce((a,b) => (!a || b.d > a.d) ? b : a, null);
+      if(sal){
+        const hP = .33;
+        const cono = new THREE.Mesh(new THREE.CylinderGeometry(sal.d/2000, sal.d/1000*.95, hP, 20, 1, true), matMetal);
+        cono.position.copy(sal.p).addScaledVector(sal.u, -hP/2);
+        cono.quaternion.copy(quatDir(sal.u));
+        cono.userData.esTubo = true;
+        grpTubos.add(cono);
+        addBrida(sal.p, sal.u.clone().negate(), sal.d);
+      }
+      return;
+    }
+  });
+
+  /* ── GALPÓN: el contorno real, la referencia para calzarlo en la nave ── */
+  if(paq.galpon && paq.galpon.ancho_m > 0){
+    const an = paq.galpon.ancho_m, la = paq.galpon.largo_m;
+    const esq = [[0,0],[an,0],[an,la],[0,la]].map(e => new THREE.Vector3(e[0]-cx, .012, e[1]-cz));
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(esq.concat([esq[0]])),
+      new THREE.LineBasicMaterial({ color:0xE31E24 })));
+    esq.forEach(e => {
+      const poste = new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,1.2,8),
+        new THREE.MeshBasicMaterial({ color:0xE31E24, transparent:true, opacity:.85 }));
+      poste.position.copy(e).add(new THREE.Vector3(0,.6,0));
+      g.add(poste);
+    });
+    const grilla = new THREE.GridHelper(Math.max(an, la), Math.round(Math.max(an, la)), 0xE31E24, 0x333940);
+    grilla.material.transparent = true; grilla.material.opacity = .2;
+    grilla.userData.rol = 'grilla';
+    g.add(grilla);
+  }
+
+  /* ── PLANTA: huella y volumen real de cada máquina y equipo ── */
+  (paq.planta||[]).forEach(pl => {
+    const w = pl.ancho_m || 1.2, h = pl.largo_m || .9;
+    const alto = (pl.tipo === 'equipo') ? 3.2 : 1.3;
+    const col = (pl.tipo === 'equipo') ? 0xFFC400 : 0x00AEEF;
+    const caja = new THREE.Mesh(new THREE.BoxGeometry(w, alto, h),
+      new THREE.MeshBasicMaterial({ color:col, transparent:true, opacity:.15, wireframe:true }));
+    caja.position.set(pl.x - cx, (pl.z_base_m||0) + alto/2, pl.y - cz);
+    grpMaq.add(caja);
+    if(pl.nombre){
+      const et = etiqueta(pl.nombre, new THREE.Color(col));
+      et.position.set(pl.x - cx, (pl.z_base_m||0) + alto + .18, pl.y - cz);
+      et.scale.set(.5, .125, 1);
+      grpMaq.add(et);
+    }
+  });
+
+  volcarInstancias();
+  g.add(grpTubos); g.add(grpEtiq); g.add(grpMaq);
+  g.userData.grpEtiq = grpEtiq;
+  g.userData.grpMaq  = grpMaq;
+  return g;
+}
+
+/* ------------------------------------------------------------
    5. UI 2D
    ------------------------------------------------------------ */
 function pintarInfo(tz){
@@ -576,6 +833,26 @@ function pintarInfo(tz){
   const cont = $('infoTrazado');
   cont.innerHTML = '';
   const badge = t => { const b=document.createElement('span'); b.className='ms-badge'; b.textContent=t; cont.appendChild(b); };
+  if(tz.esMS){
+    const paq = tz.paq;
+    badge(tz.obra);
+    badge('DETALLE COMPLETO');
+    badge((paq.tramos||[]).length + ' tramos');
+    badge((paq.accesorios||[]).length + ' accesorios');
+    badge((paq.maquinas||[]).length + ' máquinas');
+    badge(tz.medidas.x.toFixed(1) + ' × ' + tz.medidas.z.toFixed(1) + ' m');
+    const dsMS = [...new Set((paq.tramos||[]).map(t => Math.round(t.d_mm||0)))].filter(d=>d>0).sort((a,b)=>a-b);
+    const ley0 = $('leyenda'); ley0.innerHTML = '';
+    const dMin0 = Math.min(...dsMS)/1000, dMax0 = Math.max(...dsMS)/1000;
+    dsMS.forEach(d => {
+      const c = colorPorDiametro(d/1000, dMin0, dMax0);
+      const chip = document.createElement('span');
+      chip.className = 'chip-d';
+      chip.innerHTML = '<i style="background:#'+c.getHexString()+'"></i>Ø'+d;
+      ley0.appendChild(chip);
+    });
+    return;
+  }
   badge(tz.obra);
   badge(Object.keys(tz.nodos).length + ' nodos');
   badge(tz.tramos.length + ' tramos');
@@ -596,7 +873,7 @@ function pintarInfo(tz){
 
 function cargar(raw){
   try{
-    S.trazado = parseTrazado(raw);
+    S.trazado = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
     pintarInfo(S.trazado);
     $('estadoAR').classList.remove('err');
     revisarSoporte();
