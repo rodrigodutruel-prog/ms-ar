@@ -332,6 +332,9 @@ body{
       <button class="bctrl" data-act="frente">Ponelo al frente</button>
       <button class="bctrl" data-act="esc">Escala</button>
     </div>
+    <div class="pgrupo">
+      <button class="bctrl" data-act="piso">Marcas de piso</button>
+    </div>
     <button id="btnSalirAR" class="bctrl salir">Salir de AR</button>
   </div>
 </div>
@@ -359,7 +362,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.5.0-single';
+const VERSION = 'v0.6.0-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -372,6 +375,7 @@ const S = {
   opacidad: 0.55,
   verEtiquetas: true,
   verMaquinas: true,
+  verPiso: true,      // replanteo: ejes proyectados, cotas y cruces de tiza en el piso
   offsetY: 0,         // corrección de altura en metros
   rotY: 0,            // rotación en radianes
   renderer: null,
@@ -783,6 +787,57 @@ function construirGrupoMS(tz){
     }
   });
 
+  /* ── REPLANTEO EN EL PISO: eje proyectado, cota a nivel de piso y
+        cruces donde cae cada pieza — para marcar con tiza ── */
+  const grpPiso = new THREE.Group();
+  grpPiso.userData.rol = 'replanteo';
+  const matEje  = new THREE.LineDashedMaterial({ color:0x00AEEF, dashSize:.20, gapSize:.13, transparent:true, opacity:.95 });
+  const matCruz = new THREE.LineBasicMaterial({ color:0xE31E24, transparent:true, opacity:.95 });
+  const cruces = new Set();
+  function cruzPiso(x, z){
+    const k = Math.round(x*50) + '|' + Math.round(z*50);
+    if(cruces.has(k)) return;
+    cruces.add(k);
+    const s = .20, y = .015;
+    const g1 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x-s, y, z), new THREE.Vector3(x+s, y, z)]);
+    const g2 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y, z-s), new THREE.Vector3(x, y, z+s)]);
+    grpPiso.add(new THREE.Line(g1, matCruz));
+    grpPiso.add(new THREE.Line(g2, matCruz));
+  }
+  (paq.tramos||[]).forEach(t => {
+    const bs = bocasTramo[t.id] || [];
+    let A, B;
+    if(bs.length >= 2){
+      A = new THREE.Vector3(bs[0].x - cx, bs[0].z, bs[0].y - cz);
+      B = new THREE.Vector3(bs[1].x - cx, bs[1].z, bs[1].y - cz);
+    }else{ A = V(t.a); B = V(t.b); }
+    const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
+    if(L < 0.05) return;
+    dir.normalize();
+    if(Math.abs(dir.y) > 0.85){
+      cruzPiso(A.x, A.z);                          // bajante: su marca de tiza
+      return;
+    }
+    if(Math.min(A.y, B.y) < 0.4 || t.tipo === 'manguera') return;
+    const gEje = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(A.x, .015, A.z), new THREE.Vector3(B.x, .015, B.z)]);
+    const ln = new THREE.Line(gEje, matEje);
+    ln.computeLineDistances();                     // sin esto el punteado no aparece
+    grpPiso.add(ln);
+    if(L > 1.1){
+      const zm = (A.y + B.y) / 2;
+      const etP = etiqueta('alt. eje ' + zm.toFixed(2).replace('.', ',') + ' m', new THREE.Color(0xE31E24));
+      etP.position.set((A.x + B.x)/2, .22, (A.z + B.z)/2);
+      etP.scale.set(.5, .125, 1);
+      grpPiso.add(etP);
+    }
+  });
+  // una cruz por cada pieza (codo, derivación, pantalón): ahí cae el montaje
+  (paq.nodos||[]).forEach(n => {
+    if(!n.accesorio || !n.pos) return;
+    cruzPiso(n.pos.x - cx, n.pos.y - cz);
+  });
+
   /* ── GALPÓN: el contorno real, la referencia para calzarlo en la nave ── */
   if(paq.galpon && paq.galpon.ancho_m > 0){
     const an = paq.galpon.ancho_m, la = paq.galpon.largo_m;
@@ -819,9 +874,10 @@ function construirGrupoMS(tz){
   });
 
   volcarInstancias();
-  g.add(grpTubos); g.add(grpEtiq); g.add(grpMaq);
+  g.add(grpTubos); g.add(grpEtiq); g.add(grpMaq); g.add(grpPiso);
   g.userData.grpEtiq = grpEtiq;
   g.userData.grpMaq  = grpMaq;
+  g.userData.grpPiso = grpPiso;
   return g;
 }
 
@@ -1141,6 +1197,7 @@ async function iniciarAR(){
     if(S.grupo && S.grupo.userData.grpEtiq){
       S.grupo.userData.grpEtiq.visible = S.verEtiquetas;
       S.grupo.userData.grpMaq.visible  = S.verMaquinas;
+      if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
     renderer.render(S.scene, S.camera);
   });
@@ -1185,6 +1242,7 @@ $('panelAR').addEventListener('click', ev => {
   if(a==='alt-'){ S.offsetY -= .2; S.grupo.position.y -= .2; }
   if(a==='etiq'){ S.verEtiquetas = !S.verEtiquetas; }
   if(a==='maq'){  S.verMaquinas  = !S.verMaquinas; }
+  if(a==='piso'){ S.verPiso = !S.verPiso; }
   if(a==='opac'){
     S.opacidad = S.opacidad >= .85 ? .3 : S.opacidad + .15;
     S.grupo.traverse(o => { if(o.userData.esTubo) o.material.opacity = S.opacidad; });
@@ -1379,6 +1437,7 @@ async function iniciarARSensor(){
     if(S.grupo && S.grupo.userData.grpEtiq){
       S.grupo.userData.grpEtiq.visible = S.verEtiquetas;
       S.grupo.userData.grpMaq.visible  = S.verMaquinas;
+      if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
     if(!S.anclado && ++sinDatos === 180 && SENS.q.w === 1 && SENS.q.x === 0){
       $('hudMsg').textContent = 'No llegan datos del giroscopio. Tocá igual: se coloca al frente y podés girarlo con los botones.';
@@ -1475,6 +1534,7 @@ function iniciar3D(){
 
   function loop(){
     grupo.userData.grpEtiq.visible = S.verEtiquetas;
+    if(grupo.userData.grpPiso) grupo.userData.grpPiso.visible = S.verPiso;
     renderer.render(scene, cam);
     S.raf3D = requestAnimationFrame(loop);
   }
