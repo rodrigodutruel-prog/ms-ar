@@ -359,7 +359,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.4.0-single';
+const VERSION = 'v0.4.1-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -933,13 +933,18 @@ $('panelAR').addEventListener('click', ev => {
 });
 $('btnSalirAR').addEventListener('click', () => {
   if(SENS.activo){ cerrarARSensor(); return; }
-  if(S.session){
-    const s = S.session;
-    try{ s.end(); }catch(e){ cerrarAR(); return; }
-    // red de seguridad: si el evento 'end' nunca llega, cerramos igual
-    setTimeout(() => { if(S.session === s) cerrarAR(); }, 1500);
-  }else{
-    cerrarAR();
+  const s = S.session;
+  if(S.hitSource){ try{ S.hitSource.cancel(); }catch(e){} S.hitSource = null; }
+  // devolver la pantalla YA y pedir el cierre de la sesión aparte:
+  // llamar end() desde adentro del tap en la capa AR deadlockeaba Chrome
+  cerrarAR();
+  if(s){
+    setTimeout(() => {
+      try{
+        const p = s.end();
+        if(p && p.catch) p.catch(() => {});
+      }catch(e){}
+    }, 50);
   }
 });
 

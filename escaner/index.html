@@ -356,7 +356,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.3.1';
+var VERSION = 'v0.3.2';
 var MAX_PTS   = 400000;   // tope de puntos en memoria
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
@@ -761,19 +761,28 @@ $('capaAR').addEventListener('click', function(ev){
 });
 
 $('btnSalirAR').addEventListener('click', function(){
-  if(E.session){
-    var s = E.session;
-    try{ s.end(); }catch(e){ terminarEscaneo(); return; }
-    // red de seguridad: si el evento 'end' nunca llega, cerramos igual
-    setTimeout(function(){ if(E.session === s) terminarEscaneo(); }, 1500);
-  }else{
-    terminarEscaneo();
+  var s = E.session;
+  // 1) frenar YA la captura y nuestro loop: que no quede ningún callback
+  //    XR en vuelo cuando ARCore desarme la sesión
+  E.pausado = true;
+  if(E.hitSource){ try{ E.hitSource.cancel(); }catch(e){} E.hitSource = null; }
+  // 2) devolverle la pantalla al usuario DE INMEDIATO, sin esperar a ARCore
+  terminarEscaneo();
+  // 3) recién ahora, y fuera del handler del toque, pedir el cierre real.
+  //    Pedirlo desde adentro del tap en la capa AR deadlockeaba Chrome.
+  if(s){
+    setTimeout(function(){
+      try{
+        var p = s.end();
+        if(p && p.catch) p.catch(function(){});
+      }catch(e){}
+    }, 50);
   }
 });
 
 function terminarEscaneo(){
   if(E.cerrando) return;          // el botón y el evento 'end' pueden llegar los dos
-  E.cerrando = true;
+  E.cerrando = true;              // se rearma en arrancarSesion()
   var r = E.renderer;
   E.renderer = null; E.session = null; E.hitSource = null; E.refSpace = null;
   // primero devolvemos la pantalla al usuario, después limpiamos WebGL
@@ -785,10 +794,8 @@ function terminarEscaneo(){
     try{ r.setAnimationLoop(null); }catch(e){}
     try{ r.domElement.remove(); }catch(e){}
     // dispose() en el mismo instante del cierre de la sesión AR colgaba
-    // Chrome en algunos equipos: lo diferimos
-    setTimeout(function(){ try{ r.dispose(); }catch(e){} E.cerrando = false; }, 400);
-  }else{
-    E.cerrando = false;
+    // Chrome en algunos equipos: lo diferimos bastante
+    setTimeout(function(){ try{ r.dispose(); }catch(e){} }, 1200);
   }
 }
 
