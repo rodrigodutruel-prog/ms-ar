@@ -1,6 +1,6 @@
-/* Service worker de AR Conductería MS — cachea todo para uso offline en planta */
-const CACHE = 'escaner-ms-v1';
-const ASSETS = ['./', './index.html', './manifest.json', './trazado_demo.json'];
+/* Service worker del Escáner 3D MS — cachea todo para uso offline en planta */
+const CACHE = 'escaner-ms-v2';
+const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -15,6 +15,19 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if(e.request.method !== 'GET') return;
+  // el HTML va red-primero: así las correcciones llegan al celu apenas hay señal,
+  // y sin señal sigue sirviendo la copia cacheada
+  const esPagina = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html');
+  if(esPagina){
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        const copia = resp.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copia));
+        return resp;
+      }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
       const copia = resp.clone();

@@ -359,7 +359,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v0.2.1-single';
+const VERSION = 'v0.3.0-single';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -761,11 +761,12 @@ async function iniciarAR(){
       cfg:{} }
   ];
 
-  let session = null, usado = '', errores = [];
+  let session = null, usado = '', errores = [], usaFloor = false;
   for(const it of intentos){
     try{
       session = await navigator.xr.requestSession('immersive-ar', it.cfg);
       usado = it.nom;
+      usaFloor = !!(it.cfg.requiredFeatures && it.cfg.requiredFeatures.indexOf('local-floor') >= 0);
       break;
     }catch(e){
       errores.push(it.nom + ' → ' + (e.message || e.name));
@@ -785,7 +786,26 @@ async function iniciarAR(){
   }
 
   S.session = session;
-  await renderer.xr.setSession(session);
+  // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
+  // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
+  // y la pantalla queda "en la cámara" sin dibujar nada.
+  renderer.xr.setReferenceSpaceType(usaFloor ? 'local-floor' : 'local');
+  try{
+    await renderer.xr.setSession(session);
+  }catch(e1){
+    try{
+      renderer.xr.setReferenceSpaceType('local');
+      usaFloor = false;
+      await renderer.xr.setSession(session);
+    }catch(e2){
+      try{ session.end(); }catch(e3){}
+      cerrarAR();
+      $('estadoAR').className = 'nota err';
+      $('estadoAR').textContent = 'La sesión AR abrió pero no se pudo montar: ' + (e2.message || e2);
+      return;
+    }
+  }
+  S.usaFloor = usaFloor;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
 
   // hit-test si la sesión lo permite; si no, colocación manual a 2 m
@@ -798,38 +818,35 @@ async function iniciarAR(){
   }
 
   $('hudMsg').textContent = S.hitSource
-    ? 'Movete despacio apuntando al piso hasta ver la retícula roja.'
-    : 'Sin detección de piso: tocá la pantalla y lo coloco a 2 m adelante.';
+    ? 'Apuntá al piso hasta ver la retícula roja y tocá la pantalla. Si no aparece, usá "Ponelo al frente".'
+    : 'Sin detección de piso: tocá la pantalla o usá "Ponelo al frente".';
   $('hudDatos').textContent = 'MODO ' + usado;
+  SENS.dist = (S.escala === 1) ? 6 : 2.5;
 
-  // tap para anclar
-  const ctrl = renderer.xr.getController(0);
-  ctrl.addEventListener('select', () => {
+  // el panel va visible desde el arranque: "Ponelo al frente" es la red de
+  // seguridad cuando el hit-test nunca encuentra el piso
+  $('panelAR').classList.remove('oculto');
+
+  // tap para anclar — escuchamos el 'select' de la sesión (el del controller
+  // no siempre llega con input transitorio de pantalla)
+  const alAnclar = () => {
     if(S.anclado) return;
 
     if(S.reticula.visible){
       // anclaje por hit-test sobre el piso detectado
       S.grupo.position.setFromMatrixPosition(S.reticula.matrix);
+      S.grupo.position.y += S.offsetY;
+      S.grupo.visible = true;
+      S.anclado = true;
+      S.reticula.visible = false;
+      $('hudMsg').textContent = 'Anclado. Girá y ajustá la altura hasta calzarlo con la nave.';
     }else{
-      // sin hit-test: 2 m adelante de la cámara, al nivel del piso estimado
-      const dir = new THREE.Vector3();
-      S.camera.getWorldDirection(dir);
-      dir.y = 0;
-      if(dir.lengthSq() < 1e-6) dir.set(0,0,-1);
-      dir.normalize();
-      const p = new THREE.Vector3().copy(S.camera.position).addScaledVector(dir, 2);
-      p.y = S.camera.position.y - 1.4;   // altura estimada del celu
-      S.grupo.position.copy(p);
+      colocarAlFrente();
+      $('hudMsg').textContent = 'Colocado al frente. Ajustalo con − cerca / + lejos y la rotación.';
     }
-
-    S.grupo.visible = true;
-    S.anclado = true;
-    S.reticula.visible = false;
-    $('panelAR').classList.remove('oculto');
-    $('hudMsg').textContent = 'Anclado. Girá y ajustá la altura hasta calzarlo con la nave.';
     refrescarHUD();
-  });
-  S.scene.add(ctrl);
+  };
+  session.addEventListener('select', alAnclar);
 
   session.addEventListener('end', cerrarAR);
 
@@ -858,22 +875,29 @@ function refrescarHUD(){
     'ESC ' + esc +
     '   ROT ' + Math.round(S.rotY*180/Math.PI) + '°' +
     '   ALT ' + (S.offsetY>=0?'+':'') + S.offsetY.toFixed(2) + ' m' +
-    (SENS.activo ? ('   DIST ' + SENS.dist + ' m') : '');
+    ((SENS.activo || S.session) ? ('   DIST ' + SENS.dist + ' m') : '');
 }
 
 function cerrarAR(){
-  if(S.renderer){
-    S.renderer.setAnimationLoop(null);
-    S.renderer.domElement.remove();
-    S.renderer.dispose();
-  }
+  const r = S.renderer;
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
+  if(r){
+    try{ r.setAnimationLoop(null); }catch(e){}
+    try{ r.domElement.remove(); }catch(e){}
+    // dispose() en el mismo instante del cierre de sesión cuelga Chrome en
+    // algunos equipos: lo hacemos un ratito después
+    setTimeout(() => { try{ r.dispose(); }catch(e){} }, 400);
+  }
 }
 
 /* --- controles del panel AR --- */
+// los toques sobre los botones NO deben generar 'select' de WebXR
+// (si no, apretar un botón re-coloca el trazado)
+$('panelAR').addEventListener('beforexrselect', ev => ev.preventDefault());
+
 $('panelAR').addEventListener('click', ev => {
   const b = ev.target.closest('[data-act]');
   if(!b || !S.grupo) return;
@@ -893,8 +917,7 @@ $('panelAR').addEventListener('click', ev => {
       colocarAlFrente();
     }else{
       S.anclado = false; S.grupo.visible = false;
-      $('panelAR').classList.add('oculto');
-      $('hudMsg').textContent = 'Apuntá al piso y tocá para anclar de nuevo.';
+      $('hudMsg').textContent = 'Apuntá al piso y tocá para anclar de nuevo (o "Ponelo al frente").';
     }
   }
   if(a==='dist-'){ SENS.dist = Math.max(1, SENS.dist - 1); if(SENS.activo) colocarAlFrente(); }
@@ -909,9 +932,15 @@ $('panelAR').addEventListener('click', ev => {
   refrescarHUD();
 });
 $('btnSalirAR').addEventListener('click', () => {
-  if(SENS.activo) cerrarARSensor();
-  else if(S.session) S.session.end();
-  else cerrarAR();
+  if(SENS.activo){ cerrarARSensor(); return; }
+  if(S.session){
+    const s = S.session;
+    try{ s.end(); }catch(e){ cerrarAR(); return; }
+    // red de seguridad: si el evento 'end' nunca llega, cerramos igual
+    setTimeout(() => { if(S.session === s) cerrarAR(); }, 1500);
+  }else{
+    cerrarAR();
+  }
 });
 
 /* ------------------------------------------------------------
@@ -934,15 +963,26 @@ function quatDesdeOrientacion(q, alpha, beta, gamma, orient){
 }
 
 function colocarAlFrente(){
-  if(!S.grupo || !SENS.q) return;
-  // dirección donde mira el celu, aplanada al horizonte
-  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(SENS.q);
+  if(!S.grupo) return;
+  // dirección donde mira el celu, aplanada al horizonte — sirve en modo
+  // sensores (SENS.q) y también en WebXR (cámara actualizada por la sesión)
+  const dir = new THREE.Vector3(0,0,-1);
+  const base = new THREE.Vector3();
+  if(SENS.activo && SENS.q){
+    dir.applyQuaternion(SENS.q);
+  }else if(S.camera){
+    S.camera.getWorldDirection(dir);
+    S.camera.getWorldPosition(base);
+  }else return;
   dir.y = 0;
   if(dir.lengthSq() < 1e-6) dir.set(0,0,-1);
   dir.normalize();
-  S.grupo.position.set(dir.x*SENS.dist, -1.4 + S.offsetY, dir.z*SENS.dist);
+  // altura del piso: en 'local-floor' el 0 ES el piso; si no, 1,4 m bajo el celu
+  const pisoY = SENS.activo ? -1.4 : (S.usaFloor ? 0 : base.y - 1.4);
+  S.grupo.position.set(base.x + dir.x*SENS.dist, pisoY + S.offsetY, base.z + dir.z*SENS.dist);
   S.grupo.visible = true;
   S.anclado = true;
+  if(S.reticula) S.reticula.visible = false;
 }
 
 async function iniciarARSensor(){
@@ -1021,19 +1061,28 @@ async function iniciarARSensor(){
   $('panelAR').classList.remove('oculto');
   $('hudMsg').textContent = 'Modo sensores. Girá el celu para mirar alrededor y tocá la pantalla para poner el trazado al frente.';
 
-  // 4. orientación
+  // 4. orientación — SOLO giroscopio (evento relativo). El evento "absolute"
+  // usa la brújula, y en una nave metalúrgica el magnetómetro delira con el
+  // hierro: la escena entera se movía sola. Si el equipo no emite el relativo,
+  // recién ahí caemos al absoluto.
+  SENS.recibio = false;
   SENS.orient = ev => {
     if(ev.alpha === null) return;
+    SENS.recibio = true;
     const g = Math.PI/180;
     SENS.screenAng = (screen.orientation && screen.orientation.angle || window.orientation || 0) * g;
     quatDesdeOrientacion(SENS.q, ev.alpha*g, ev.beta*g, ev.gamma*g, SENS.screenAng);
-    S.camera.quaternion.copy(SENS.q);
     if(!S.anclado){
       $('hudDatos').textContent = 'SENSORES OK · tocá para colocar';
     }
   };
-  const evName = ('ondeviceorientationabsolute' in window) ? 'deviceorientationabsolute' : 'deviceorientation';
-  window.addEventListener(evName, SENS.orient, true);
+  window.addEventListener('deviceorientation', SENS.orient, true);
+  SENS.fallbackTimer = setTimeout(() => {
+    if(!SENS.recibio && 'ondeviceorientationabsolute' in window){
+      window.addEventListener('deviceorientationabsolute', SENS.orient, true);
+      $('hudMsg').textContent = 'Usando brújula (menos estable cerca de estructuras metálicas).';
+    }
+  }, 2000);
 
   // 5. tocar para colocar
   canvas.addEventListener('pointerdown', () => { colocarAlFrente(); refrescarHUD(); });
@@ -1050,6 +1099,9 @@ async function iniciarARSensor(){
     if(!S.anclado && ++sinDatos === 180 && SENS.q.w === 1 && SENS.q.x === 0){
       $('hudMsg').textContent = 'No llegan datos del giroscopio. Tocá igual: se coloca al frente y podés girarlo con los botones.';
     }
+    // suavizado: la cámara persigue la orientación medida en vez de copiarla,
+    // así el temblor del sensor no sacude toda la escena
+    S.camera.quaternion.slerp(SENS.q, 0.35);
     renderer.render(S.scene, S.camera);
     SENS.rafId = requestAnimationFrame(loop);
   })();
@@ -1067,6 +1119,7 @@ function ajustarSensor(){
 function cerrarARSensor(){
   SENS.activo = false;
   if(SENS.rafId) cancelAnimationFrame(SENS.rafId);
+  if(SENS.fallbackTimer){ clearTimeout(SENS.fallbackTimer); SENS.fallbackTimer = null; }
   if(SENS.orient){
     window.removeEventListener('deviceorientationabsolute', SENS.orient, true);
     window.removeEventListener('deviceorientation', SENS.orient, true);
@@ -1196,7 +1249,14 @@ function mostrarError(txt){
   const d = $('diag');
   d.classList.remove('oculto');
   d.textContent = 'ERROR: ' + txt + '\n\n' + (d.textContent || '');
-  d.scrollIntoView({behavior:'smooth', block:'center'});
+  // si estamos dentro de AR, el diagnóstico no se ve: lo mostramos en el HUD
+  if(!$('capaAR').classList.contains('oculto')){
+    const h = $('hudMsg');
+    h.style.display = 'block';
+    h.textContent = '⚠ ' + txt;
+  }else{
+    d.scrollIntoView({behavior:'smooth', block:'center'});
+  }
 }
 window.addEventListener('error', e => mostrarError((e.message||'') + ' @ linea ' + (e.lineno||'?')));
 window.addEventListener('unhandledrejection', e => mostrarError('promesa: ' + (e.reason && e.reason.message || e.reason)));

@@ -290,6 +290,7 @@ body{
       <h3 class="sub">Máquinas marcadas</h3>
       <div id="listaMaq" class="lista"><p class="vacio">Todavía no marcaste ninguna.</p></div>
 
+      <button id="btnVer3D" class="btn-neon" disabled style="width:100%;margin:12px 0 4px">Ver nube en 3D</button>
       <div class="fila">
         <button id="btnPLY" class="btn-neon secundario" disabled>Exportar nube (.ply)</button>
         <button id="btnDXF" class="btn-neon secundario" disabled>Exportar DXF</button>
@@ -332,6 +333,10 @@ body{
   </div>
 </div>
 
+<div id="visor3D" class="oculto">
+  <button id="btnSalir3D" class="bctrl salir flotante">Cerrar</button>
+</div>
+
 <script>
 console.warn('Scripts "build/three.js" and "build/three.min.js" are deprecated with r150+, and will be removed with r160. Please use ES Modules or alternatives: https://threejs.org/docs/index.html#manual/en/introduction/Installation'),
 /**
@@ -351,7 +356,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 (function(){
 'use strict';
 
-var VERSION = 'v0.1.0';
+var VERSION = 'v0.2.0';
 var MAX_PTS   = 400000;   // tope de puntos en memoria
 var PASO_INI  = 6;        // submuestreo del mapa de profundidad (px)
 var D_MIN     = 0.35;     // m — más cerca que esto es ruido
@@ -545,7 +550,14 @@ function iniciarEscaneo(){
 function arrancarSesion(session, renderer){
   E.session = session;
   E.pausado = false;
-  renderer.xr.setSession(session).then(function(){
+  E.cerrando = false;
+  // 'local-floor' (el 0 en el piso real) y si la sesión no lo otorgó, 'local';
+  // sin este fallback setSession revienta y la pantalla queda muda
+  renderer.xr.setReferenceSpaceType('local-floor');
+  renderer.xr.setSession(session).catch(function(){
+    renderer.xr.setReferenceSpaceType('local');
+    return renderer.xr.setSession(session);
+  }).then(function(){
     E.refSpace = renderer.xr.getReferenceSpace();
     session.requestReferenceSpace('viewer').then(function(rv){
       if(session.requestHitTestSource){
@@ -555,6 +567,8 @@ function arrancarSesion(session, renderer){
     });
     $('hudMsg').textContent = 'Escaneando (' + E.modo + '). Caminá despacio barriendo la nave.';
     setTimeout(function(){ $('hudMsg').style.display = 'none'; }, 5000);
+  }).catch(function(e){
+    $('hudMsg').textContent = '⚠ No se pudo montar la sesión: ' + (e.message || e) + ' — tocá TERMINAR.';
   });
 
   session.addEventListener('end', terminarEscaneo);
@@ -566,16 +580,22 @@ function arrancarSesion(session, renderer){
   var mat4 = new THREE.Matrix4();
   var vec  = new THREE.Vector3();
 
+  var lastN = -1;
   renderer.setAnimationLoop(function(t, frame){
-    if(frame){
+    if(frame && E.refSpace){
       var pose = frame.getViewerPose(E.refSpace);
       if(pose){
         if(!E.pausado) capturarProfundidad(frame, pose, mat4, vec);
         actualizarReticula(frame);
       }
-      E.puntos.geometry.setDrawRange(0, E.n);
-      E.puntos.geometry.attributes.position.needsUpdate = true;
-      E.puntos.geometry.attributes.color.needsUpdate = true;
+      // subir el buffer a la GPU solo cuando entraron puntos nuevos:
+      // hacerlo en cada frame con 400k puntos fundía el teléfono
+      if(E.n !== lastN){
+        E.puntos.geometry.setDrawRange(0, E.n);
+        E.puntos.geometry.attributes.position.needsUpdate = true;
+        E.puntos.geometry.attributes.color.needsUpdate = true;
+        lastN = E.n;
+      }
       hud();
     }
     renderer.render(E.scene, E.camera);
@@ -679,6 +699,10 @@ function hud(){
     E.altMax.toFixed(2) + ' m · paso ' + E.paso + (E.pausado ? ' · PAUSA' : '');
 }
 
+// que los toques en los botones del panel no disparen 'select' de WebXR
+// (antes, apretar Pausar/Terminar marcaba una máquina fantasma)
+$('capaAR').querySelector('.panel-ar').addEventListener('beforexrselect', function(ev){ ev.preventDefault(); });
+
 $('capaAR').addEventListener('click', function(ev){
   var b = ev.target.closest('[data-act]');
   if(!b) return;
@@ -698,21 +722,35 @@ $('capaAR').addEventListener('click', function(ev){
 });
 
 $('btnSalirAR').addEventListener('click', function(){
-  if(E.session) E.session.end(); else terminarEscaneo();
+  if(E.session){
+    var s = E.session;
+    try{ s.end(); }catch(e){ terminarEscaneo(); return; }
+    // red de seguridad: si el evento 'end' nunca llega, cerramos igual
+    setTimeout(function(){ if(E.session === s) terminarEscaneo(); }, 1500);
+  }else{
+    terminarEscaneo();
+  }
 });
 
 function terminarEscaneo(){
-  if(E.renderer){
-    E.renderer.setAnimationLoop(null);
-    E.renderer.domElement.remove();
-    E.renderer.dispose();
-    E.renderer = null;
-  }
-  E.session = null; E.hitSource = null;
+  if(E.cerrando) return;          // el botón y el evento 'end' pueden llegar los dos
+  E.cerrando = true;
+  var r = E.renderer;
+  E.renderer = null; E.session = null; E.hitSource = null; E.refSpace = null;
+  // primero devolvemos la pantalla al usuario, después limpiamos WebGL
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
   $('hudMsg').style.display = 'block';
-  refrescarPanel();
+  try{ refrescarPanel(); }catch(e){}
+  if(r){
+    try{ r.setAnimationLoop(null); }catch(e){}
+    try{ r.domElement.remove(); }catch(e){}
+    // dispose() en el mismo instante del cierre de la sesión AR colgaba
+    // Chrome en algunos equipos: lo diferimos
+    setTimeout(function(){ try{ r.dispose(); }catch(e){} E.cerrando = false; }, 400);
+  }else{
+    E.cerrando = false;
+  }
 }
 
 /* ---------- panel de datos ---------- */
@@ -747,6 +785,7 @@ function refrescarPanel(){
   }
 
   var hay = E.n > 0 || E.maquinas.length > 0;
+  $('btnVer3D').disabled = E.n === 0;
   $('btnPLY').disabled = E.n === 0;
   $('btnDXF').disabled = !hay;
   $('btnJSON').disabled = !hay;
@@ -823,8 +862,114 @@ function exportarJSON(){
   bajar('relevamiento_' + Date.now() + '.json', JSON.stringify(o, null, 2), 'application/json');
 }
 
+/* ---------- visor 3D de la nube (para revisar el relevamiento en el celu) ---------- */
+function verNube3D(){
+  if(!E.n) return;
+  var cont = $('visor3D');
+  cont.classList.remove('oculto');
+  $('capaUI').classList.add('oculto');
+
+  var renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  cont.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070A);
+
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(E.pos, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(E.col, 3));
+  geo.setDrawRange(0, E.n);
+  var pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 0.035, vertexColors:true, sizeAttenuation:true
+  }));
+  pts.frustumCulled = false;
+  scene.add(pts);
+
+  // marcas de máquinas
+  E.maquinas.forEach(function(m){
+    var poste = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, Math.max(0.2, m.alto), 8),
+      new THREE.MeshBasicMaterial({ color: 0x00AEEF })
+    );
+    poste.position.set(m.x, m.alto/2, m.z);
+    scene.add(poste);
+  });
+
+  // centro y radio reales de la nube
+  var minX=1e9,minY=1e9,minZ=1e9,maxX=-1e9,maxY=-1e9,maxZ=-1e9;
+  for(var i=0;i<E.n;i++){
+    var j=i*3;
+    if(E.pos[j]<minX)minX=E.pos[j]; if(E.pos[j]>maxX)maxX=E.pos[j];
+    if(E.pos[j+1]<minY)minY=E.pos[j+1]; if(E.pos[j+1]>maxY)maxY=E.pos[j+1];
+    if(E.pos[j+2]<minZ)minZ=E.pos[j+2]; if(E.pos[j+2]>maxZ)maxZ=E.pos[j+2];
+  }
+  var centro = new THREE.Vector3((minX+maxX)/2,(minY+maxY)/2,(minZ+maxZ)/2);
+  var R = Math.max(maxX-minX, maxZ-minZ, 4) * 0.9;
+
+  scene.add(new THREE.GridHelper(Math.ceil(R*2)+2, Math.ceil(R*2)+2, 0xE31E24, 0x333940));
+
+  var cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.05, 500);
+  var ang = Math.PI*0.25, alt = Math.PI*0.3, dist = R;
+  function ubicarCam(){
+    cam.position.set(
+      centro.x + dist*Math.cos(alt)*Math.cos(ang),
+      centro.y + dist*Math.sin(alt),
+      centro.z + dist*Math.cos(alt)*Math.sin(ang)
+    );
+    cam.lookAt(centro);
+  }
+  ubicarCam();
+
+  var px=0, py=0, arr=false, dPrev=0, rafId=null;
+  var el = renderer.domElement;
+  function dist2(e){ return Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }
+  el.addEventListener('pointerdown', function(e){ arr=true; px=e.clientX; py=e.clientY; });
+  el.addEventListener('pointerup',   function(){ arr=false; });
+  el.addEventListener('pointercancel', function(){ arr=false; });
+  el.addEventListener('pointermove', function(e){
+    if(!arr) return;
+    ang -= (e.clientX-px)*.006;
+    alt = Math.min(Math.PI/2-.05, Math.max(.05, alt + (e.clientY-py)*.005));
+    px=e.clientX; py=e.clientY; ubicarCam();
+  });
+  el.addEventListener('wheel', function(e){ dist = Math.min(R*3, Math.max(.5, dist + e.deltaY*.01*R*.1)); ubicarCam(); }, {passive:true});
+  el.addEventListener('touchstart', function(e){ if(e.touches.length===2){ arr=false; dPrev=dist2(e); } }, {passive:true});
+  el.addEventListener('touchmove',  function(e){
+    if(e.touches.length===2){
+      var d = dist2(e);
+      dist = Math.min(R*3, Math.max(.5, dist * (dPrev/d)));
+      dPrev = d; ubicarCam();
+    }
+  }, {passive:true});
+
+  (function loop(){
+    renderer.render(scene, cam);
+    rafId = requestAnimationFrame(loop);
+  })();
+
+  function ajustar(){
+    cam.aspect = window.innerWidth/window.innerHeight;
+    cam.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  window.addEventListener('resize', ajustar);
+
+  $('btnSalir3D').onclick = function(){
+    cancelAnimationFrame(rafId);
+    window.removeEventListener('resize', ajustar);
+    geo.dispose();
+    renderer.dispose();
+    el.remove();
+    cont.classList.add('oculto');
+    $('capaUI').classList.remove('oculto');
+  };
+}
+
 /* ---------- wiring ---------- */
 $('ver').textContent = VERSION;
+$('btnVer3D').addEventListener('click', verNube3D);
 $('btnEscanear').addEventListener('click', iniciarEscaneo);
 $('btnDiag').addEventListener('click', diagnostico);
 $('btnPLY').addEventListener('click', exportarPLY);
