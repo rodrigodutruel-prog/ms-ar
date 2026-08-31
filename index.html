@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#09090B">
+<title>MS · Herramientas AR</title>
+<style>
+:root{ --rojo:#E31E24; --cyan:#00AEEF; }
+*{ box-sizing:border-box; }
+body{
+  margin:0; min-height:100vh; background:#09090B; color:#E8ECF1;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  display:flex; flex-direction:column; align-items:center;
+  padding:32px 16px calc(24px + env(safe-area-inset-bottom));
+}
+.mono{ font-weight:700; letter-spacing:.14em; color:#fff; background:var(--rojo);
+  border-radius:8px; padding:4px 14px; font-size:1.05rem; }
+h1{ font-size:clamp(1.2rem,5vw,1.6rem); letter-spacing:.12em; margin:14px 0 2px; }
+.sub{ font-size:.7rem; letter-spacing:.18em; color:var(--cyan); text-transform:uppercase; margin-bottom:28px; }
+a.card{
+  display:block; width:100%; max-width:420px; text-decoration:none; color:inherit;
+  background:linear-gradient(145deg,#171A1F,#0E1013);
+  border:1px solid rgba(255,255,255,.08); border-left:4px solid var(--rojo);
+  border-radius:12px; padding:18px 16px; margin-bottom:14px;
+  box-shadow:0 6px 22px rgba(0,0,0,.3);
+}
+a.card:active{ transform:scale(.985); }
+a.card h2{ margin:0 0 6px; font-size:1rem; letter-spacing:.1em; color:var(--cyan); text-transform:uppercase; }
+a.card p{ margin:0; font-size:.82rem; color:#9AA4B2; line-height:1.5; }
+footer{ margin-top:auto; padding-top:26px; font-size:.68rem; color:#9AA4B2; font-family:monospace; }
+</style>
+</head>
+<body>
+  <div class="mono">MS</div>
+  <h1>HERRAMIENTAS AR</h1>
+  <div class="sub">Depto. Innovación y Desarrollo</div>
+
+  <a class="card" href="ductos/">
+    <h2>AR Conductería</h2>
+    <p>Superpone el trazado de conductería calculado sobre la nave real, a escala, para verificar interferencias antes de fabricar.</p>
+  </a>
+
+  <a class="card" href="escaner/">
+    <h2>Escáner 3D</h2>
+    <p>Releva la nave en nube de puntos con la cámara. Exporta PLY, JSON y el DXF que lee la Calculadora de Aspiración.</p>
+  </a>
+
+  <footer>Instalables: menú ⋮ de Chrome → "Instalar aplicación"</footer>
+</body>
+</html>
