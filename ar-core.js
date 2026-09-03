@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.4',
+  marca: 'AR', version: 'v3.1.5',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2060,6 +2060,18 @@ async function iniciarAR(){
       S._miniTick = (S._miniTick||0) + 1;
       if(S._miniTick % 4 === 0) dibujarMiniPlanta();
     }
+    // TRACKING de ARCore: si se pierde (cámara sobre una mesa lisa, muy cerca,
+    // poca luz) el mundo se mueve con el teléfono. Avisar en el HUD y registrar.
+    if(frame){
+      let vpT = null; try{ vpT = frame.getViewerPose(S.refSpaceLocal); }catch(e){}
+      const perdido = !vpT || vpT.emulatedPosition === true;
+      if(perdido !== !!S._trackPerdido){
+        S._trackPerdido = perdido;
+        registrar(perdido ? 'TRACKING PERDIDO (movete despacio, apuntá a algo con textura)' : 'tracking recuperado');
+        if(perdido) UI.msg('⚠ ARCore perdió la referencia: alejá un poco el celu, apuntá a cosas con textura (no solo la mesa lisa) y movete despacio.');
+        else UI.msg('Referencia recuperada.');
+      }
+    }
     // mientras no está apoyado: registrar cada 2 s qué ve (para el Diagnóstico)
     S._regTick = (S._regTick||0) + 1;
     if(frame && !S.anclado && S._regTick % 120 === 0){
@@ -2092,6 +2104,24 @@ async function iniciarAR(){
       if(S.autoPend === 0) correrAutoAjuste();
     }
 
+    // apoyado por PROFUNDIDAD (ancla libre): cuando ARCore arma el plano de la
+    // mesa justo bajo el modelo, se pasa el ancla a ese plano (mucho más estable)
+    if(frame && S._mejorarAncla && S.anclado && !S.fijado && S.grupo && S.hitSource && S._regTick % 45 === 0){
+      try{
+        const hs2 = frame.getHitTestResults(S.hitSource);
+        for(let k=0;k<hs2.length;k++){
+          const ps2 = hs2[k].getPose(S.refSpaceLocal); if(!ps2) continue;
+          const m2 = ps2.transform.matrix;
+          if(m2[5] < 0.8) continue;
+          const dy = Math.abs(m2[13] - S.grupo.position.y), dxz = Math.hypot(m2[12] - S.grupo.position.x, m2[14] - S.grupo.position.z);
+          if(dy < 0.06 && dxz < 0.6 && typeof hs2[k].createAnchor === 'function'){
+            S._mejorarAncla = false;
+            hs2[k].createAnchor().then(a => { olvidarAncla(S.session); instalarAncla(a, S.session); registrar('ancla pasada al plano de la mesa'); }).catch(() => { S._mejorarAncla = true; });
+            break;
+          }
+        }
+      }catch(e){}
+    }
     // fallback: si el ancla del hit no salio, se crea una libre en la pose actual
     if(frame && S._pedirAncla && !S.anchor && S.anclado && S.grupo && typeof frame.createAnchor === 'function'){
       S._pedirAncla = false;
@@ -2225,7 +2255,8 @@ function tapPantalla(ev){
 
 function apoyarEnReticula(){
   S.grupo.position.copy(S.reticula.position);
-  registrar('apoyado en (' + S.reticula.position.x.toFixed(2) + ', ' + S.reticula.position.y.toFixed(2) + ', ' + S.reticula.position.z.toFixed(2) + ') escala ef 1:' + (S.escalaEf || S.escala));
+  registrar('apoyado en (' + S.reticula.position.x.toFixed(2) + ', ' + S.reticula.position.y.toFixed(2) + ', ' + S.reticula.position.z.toFixed(2) + ') escala ef 1:' + (S.escalaEf || S.escala) + (S.hitDesdeDepth ? ' por profundidad' : ' por hit'));
+  S._mejorarAncla = !!S.hitDesdeDepth;   // ancla libre por ahora: si aparece el plano, se pasa a él
   // (se apoya EXACTAMENTE donde está el aro — sobre una mesa, sobre el piso —
   // sin proyectar a ningún lado: la proyección al piso mandaba la maqueta
   // de la mesa al suelo cuando el hit venía con la normal torcida)
@@ -3050,6 +3081,10 @@ function gesAnguloYCentro(){
 }
 
 $('gestos').addEventListener('pointerdown', ev => {
+  // el pulgar que SOSTIENE el celu apoya en el borde: no es un gesto (arrastraba
+  // el modelo junto con el teléfono y parecía que "se movía solo")
+  const mB = 36;
+  if(ev.clientX < mB || ev.clientX > window.innerWidth - mB || ev.clientY < mB || ev.clientY > window.innerHeight - mB) return;
   GES.punteros.set(ev.pointerId, { x:ev.clientX, y:ev.clientY, x0:ev.clientX, y0:ev.clientY, t0:performance.now() });
   if(GES.punteros.size === 1){ S._gesMovio = false; GES.maxP = 1; }
   else GES.maxP = Math.max(GES.maxP || 1, GES.punteros.size);
