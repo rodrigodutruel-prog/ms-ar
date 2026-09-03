@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.0.0',
+  marca: 'AR', version: 'v3.0.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -772,9 +772,53 @@ async function parseOBJ(txt, avance, mtl){
     if(fin < N) await new Promise(r => setTimeout(r, 0));
   }
   if(!tris.length && !trisVid.length) throw new Error('OBJ sin caras legibles.');
-  const nOp = tris.length;
-  const todos = tris.concat(trisVid);
-  const mats = triMat.concat(triMatVid);      // material de cada TRIÁNGULO (por índice de vértice-esquina /3)
+  let nOp = tris.length;
+  let todos = tris.concat(trisVid);
+  let mats = triMat.concat(triMatVid);      // material de cada TRIÁNGULO (por índice de vértice-esquina /3)
+  // MODELO GIGANTE (galpón entero de Inventor): un celular no mueve millones de
+  // caras. Se simplifica acá mismo con una rejilla de agrupamiento de vértices
+  // (lo mismo que hace Preparar_OBJ_para_AR en la PC) — no hace falta prepararlo.
+  const MAX_CARAS = CFG.maxCaras || 400000;
+  if(todos.length/3 > MAX_CARAS){
+    let minx=1e18,miny=1e18,minz=1e18,maxx=-1e18,maxy=-1e18,maxz=-1e18;
+    for(let i=0;i<vs.length;i+=3){ const x=vs[i],y=vs[i+1],z=vs[i+2]; if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; if(z<minz)minz=z; if(z>maxz)maxz=z; }
+    const diag = Math.hypot(maxx-minx, maxy-miny, maxz-minz) || 1;
+    let factor = 1200;
+    for(let intento=0; intento<6; intento++){
+      const celda = diag / factor;
+      const map = new Map(), remap = new Int32Array(vs.length/3);
+      let nv = 0;
+      for(let i=0;i<vs.length/3;i++){
+        const key = ((Math.round(vs[i*3]/celda)+16384)*32768 + (Math.round(vs[i*3+1]/celda)+16384))*32768 + (Math.round(vs[i*3+2]/celda)+16384);
+        let id = map.get(key);
+        if(id === undefined){ id = nv++; map.set(key, id); }
+        remap[i] = id;
+      }
+      const t2 = [], m2 = []; let nOp2 = 0;
+      for(let t=0; t<todos.length; t+=3){
+        const a = remap[todos[t]], b = remap[todos[t+1]], c = remap[todos[t+2]];
+        if(a===b || b===c || a===c) continue;
+        t2.push(a, b, c); m2.push(mats[t/3]);
+        if(t < nOp) nOp2 += 3;
+      }
+      if(t2.length/3 <= MAX_CARAS || intento === 5){
+        // vértices y colores remapeados (el primero de cada celda representa a la celda)
+        const vs2 = new Array(nv*3), cols2 = new Array(nv*3);
+        const visto = new Uint8Array(nv);
+        for(let i=0;i<vs.length/3;i++){
+          const id = remap[i]; if(visto[id]) continue; visto[id] = 1;
+          vs2[id*3]=vs[i*3]; vs2[id*3+1]=vs[i*3+1]; vs2[id*3+2]=vs[i*3+2];
+          cols2[id*3]=cols[i*3]; cols2[id*3+1]=cols[i*3+1]; cols2[id*3+2]=cols[i*3+2];
+        }
+        vs.length = 0; vs.push(...vs2); cols.length = 0; cols.push(...cols2);
+        todos = t2; mats = m2; nOp = nOp2;
+        break;
+      }
+      factor *= 0.7;
+      if(avance) avance(1);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
   const pos = new Float32Array(todos.length*3);
   for(let i=0;i<todos.length;i++){
     const k = todos[i]*3;
@@ -791,22 +835,15 @@ async function parseOBJ(txt, avance, mtl){
   g.userData.matNombres = matNombres;
   g.userData.triMat = (hayMat && matNombres.length > 1) ? Int16Array.from(mats) : null;
   if(hayColor){
-    // COLORES REALES del archivo × la misma luz fija de las otras pieles
-    const nrm = g.getAttribute('normal');
-    const col = new Float32Array(todos.length*3);
-    const L = new THREE.Vector3(.45,.78,.42).normalize();
-    const nv = new THREE.Vector3();
+    // COLORES REALES del archivo (crudos): la luz fija se hornea con hornearReal()
+    // una vez que el modelo está girado a Y-arriba (la luz es del mundo, no del CAD)
+    const crudo = new Float32Array(todos.length*3);
     for(let i=0;i<todos.length;i++){
       const k = todos[i]*3;
-      nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
-      const lam = .48 + .52*Math.abs(nv.dot(L));
-      col[i*3]   = Math.min(1, cols[k]   * lam);
-      col[i*3+1] = Math.min(1, cols[k+1] * lam);
-      col[i*3+2] = Math.min(1, cols[k+2] * lam);
+      crudo[i*3] = cols[k]; crudo[i*3+1] = cols[k+1]; crudo[i*3+2] = cols[k+2];
     }
-    const attr = new THREE.BufferAttribute(col, 3);
-    g.setAttribute('color', attr);
-    g.userData.pieles = { real: attr };
+    g.userData.colCrudo = crudo;
+    hornearReal(g);
   }else if(g.userData.triMat){
     // sin colores por vértice pero con materiales: un tono por material
     aplicarColoresMaterial(g, mtl || null);
@@ -814,30 +851,68 @@ async function parseOBJ(txt, avance, mtl){
   return g;
 }
 
-// Colorea por material (Inventor): con el .mtl usa sus Kd; sin él, un tono
-// estable por nombre. Deja la piel 'real' lista para el botón Color.
-function aplicarColoresMaterial(g, mtl){
-  const tm = g.userData.triMat, noms = g.userData.matNombres || [];
-  if(!tm) return false;
-  const nrm = g.getAttribute('normal'), pos = g.getAttribute('position');
-  const n = pos.count, col = new Float32Array(n*3);
+// Hornea la luz fija sobre los colores crudos (userData.colCrudo) con las
+// normales ACTUALES de la geometría → piel 'real'. Se vuelve a llamar después
+// de rotar el modelo para que la luz caiga como en las otras pieles.
+function hornearReal(g){
+  const crudo = g.userData.colCrudo; if(!crudo) return null;
+  const nrm = g.getAttribute('normal');
+  const n = crudo.length/3, col = new Float32Array(n*3);
   const L = new THREE.Vector3(.45,.78,.42).normalize();
   const nv = new THREE.Vector3();
-  const tabla = noms.map(nm => (mtl && mtl[nm] && mtl[nm].kd) ? mtl[nm].kd : colorDeNombre(nm));
-  const gris = [.78,.78,.8];
   for(let i=0;i<n;i++){
-    const m = tm[(i/3)|0];
-    const c = (m >= 0) ? tabla[m] : gris;
     nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
     const lam = .48 + .52*Math.abs(nv.dot(L));
-    col[i*3] = Math.min(1, c[0]*lam); col[i*3+1] = Math.min(1, c[1]*lam); col[i*3+2] = Math.min(1, c[2]*lam);
+    col[i*3] = Math.min(1, crudo[i*3]*lam); col[i*3+1] = Math.min(1, crudo[i*3+1]*lam); col[i*3+2] = Math.min(1, crudo[i*3+2]*lam);
   }
   const attr = new THREE.BufferAttribute(col, 3);
   g.setAttribute('color', attr);
   g.userData.pieles = g.userData.pieles || {};
   g.userData.pieles.real = attr;
   attr.needsUpdate = true;
+  return attr;
+}
+
+// Colorea por material (Inventor): con el .mtl usa sus Kd; sin él, un tono
+// estable por nombre. Deja la piel 'real' lista para el botón Color.
+function aplicarColoresMaterial(g, mtl){
+  const tm = g.userData.triMat, noms = g.userData.matNombres || [];
+  if(!tm) return false;
+  const n = g.getAttribute('position').count, crudo = new Float32Array(n*3);
+  const tabla = noms.map(nm => (mtl && mtl[nm] && mtl[nm].kd) ? mtl[nm].kd : colorDeNombre(nm));
+  const gris = [.78,.78,.8];
+  for(let i=0;i<n;i++){
+    const m = tm[(i/3)|0];
+    const c = (m >= 0) ? tabla[m] : gris;
+    crudo[i*3] = c[0]; crudo[i*3+1] = c[1]; crudo[i*3+2] = c[2];
+  }
+  g.userData.colCrudo = crudo;
+  hornearReal(g);
   return true;
+}
+
+// Varios archivos de una vez (selección múltiple o Compartir con 2 archivos):
+// el .mtl se lee ANTES que el .obj para que el modelo abra ya con sus colores.
+function cargarArchivos(files){
+  const lista = Array.from(files || []);
+  if(!lista.length) return;
+  const ext = f => (f.name.split('.').pop() || '').toLowerCase();
+  const mtls = lista.filter(f => ext(f) === 'mtl');
+  const resto = lista.filter(f => ext(f) !== 'mtl');
+  const seguir = () => {
+    resto.forEach(f => {
+      if(ext(f) === 'json'){
+        const fr = new FileReader();
+        fr.onload = () => { try{ cargar(JSON.parse(fr.result)); }catch(e){ UI.estado('JSON inválido: ' + e.message, 'err'); } };
+        fr.readAsText(f);
+      }else cargarModelo3D(f);
+    });
+  };
+  if(mtls.length){
+    const fr = new FileReader();
+    fr.onload = () => { try{ S.mtl = parseMTL(fr.result); }catch(e){} seguir(); if(!resto.length) cargarMTL(mtls[0]); };
+    fr.readAsText(mtls[0]);
+  }else seguir();
 }
 
 // Cargar un .mtl DESPUÉS del .obj: recolorea el modelo ya abierto
@@ -893,6 +968,7 @@ function cargarModelo3D(file){
         const f = { mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001;
         geo.scale(f,f,f);
         geo.rotateX(-Math.PI/2);
+        if(geo.userData.colCrudo) hornearReal(geo);   // la luz horneada, ya con Y arriba
       }
       // centrar en planta y apoyar en el piso
       geo.computeBoundingBox();
@@ -1435,6 +1511,7 @@ function cargar(raw){
    mismo trazado, rotación / altura / opacidad ya vienen puestas.
    ------------------------------------------------------------ */
 function claveCalib(){ return S.trazado ? ('ar-calib::' + S.trazado.obra) : null; }
+function borrarCalib(){ const k = claveCalib(); if(k){ try{ localStorage.removeItem(k); }catch(e){} } }
 
 function guardarCalib(){
   const k = claveCalib();
@@ -1995,6 +2072,9 @@ function tapPantalla(ev){
 
 function apoyarEnReticula(){
   S.grupo.position.copy(S.reticula.position);
+  // el aro pegado a una PARED (hit cian) está a la altura donde apuntaste: el
+  // modelo va al PISO igual (local-floor: y=0) — si no, quedaba en el aire o lejos
+  if(S.hitEsPared && S.usaFloor) S.grupo.position.y = 0;
   S.grupo.position.y += S.offsetY;
   S.grupo.rotation.y = S.rotY;
   S.grupo.visible = true;
@@ -2907,8 +2987,13 @@ $('panelAR').addEventListener('click', ev => {
     if(SENS.activo){
       colocarAlFrente();
     }else{
+      // "queda guardada otra configuración": acá se BORRA todo lo de antes —
+      // ancla, altura, calibración guardada de esta obra — y se apoya de cero
       olvidarAncla(S.session);
+      borrarCalib();
       S.anclado = false; S.fijado = false; S.grupo.visible = false; S.offsetY = 0;
+      S.grupo.position.y = 0;
+      S._distModelo = null;
       $('btnFijar').textContent = 'Fijar';
       if(S.midiendo){ S.midiendo = false; limpiarMedicion(); $('btnMedir').textContent = 'Medir: OFF'; }
       UI.msg('Listo para apoyar de nuevo: apuntá al piso hasta ver el aro y tocá.');
@@ -3390,8 +3475,7 @@ $('ver').textContent = VERSION;
 $('btnDemo').addEventListener('click', () => cargar(DEMO));
 $('btn3DFile').addEventListener('click', () => $('inp3D').click());
 $('inp3D').addEventListener('change', ev => {
-  const f = ev.target.files?.[0];
-  if(f) cargarModelo3D(f);
+  cargarArchivos(ev.target.files);
   ev.target.value = '';
 });
 $('btnArchivo').addEventListener('click', () => $('inpArchivo').click());
@@ -3439,14 +3523,19 @@ if(location.hash === '#compartido'){
   (async () => {
     try{
       const cache = await caches.open(CFG.cacheCompartido);
-      const r = await cache.match('./_compartido');
-      if(r){
-        const nombre = decodeURIComponent(r.headers.get('X-Nombre') || 'modelo.stl');
-        const blob = await r.blob();
-        await cache.delete('./_compartido');
-        if(/\.json$/i.test(nombre)) cargar(JSON.parse(await blob.text()));
-        else cargarModelo3D(new File([blob], nombre));
-        UI.estado('Recibido: ' + nombre + ' — tocá Iniciar AR.', 'ok');
+      const claves = await cache.keys();
+      const files = [];
+      for(const req of claves){
+        if(!/_compartido/.test(req.url)) continue;
+        const r = await cache.match(req);
+        if(!r) continue;
+        const nombre = decodeURIComponent(r.headers.get('X-Nombre') || 'modelo.obj');
+        files.push(new File([await r.blob()], nombre));
+        await cache.delete(req);
+      }
+      if(files.length){
+        cargarArchivos(files);
+        UI.estado('Recibido: ' + files.map(f => f.name).join(' + ') + ' — tocá Iniciar AR.', 'ok');
       }
       history.replaceState(null, '', location.pathname);
     }catch(e){ mostrarError('Archivo compartido: ' + (e.message || e)); }
@@ -3456,5 +3545,5 @@ if(location.hash === '#compartido'){
 
 
 /* ── API para las interfaces (index.html de cada marca) ── */
-window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, iniciarAR, iniciar3D, iniciarARSensor,
+window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, iniciarAR, iniciar3D, iniciarARSensor,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION };

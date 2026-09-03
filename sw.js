@@ -1,7 +1,7 @@
 /* Service worker de MS AR — cachea todo para uso offline en obra.
    HTML y ar-core.js van RED-PRIMERO (no-cache): las correcciones llegan al
    celu apenas hay señal; sin señal se sirve la copia cacheada. */
-const CACHE = 'ms-ar-v30';
+const CACHE = 'ms-ar-v31';
 const ASSETS = ["./", "./index.html", "./ar-core.js", "./three.min.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./img/logo_dark.png", "./img/ondas.svg", "./fonts/SpaceGrotesk-Medium.ttf", "./fonts/SpaceGrotesk-SemiBold.ttf", "./fonts/SpaceGrotesk-Bold.ttf", "./fonts/ClashGrotesk-Regular.woff2", "./fonts/ClashGrotesk-Medium.woff2", "./fonts/ClashGrotesk-Semibold.woff2"];
 
 self.addEventListener('install', e => {
@@ -24,11 +24,12 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try{
         const fd = await e.request.formData();
-        const f = fd.get('modelo');
-        if(f){
-          const cache = await caches.open('ar-compartido');
-          await cache.put('./_compartido', new Response(f, {
-            headers: { 'X-Nombre': encodeURIComponent(f.name || 'modelo.obj') }
+        const fs = fd.getAll('modelo').filter(f => f && f.name);
+        const cache = await caches.open('ar-compartido');
+        for(const k of await cache.keys()) await cache.delete(k);
+        for(let i = 0; i < fs.length; i++){
+          await cache.put('./_compartido_' + i, new Response(fs[i], {
+            headers: { 'X-Nombre': encodeURIComponent(fs[i].name || 'modelo.obj') }
           }));
         }
       }catch(err){}

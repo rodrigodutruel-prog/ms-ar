@@ -170,7 +170,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
     <section class="card">
       <h2>1 · ¿Qué vas a ver?</h2>
       <div class="fila">
-        <button id="btn3DFile" class="tile obj"><b>Modelo 3D · OBJ</b><span>Como sale de Inventor o de PlanObra, con sus colores. Galpones, máquinas, equipos, casas.</span></button>
+        <button id="btn3DFile" class="tile obj"><b>Modelo 3D · OBJ</b><span>Como sale de Inventor o de PlanObra. Elegí el .obj y el .mtl juntos y abre con sus colores; los modelos gigantes se simplifican solos.</span></button>
         <button id="btnArchivo" class="tile json"><b>Red de conductería · JSON</b><span>El botón AR de la Calculadora de Aspiración: caños, codos, derivaciones, bridas y máquinas.</span></button>
       </div>
       <div class="fila" style="margin-top:8px; align-items:center">
@@ -181,7 +181,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
         </select>
         <button id="btnMTL" class="mini">Colores .mtl</button>
         <button id="btnDemo" class="mini">Ejemplo</button>
-        <input type="file" id="inp3D" accept=".obj,.mtl,.stl" hidden>
+        <input type="file" id="inp3D" accept=".obj,.mtl,.stl" multiple hidden>
         <input type="file" id="inpMTL" accept=".mtl" hidden>
         <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
       </div>
@@ -230,7 +230,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
     </section>
   </main>
 
-  <footer class="pie"><span id="ver">v3.0.0</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+  <footer class="pie"><span id="ver">v3.0.1</span> · MS AR · Depto. Innovación y Desarrollo</footer>
 </div>
 
 <!-- ======= CAPA AR ======= -->
@@ -326,7 +326,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v3.0.0',
+  marca: 'MS', version: 'v3.0.1',
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
