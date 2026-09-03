@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.3.1',
+  marca: 'AR', version: 'v3.3.2',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1614,6 +1614,13 @@ function cargar(raw){
     S.trazado = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
     if(S.trazado.esMS) prepararReferenciasMS(S.trazado);
     pintarInfo(S.trazado);
+    // el JSON tiene que ser de la MISMA Calculadora que imprimió el plano: si el
+    // marcador no trae el QR embebido, la app buscaría otra imagen y nunca lo vería
+    if(S.trazado.esMS && S.trazado.marcador && !S.trazado.marcador.png){
+      UI.estado('Este archivo del AR no trae el QR del plano (es de una Calculadora anterior). Para "Sobre plano impreso" volvé a exportarlo con el botón AR de la Calculadora nueva, y usá el mismo plano impreso.', 'err');
+      registrar('JSON sin QR embebido (marcador ' + (S.trazado.marcador.patron || '?') + ')');
+      return;
+    }
     $('estadoAR').classList.remove('err');
     revisarSoporte();
   }catch(e){
