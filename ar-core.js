@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.3.2',
+  marca: 'AR', version: 'v3.4.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -590,6 +590,71 @@ function construirGrupoMS(tz){
     }
   });
 
+  /* ── VÁLVULAS Y PANTALONES: el paquete no los trae como piezas (los cuenta el
+        cómputo); acá se arman desde cada MÁQUINA: la válvula mariposa en el bajante
+        que le llega, y si tiene más de una boca, el pantalón con sus mangueras ── */
+  const matValv = new THREE.MeshStandardMaterial({ color:0x3b4048, metalness:.85, roughness:.35 });
+  const matPal  = new THREE.MeshBasicMaterial({ color:PAL.acento });
+  const bajantes = (paq.tramos||[]).filter(t => t.tipo === 'bajante' && t.a && t.b);
+  (paq.maquinas||[]).forEach(m => {
+    if(m.x == null || m.y == null) return;
+    // el bajante de esta máquina: el que baja hasta su posición
+    let mejor = null, dm = 1e9;
+    bajantes.forEach(t => {
+      const bajo = (t.a.z || 0) <= (t.b.z || 0) ? t.a : t.b;
+      const dd = Math.hypot(bajo.x - m.x, bajo.y - m.y);
+      if(dd < dm){ dm = dd; mejor = t; }
+    });
+    if(!mejor || dm > 0.8) return;
+    const bajo = (mejor.a.z || 0) <= (mejor.b.z || 0) ? mejor.a : mejor.b;
+    const P = V(bajo);                                   // punta inferior del bajante (la boca)
+    const dB = mejor.d_mm || (m.bocas && m.bocas[0] && m.bocas[0].d_mm) || 120;
+    const rB = dB/2000;
+    // VÁLVULA MARIPOSA a 35 cm por encima de la boca: cuerpo, disco girado a la apertura y palanca
+    if(m.valvula){
+      const dV = m.valvula_d_mm || dB, rV = dV/2000;
+      const zV = P.y + 0.35;
+      const cuerpo = new THREE.Mesh(new THREE.CylinderGeometry(rV*1.18, rV*1.18, 0.10, 20), matValv);
+      cuerpo.position.set(P.x, zV, P.z); cuerpo.userData.esTubo = false;
+      grpTubos.add(cuerpo);
+      [zV-0.05, zV+0.05].forEach(zz => {
+        const brV = new THREE.Mesh(new THREE.CylinderGeometry(rV*1.45, rV*1.45, 0.006, 20), matBrida);
+        brV.position.set(P.x, zz, P.z); grpTubos.add(brV);
+      });
+      const ap = ((m.valvula_apertura_gr != null) ? m.valvula_apertura_gr : 60) * Math.PI/180;
+      const disco = new THREE.Mesh(new THREE.CylinderGeometry(rV*.96, rV*.96, 0.004, 20), matValv);
+      disco.position.set(P.x, zV, P.z); disco.rotation.x = ap;   // 0 = cerrada (horizontal), 90 = abierta
+      grpTubos.add(disco);
+      const eje = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, rV*2.9, 8), matValv);
+      eje.position.set(P.x, zV, P.z); eje.rotation.z = Math.PI/2; grpTubos.add(eje);
+      const palanca = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, rV*1.6), matPal);
+      palanca.position.set(P.x + rV*1.35, zV, P.z); palanca.rotation.x = ap;
+      palanca.position.z += Math.sin(ap) * 0; grpTubos.add(palanca);
+      const etV = etiqueta('válvula Ø' + Math.round(dV) + ' · ' + Math.round((m.valvula_apertura_gr != null ? m.valvula_apertura_gr : 60)) + '°', new THREE.Color(PAL.acento));
+      etV.position.set(P.x + rV + .18, zV + .1, P.z); etV.scale.set(.42, .105, 1); grpEtiq.add(etV);
+    }
+    // PANTALÓN + MANGUERAS si la máquina tiene varias bocas
+    const bocasM = (m.bocas || []).filter(b => b && b.d_mm > 0);
+    if(bocasM.length > 1){
+      const hP = .33, ancho = rB*2 + 0.12*(bocasM.length-1);
+      const cono = new THREE.Mesh(new THREE.CylinderGeometry(rB, ancho/2, hP, 20, 1, true), matD(dB));
+      cono.position.set(P.x, P.y - hP/2, P.z); cono.userData.esTubo = true; grpTubos.add(cono);
+      addBrida(P, new THREE.Vector3(0,-1,0), dB);
+      const zBase = P.y - hP, zBoca = Math.max(0.6, P.y - 0.9);
+      bocasM.forEach((b, i) => {
+        const off = (i - (bocasM.length-1)/2) * 0.12 * 2;
+        const A = new THREE.Vector3(P.x + off*.5, zBase, P.z), B = new THREE.Vector3(P.x + off, zBoca, P.z);
+        const dir = new THREE.Vector3().subVectors(B, A), L = dir.length(); dir.normalize();
+        const mh = tubo(A, B, b.d_mm, 16); if(mh) mh.material = matHose;
+        const lst = (anillos[b.d_mm] = anillos[b.d_mm] || []);
+        for(let s2=.04; s2<L; s2+=.06) lst.push({ p: A.clone().addScaledVector(dir, s2), q: quatDir(dir) });
+        addBrida(B, dir.clone().negate(), b.d_mm);
+      });
+      const etP = etiqueta('pantalón Ø' + Math.round(dB) + ' · ' + bocasM.map(b => 'Ø' + Math.round(b.d_mm)).join('/'), new THREE.Color(PAL.acento2));
+      etP.position.set(P.x - rB - .2, P.y - hP/2, P.z); etP.scale.set(.5, .125, 1); grpEtiq.add(etP);
+    }
+  });
+
   /* ── REPLANTEO EN EL PISO: eje proyectado, cota a nivel de piso y
         cruces donde cae cada pieza — para marcar con tiza ── */
   const grpPiso = new THREE.Group();
@@ -819,7 +884,7 @@ function parseMTL(txt){
 async function parseOBJ(txt, avance, mtl){
   const vs = [], cols = [], tris = [], trisVid = [], triMat = [], triMatVid = [];
   const matNombres = []; const matIdx = {};
-  let hayColor = false, enVidrio = false, matAct = -1, hayMat = false;
+  let hayColor = false, enVidrio = false, matAct = -1, hayMat = false, hojaEmb = null;
   const lineas = txt.split('\n'); txt = null;
   const N = lineas.length;
   const LOTE = 25000;
@@ -841,6 +906,8 @@ async function parseOBJ(txt, avance, mtl){
         for(let j=2;j<p.length;j++){ dest.push(p[0], p[j-1], p[j]); dm.push(matAct); }
       }else if(c0===111 && c1===32){    // "o "
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
+      }else if(c0===35 && l.startsWith('# MSAR_HOJA ')){   // la hoja impresa (Plano_AR_desde_OBJ)
+        try{ hojaEmb = JSON.parse(l.slice(12)); }catch(e){}
       }else if(c0===117 && l.startsWith('usemtl')){
         const nom = l.slice(6).trim();
         if(matIdx[nom] === undefined){ matIdx[nom] = matNombres.length; matNombres.push(nom); }
@@ -912,6 +979,7 @@ async function parseOBJ(txt, avance, mtl){
   }
   g.computeVertexNormals();
   g.userData.matNombres = matNombres;
+  g.userData.hoja = hojaEmb;
   g.userData.triMat = (hayMat && matNombres.length > 1) ? Int16Array.from(mats) : null;
   if(hayColor){
     // COLORES REALES del archivo (crudos): la luz fija se hornea con hornearReal()
@@ -1088,7 +1156,21 @@ function cargarModelo3D(file){
         S.piel = 'real';
         const bC = $('btnColor'); if(bC) bC.textContent = 'Color: real';
       }
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand) };
+      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand),
+                    refOrigen: new THREE.Vector3(-c.x, -minY0, -c.z), fUnid: ({ mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001) };
+      // HOJA IMPRESA embebida (Plano_AR_desde_OBJ): el QR y las cruces en coordenadas del archivo
+      const hoja = geo.userData.hoja;
+      if(hoja && hoja.marcador){
+        const F = S.trazado.fUnid, O = S.trazado.refOrigen;
+        const aLocal = (xf, yf) => new THREE.Vector3(O.x + xf*F, 0, O.z - yf*F);   // archivo (x, y) → local (x, -z)
+        S.trazado.marcador = hoja.marcador;
+        S.trazado.hoja = hoja;
+        if(hoja.esquina1_mm){ const e1 = aLocal(hoja.esquina1_mm[0], hoja.esquina1_mm[1]); S.trazado.refEsquina = e1; }
+        if(hoja.esquina2_mm){ const e2 = aLocal(hoja.esquina2_mm[0], hoja.esquina2_mm[1]); S.trazado.refP2Sugerido = { x: e2.x, z: e2.z }; }
+        UI.estado('Modelo con hoja impresa (escala 1:' + hoja.escala + ', ' + String(hoja.hoja || '').toUpperCase() + '): elegí "Sobre plano impreso" y apuntá al QR.', 'ok');
+        const rP = document.querySelector('input[name="modo"][value="papel"]');
+        if(rP){ rP.checked = true; rP.dispatchEvent(new Event('change')); }
+      }
       prepararPlanoImagen(S.trazado);
       pintarInfo(S.trazado);
       // aviso de UNIDADES: si el modelo mide menos de 30 cm o más de 400 m, casi seguro
@@ -2192,7 +2274,13 @@ async function iniciarAR(){
           if(S.escala !== esc){ S.escala = esc; S.escalaEf = esc; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
           const k = 1/esc;
           // centro del marcador en coordenadas LOCALES del modelo (metros reales) → escalado y girado
-          const mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
+          let mLocal;
+          if(mk.x_file_mm != null && S.trazado.refOrigen){
+            const F = S.trazado.fUnid || 0.001, O = S.trazado.refOrigen;
+            mLocal = new THREE.Vector3(O.x + mk.x_file_mm*F, 0, O.z - mk.y_file_mm*F).multiplyScalar(k);
+          }else{
+            mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
+          }
           const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
           const pos = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
           S.rotY = th; S.grupo.rotation.y = th;
@@ -3009,7 +3097,7 @@ function puntoEsquina(){
     S.grupo.rotation.y = S.rotY;
     if(S.modoPapel && dPlano > 0.01){
       // SOBRE PLANO IMPRESO: la ESCALA la dan las dos cruces (dPlano real ↔ dReal en el papel)
-      S.escala = Math.min(1000, Math.max(5, dPlano / dReal));
+      S.escala = Math.min(1000, Math.max(0.05, dPlano / dReal));
       S.escalaEf = Math.round(S.escala * 10) / 10;
       S.grupo.scale.setScalar(1 / S.escala);
       if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true;
@@ -3161,7 +3249,8 @@ function dibujarMiniPlanta(){
 }
 
 function refrescarHUD(){
-  const esc = S.escala === 1 ? '1:1' : ('1:' + (S.escalaEf || S.escala));
+  const _e = (S.escalaEf || S.escala);
+  const esc = S.escala === 1 ? '1:1' : (_e < 1 ? (Math.round(1/_e*10)/10) + ':1' : ('1:' + _e));
   let lejos = '';
   if(S._distModelo != null && S.anclado){
     if(S._distModelo > 30) lejos = '\n⚠ EL MODELO ESTÁ A ' + Math.round(S._distModelo) + ' m — usá "Traer acá"';
