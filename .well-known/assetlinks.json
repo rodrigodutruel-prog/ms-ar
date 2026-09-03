@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.sarmiento.msar",
+    "sha256_cert_fingerprints": ["79:E1:DD:74:6D:44:E9:BB:B0:A2:3E:C1:53:7F:4C:6B:07:32:E0:DA:8C:51:25:1D:6D:A3:FB:7A:6C:F0:29:B2"]
+  }
+}]
