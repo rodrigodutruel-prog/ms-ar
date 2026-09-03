@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.4.3',
+  marca: 'AR', version: 'v3.5.0',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1096,9 +1096,10 @@ function cargarModelo3D(file){
     try{
       let geo, esPlanObra = false;
       if(ext === 'obj'){
+        S._textoOBJ = (fr.result.length < 40e6) ? fr.result : null;   // para el _AR.obj de "Plano con QR"
         geo = await parseOBJ(fr.result, f => { UI.estado('Leyendo OBJ… ' + Math.round(f*100) + '%'); }, S.mtl || null);
-      }
-      else{
+      }else{
+        S._textoOBJ = null;
         let nT = 0;
         if(fr.result.byteLength >= 84){
           const dv0 = new DataView(fr.result);
@@ -1161,10 +1162,11 @@ function cargarModelo3D(file){
         S.piel = 'real';
         const bC = $('btnColor'); if(bC) bC.textContent = 'Color: real';
       }
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand),
+      S.trazado = { esModelo:true, geo:geo, obra:file.name, tamano:file.size, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand),
                     refOrigen: new THREE.Vector3(-c.x, -minY0, -c.z), fUnid: ({ mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001) };
       // HOJA IMPRESA embebida (Plano_AR_desde_OBJ): el QR y las cruces en coordenadas del archivo
-      const hoja = geo.userData.hoja;
+      let hoja = geo.userData.hoja;
+      if(!hoja){ try{ hoja = JSON.parse(localStorage.getItem('ar-hoja::' + file.name + '::' + file.size) || 'null'); }catch(e){ hoja = null; } }
       if(hoja && hoja.marcador){
         const F = S.trazado.fUnid, O = S.trazado.refOrigen;
         const aLocal = (xf, yf) => new THREE.Vector3(O.x + xf*F, 0, O.z - yf*F);   // archivo (x, y) → local (x, -z)
@@ -2445,6 +2447,187 @@ async function iniciarAR(){
     }
     renderer.render(S.scene, S.camera);
   });
+}
+
+/* ------------------------------------------------------------
+   6a. PLANO CON QR GENERADO EN LA APP
+   Para un OBJ/STL cargado: vista en planta para imprimir (a la escala
+   más grande que entre en la hoja), QR (qrcode.js, MIT) arriba a la
+   izquierda, cruces 1 y 2, rótulo. Sale un PDF a tamaño físico exacto
+   (imagen JPEG a 200/150 dpi envuelta en un PDF mínimo) y el mismo
+   modelo como <nombre>_AR.obj con la hoja adentro. Se comparten con
+   el menú del teléfono (WhatsApp, Drive, impresora) o se descargan.
+   ------------------------------------------------------------ */
+const HOJAS_APP = { a4:[297,210], a3:[420,297], a2:[594,420], a1:[841,594] };
+const SERIE_ESC = [0.2,0.25,0.3,0.4,0.5,0.6,0.75,1,1.25,1.5,2,2.5,3,4,5,6,7.5,10,12.5,15,20,25,30,40,50,60,75,100,125,150,200,250,300,400,500,750,1000];
+
+function qrCanvas(texto, pxModulo){
+  if(typeof qrcode !== 'function') throw new Error('falta qrcode.js');
+  const qr = qrcode(0, 'M'); qr.addData(texto); qr.make();
+  const n = qr.getModuleCount(), b = 2, m = pxModulo || 12;
+  const cv = document.createElement('canvas'); cv.width = cv.height = (n + 2*b) * m;
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#000';
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(qr.isDark(r, c)) g.fillRect((c+b)*m, (r+b)*m, m, m);
+  return cv;
+}
+
+// vista en planta PARA IMPRIMIR: gris claro con aristas oscuras sobre blanco (render target del renderer único)
+function renderPlantaImpresion(tz, anchoPx, altoPx){
+  const rnd = obtenerRenderer();
+  const bb = tz.geo.boundingBox;
+  const rt = new THREE.WebGLRenderTarget(anchoPx, altoPx, { depthBuffer: true, stencilBuffer: false });
+  const esc = new THREE.Scene();
+  esc.add(new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0xd9dde2, side: THREE.DoubleSide })));
+  if(tz.tris < 120000){ try{ esc.add(new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 25), new THREE.LineBasicMaterial({ color: 0x1a2432 }))); }catch(e){} }
+  const alto = bb.max.y - bb.min.y;
+  const corte = (alto > 3) ? (bb.min.y + 1.8) : (bb.max.y + 10);
+  const cam = new THREE.OrthographicCamera(bb.min.x, bb.max.x, -bb.min.z, -bb.max.z, .01, (corte - bb.min.y) + 5);
+  // mirando hacia abajo con el +X a la derecha y el −Z (arriba del plano) hacia arriba de la hoja
+  cam.position.set(0, corte, 0); cam.up.set(0, 0, -1); cam.lookAt(0, bb.min.y, 0);
+  const xrEra = rnd.xr.enabled; rnd.xr.enabled = false;
+  rnd.setRenderTarget(rt); rnd.setClearColor(0xffffff, 1); rnd.clear(); rnd.render(esc, cam);
+  const px = new Uint8Array(anchoPx * altoPx * 4); rnd.readRenderTargetPixels(rt, 0, 0, anchoPx, altoPx, px);
+  rnd.setRenderTarget(null); rnd.setClearColor(0x000000, 0); rnd.xr.enabled = xrEra; rt.dispose();
+  const cv = document.createElement('canvas'); cv.width = anchoPx; cv.height = altoPx;
+  const c2 = cv.getContext('2d'); const idat = c2.createImageData(anchoPx, altoPx);
+  for(let y = 0; y < altoPx; y++) idat.data.set(px.subarray((altoPx-1-y)*anchoPx*4, (altoPx-y)*anchoPx*4), y*anchoPx*4);
+  c2.putImageData(idat, 0, 0);
+  return cv;
+}
+
+// PDF mínimo con una imagen JPEG a tamaño físico exacto (W×H en mm)
+function pdfConJPEG(jpegDataURL, Wmm, Hmm, anchoPx, altoPx){
+  const b64 = jpegDataURL.split(',')[1]; const bin = atob(b64);
+  const jpg = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) jpg[i] = bin.charCodeAt(i);
+  const Wpt = (Wmm/25.4*72).toFixed(2), Hpt = (Hmm/25.4*72).toFixed(2);
+  const enc = new TextEncoder();
+  const partes = []; const offs = []; let len = 0;
+  const push = (u8) => { partes.push(u8); len += u8.length; };
+  const txt = (t) => push(enc.encode(t));
+  txt('%PDF-1.4\n');
+  const obj = (n, cuerpo) => { offs[n] = len; txt(n + ' 0 obj\n' + cuerpo + '\nendobj\n'); };
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + Wpt + ' ' + Hpt + '] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>');
+  const cont = 'q ' + Wpt + ' 0 0 ' + Hpt + ' 0 0 cm /Im0 Do Q';
+  obj(4, '<< /Length ' + cont.length + ' >>\nstream\n' + cont + '\nendstream');
+  offs[5] = len;
+  txt('5 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + anchoPx + ' /Height ' + altoPx + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n');
+  push(jpg); txt('\nendstream\nendobj\n');
+  const xref = len;
+  let x = 'xref\n0 6\n0000000000 65535 f \n';
+  for(let i=1;i<=5;i++) x += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+  x += 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+  txt(x);
+  return new Blob(partes, { type: 'application/pdf' });
+}
+
+// el OBJ con la hoja adentro (texto original si lo hay; si no —STL— se escribe desde la geometría)
+function textoOBJConHoja(tz, hoja){
+  const cab = '# MSAR_HOJA ' + JSON.stringify(hoja) + '\n';
+  if(S._textoOBJ) return cab + S._textoOBJ + (S._textoOBJ.endsWith('\n') ? '' : '\n');
+  const pos = tz.geo.getAttribute('position'), O = tz.refOrigen, f = tz.fUnid || 0.001;
+  const partes = [cab, '# generado por MS AR desde ' + tz.obra + '\n'];
+  const n = pos.count;
+  for(let i=0;i<n;i++){
+    const lx = pos.getX(i), ly = pos.getY(i), lz = pos.getZ(i);
+    partes.push('v ' + ((lx - O.x)/f).toFixed(2) + ' ' + ((-(lz - O.z))/f).toFixed(2) + ' ' + ((ly - O.y)/f).toFixed(2) + '\n');
+  }
+  const idx = tz.geo.index;
+  if(idx){ for(let i=0;i<idx.count;i+=3) partes.push('f ' + (idx.getX(i)+1) + ' ' + (idx.getX(i+1)+1) + ' ' + (idx.getX(i+2)+1) + '\n'); }
+  else{ for(let i=0;i<n;i+=3) partes.push('f ' + (i+1) + ' ' + (i+2) + ' ' + (i+3) + '\n'); }
+  return partes.join('');
+}
+
+async function entregarArchivos(archivos){
+  try{
+    if(navigator.share && navigator.canShare && navigator.canShare({ files: archivos })){
+      await navigator.share({ files: archivos, title: 'Plano AR con QR' });
+      return 'compartido';
+    }
+  }catch(e){ if(e && e.name === 'AbortError') return 'cancelado'; }
+  archivos.forEach((f, i) => setTimeout(() => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 4000);
+  }, i * 700));
+  return 'descargado';
+}
+
+async function generarHojaEnApp(hojaNom){
+  const tz = S.trazado;
+  if(!tz || !tz.esModelo || !tz.geo){ UI.estado('Primero abrí un OBJ o STL: el plano con QR se genera para ese modelo.', 'err'); return null; }
+  hojaNom = (hojaNom || 'a3').toLowerCase(); if(!HOJAS_APP[hojaNom]) hojaNom = 'a3';
+  try{
+    UI.estado('Generando el plano con QR (' + hojaNom.toUpperCase() + ')…');
+    await new Promise(r => setTimeout(r, 30));
+    const [W, H] = HOJAS_APP[hojaNom];
+    const bb = tz.geo.boundingBox, f = tz.fUnid || 0.001, O = tz.refOrigen || new THREE.Vector3();
+    const anMM = (bb.max.x - bb.min.x)/f, laMM = (bb.max.z - bb.min.z)/f, alMM = (bb.max.y - bb.min.y)/f;
+    const ox = 90, oy = 90, dispW = W - ox - 15, dispH = H - oy - 25;
+    let esc = SERIE_ESC.find(e => anMM/e <= dispW && laMM/e <= dispH); if(!esc) esc = SERIE_ESC[SERIE_ESC.length-1];
+    const k = 1/esc;
+    const nombre = tz.obra.replace(/\.(obj|stl)$/i, '');
+    // coordenadas DEL ARCHIVO de las esquinas del plano (arriba-izq y abajo-der)
+    const aFile = (lx, lz) => [ (lx - O.x)/f, -(lz - O.z)/f ];
+    const e1 = aFile(bb.min.x, bb.min.z), e2 = aFile(bb.max.x, bb.max.z);
+    const texto = 'MS AR | ' + nombre.slice(0, 40) + ' | plano 1:' + esc;
+    const qrCv = qrCanvas(texto, 12);
+    const png = qrCv.toDataURL('image/png');
+    const marcador = { patron:'QR', lado_mm:60, escala:esc, texto:texto, png:png, x_file_mm: e1[0] - 45*esc, y_file_mm: e1[1] + 45*esc };
+    const hoja = { version:1, hoja:hojaNom, escala:esc, titulo:nombre, esquina1_mm:e1, esquina2_mm:e2,
+                   bbox_mm:[e1[0], e2[1], 0, e2[0], e1[1], alMM], marcador:marcador, origen:'app' };
+    // ── la hoja como imagen ──
+    const DPI = (hojaNom === 'a1' || hojaNom === 'a2') ? 150 : 200;
+    const px = mm => mm/25.4*DPI;
+    const Wpx = Math.round(px(W)), Hpx = Math.round(px(H));
+    const cv = document.createElement('canvas'); cv.width = Wpx; cv.height = Hpx;
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, Wpx, Hpx);
+    // planta
+    const dibW = Math.max(2, Math.round(px(anMM*k))), dibH = Math.max(2, Math.round(px(laMM*k)));
+    const pl = renderPlantaImpresion(tz, Math.min(dibW, 2600), Math.min(dibH, 2600));
+    g.drawImage(pl, px(ox), px(oy), dibW, dibH);
+    g.strokeStyle = '#c9ced4'; g.lineWidth = Math.max(1, px(.3)); g.strokeRect(px(ox), px(oy), dibW, dibH);
+    // cruces
+    const rojo = '#e0292a';
+    const cruz = (cx, cy, num, dx, dy) => {
+      g.strokeStyle = rojo; g.lineWidth = Math.max(1, px(.5));
+      g.beginPath(); g.moveTo(cx - px(6), cy); g.lineTo(cx + px(6), cy); g.moveTo(cx, cy - px(6)); g.lineTo(cx, cy + px(6)); g.stroke();
+      g.beginPath(); g.arc(cx, cy, px(2.5), 0, Math.PI*2); g.stroke();
+      g.fillStyle = rojo; g.font = 'bold ' + Math.round(px(3.8)) + 'px sans-serif'; g.fillText(num, cx + px(dx), cy + px(dy));
+    };
+    cruz(px(ox), px(oy), '1', -9, -4); cruz(px(ox) + dibW, px(oy) + dibH, '2', 5, 7);
+    // QR
+    g.imageSmoothingEnabled = false;
+    g.drawImage(qrCv, px(ox - 45 - 30), px(oy - 45 - 30), px(60), px(60));
+    g.imageSmoothingEnabled = true;
+    // rótulo
+    g.fillStyle = '#111'; g.font = 'bold ' + Math.round(px(4.6)) + 'px sans-serif'; g.fillText('PLANO PARA MS AR · ' + nombre, px(ox), px(12));
+    g.fillStyle = '#333'; g.font = Math.round(px(3.0)) + 'px sans-serif';
+    g.fillText('Escala 1:' + esc + ' · hoja ' + hojaNom.toUpperCase() + ' · imprimir al 100 % (sin "ajustar a página") · ' + new Date().toLocaleDateString('es-AR') + ' · pieza ' + Math.round(anMM) + ' x ' + Math.round(laMM) + ' x ' + Math.round(alMM) + ' mm', px(ox), px(17));
+    g.fillText('En MS AR: abrir ' + nombre + '_AR.obj, modo "Sobre plano impreso", apuntar al QR. El 3D se monta sobre esta hoja.', px(ox), px(21));
+    g.font = Math.round(px(2.6)) + 'px sans-serif';
+    g.fillText('Cruz 1 = esquina superior izquierda de la pieza · Cruz 2 = esquina inferior derecha · el QR es el marcador (sin reconocimiento de imágenes: tocar cruz 1 y cruz 2).', px(ox), px(24.5));
+    g.fillStyle = '#666'; g.fillText((CFG.marca === 'MS' ? 'Metalúrgica Sarmiento · Depto. Innovación y Desarrollo' : '3DDUT Digital Craft') + ' · generado en la app', px(ox), px(H - 8));
+    const jpeg = cv.toDataURL('image/jpeg', 0.92);
+    const pdf = pdfConJPEG(jpeg, W, H, Wpx, Hpx);
+    const objTxt = textoOBJConHoja(tz, hoja);
+    const fPdf = new File([pdf], nombre + '_planoAR_' + hojaNom + '.pdf', { type: 'application/pdf' });
+    const fObj = new File([objTxt], nombre + '_AR.obj', { type: 'text/plain' });
+    // dejar el modelo LISTO en esta misma sesión
+    tz.hoja = hoja; tz.marcador = marcador;
+    tz.refEsquina = new THREE.Vector3(bb.min.x, 0, bb.min.z); tz.refP2Sugerido = { x: bb.max.x, z: bb.max.z };
+    try{ localStorage.setItem('ar-hoja::' + tz.obra + '::' + (tz.tamano || 0), JSON.stringify(hoja)); }catch(e){}
+    const rP = document.querySelector('input[name="modo"][value="papel"]'); if(rP){ rP.checked = true; rP.dispatchEvent(new Event('change')); }
+    S._ultimaHoja = { pdf: fPdf, obj: fObj };
+    const como = await entregarArchivos([fPdf, fObj]);
+    UI.estado('Plano con QR listo (' + hojaNom.toUpperCase() + ', escala 1:' + esc + '): ' + fPdf.name + ' y ' + fObj.name + ' ' + (como === 'compartido' ? 'compartidos' : (como === 'descargado' ? 'descargados' : '')) + '. Imprimí el PDF al 100 %; este modelo ya quedó en modo "Sobre plano impreso".', 'ok');
+    registrar('hoja generada en la app: ' + hojaNom + ' 1:' + esc);
+    return { pdf: fPdf, obj: fObj, hoja: hoja };
+  }catch(e){
+    UI.estado('No se pudo generar el plano: ' + (e.message || e), 'err');
+    registrar('ERROR hoja en app: ' + (e.message || e));
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------
@@ -4101,6 +4284,7 @@ document.querySelectorAll('input[name="modo"]').forEach(r => {
 });
 
 $('btnAR').addEventListener('click', iniciarAR);
+$('btnHoja').addEventListener('click', () => { const sel = document.getElementById('selHojaApp'); generarHojaEnApp(sel ? sel.value : 'a3'); });
 $('btnSensor').addEventListener('click', () => {
   iniciarARSensor().catch(e => mostrarError('AR sensores: ' + (e.message || e)));
 });
@@ -4141,5 +4325,5 @@ if(location.hash === '#compartido'){
 
 
 /* ── API para las interfaces (index.html de cada marca) ── */
-window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, iniciarAR, iniciar3D, iniciarARSensor,
+window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION };
