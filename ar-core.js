@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.0.3',
+  marca: 'AR', version: 'v3.0.4',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1802,7 +1802,10 @@ async function iniciarAR(){
       }catch(e2){
         S.hitSource = await session.requestHitTestSource({ space: refViewer });
       }
-    }catch(e){ S.hitSource = null; }
+      // para APOYAR (mesa / piso) se usa solo lo que ARCore detectó como PLANO:
+      // los puntos sueltos traen una normal cualquiera y hacían saltar el modelo
+      try{ S.hitPlanos = await session.requestHitTestSource({ space: refViewer, entityTypes: ['plane'] }); }catch(e3){ S.hitPlanos = null; }
+    }catch(e){ S.hitSource = null; S.hitPlanos = null; }
   }
 
   // ── v0.8: anclaje persistente ─────────────────────────────────
@@ -1903,7 +1906,8 @@ async function iniciarAR(){
   renderer.setAnimationLoop((t, frame) => {
     // retícula: antes de anclar, y también mientras se mide
     if(frame && (!S.anclado || !S.fijado || S.midiendo || S.escuadrando || S.esquinando) && S.hitSource){
-      const hits = frame.getHitTestResults(S.hitSource);
+      const fuente = (S.esquinando || !S.hitPlanos) ? S.hitSource : S.hitPlanos;
+      const hits = frame.getHitTestResults(fuente);
       if(hits.length){
         const pose = hits[0].getPose(S.refSpaceLocal);
         S.reticula.visible = true;
@@ -2088,16 +2092,18 @@ function tapPantalla(ev){
 
 function apoyarEnReticula(){
   S.grupo.position.copy(S.reticula.position);
-  // el aro pegado a una PARED (hit cian) está a la altura donde apuntaste: el
-  // modelo va al PISO igual (local-floor: y=0) — si no, quedaba en el aire o lejos
-  if(S.hitEsPared && S.usaFloor) S.grupo.position.y = 0;
+  // (se apoya EXACTAMENTE donde está el aro — sobre una mesa, sobre el piso —
+  // sin proyectar a ningún lado: la proyección al piso mandaba la maqueta
+  // de la mesa al suelo cuando el hit venía con la normal torcida)
   S.grupo.position.y += S.offsetY;
   S.grupo.rotation.y = S.rotY;
   S.grupo.visible = true;
   S.anclado = true;
-  // ancla real de ARCore sobre el piso detectado → sobrevive a la deriva del tracking
+  // ancla real de ARCore → sobrevive a la deriva del tracking. A escala real va
+  // pegada al PLANO del hit; en MAQUETA va LIBRE (un ancla pegada al plano de la
+  // mesa se movía cuando ARCore re-estimaba ese plano y el modelo "se iba solo").
   olvidarAncla(S.session);
-  if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
+  if(S.escala === 1 && S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
     S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
   }else{
     S._pedirAncla = true;
@@ -2791,6 +2797,7 @@ function cerrarAR(desdeEvento){
   const r = S.renderer;
   const hs = S.hitSource;
   if(hs){ try{ hs.cancel(); }catch(e){} }
+  if(S.hitPlanos){ try{ S.hitPlanos.cancel(); }catch(e){} S.hitPlanos = null; }
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
