@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.3',
+  marca: 'AR', version: 'v3.1.4',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -452,13 +452,26 @@ function construirGrupoMS(tz){
   (paq.bocas_planas||[]).forEach(b => {
     (bocasTramo[b.tramo] = bocasTramo[b.tramo] || []).push(b);
   });
-  (paq.tramos||[]).forEach(t => {
+  // De dónde a dónde va el caño de un tramo:
+  //  · 2 bocas → de boca a boca (lo que se fabrica)
+  //  · 1 boca (bajante que termina en la máquina) → de la boca al nudo LIBRE.
+  //    Antes iba de nudo a nudo: el caño seguía 200 mm hasta el vértice del codo
+  //    y asomaba por arriba (en la Calculadora no pasa porque usa el largo útil).
+  //  · 0 bocas → de nudo a nudo
+  function extremosTramo(t){
     const bs = bocasTramo[t.id] || [];
-    let A, B;
-    if(bs.length >= 2){
-      A = new THREE.Vector3(bs[0].x - cx, bs[0].z, bs[0].y - cz);
-      B = new THREE.Vector3(bs[1].x - cx, bs[1].z, bs[1].y - cz);
-    }else{ A = V(t.a); B = V(t.b); }
+    const P = b => new THREE.Vector3(b.x - cx, b.z, b.y - cz);
+    if(bs.length >= 2) return [P(bs[0]), P(bs[1])];
+    if(bs.length === 1){
+      const b = bs[0];
+      const libre = (b.nodo && t.nodo_a === b.nodo) ? t.b : (b.nodo && t.nodo_b === b.nodo) ? t.a
+        : (V(t.a).distanceTo(P(b)) > V(t.b).distanceTo(P(b)) ? t.a : t.b);
+      return [P(b), V(libre)];
+    }
+    return [V(t.a), V(t.b)];
+  }
+  (paq.tramos||[]).forEach(t => {
+    const [A, B] = extremosTramo(t);
     const d = t.d_mm || 150;
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
     if(L < 0.003 || t.fabricar === false) return;   // conexión directa: las bridas de las piezas se juntan solas
@@ -594,12 +607,7 @@ function construirGrupoMS(tz){
     grpPiso.add(new THREE.Line(g2, matCruz));
   }
   (paq.tramos||[]).forEach(t => {
-    const bs = bocasTramo[t.id] || [];
-    let A, B;
-    if(bs.length >= 2){
-      A = new THREE.Vector3(bs[0].x - cx, bs[0].z, bs[0].y - cz);
-      B = new THREE.Vector3(bs[1].x - cx, bs[1].z, bs[1].y - cz);
-    }else{ A = V(t.a); B = V(t.b); }
+    const [A, B] = extremosTramo(t);
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
     if(L < 0.05) return;
     dir.normalize();
@@ -2196,9 +2204,16 @@ function tapPantalla(ev){
   }
   if(S.reticula && S.reticula.visible){ apoyarEnReticula(); }
   else if(S.escala > 1){
-    // maqueta sin aro: mandarla al piso a 2,5 m era justo lo que confundía
-    UI.msg('Todavía no veo la superficie. Movete despacio de lado a lado apuntando a la mesa hasta que aparezca el aro (rojo o amarillo) y ahí tocá.');
-    registrar('toque sin aro en maqueta: no se apoya');
+    // MAQUETA sin aro: igual se apoya — al frente, a 80 cm, a la altura de la
+    // mano — y se acomoda con el dedo (1 dedo mueve, 2 dedos suben/bajan/giran)
+    const cam = S.renderer && S.renderer.xr.isPresenting ? S.renderer.xr.getCamera() : S.camera;
+    const cp = new THREE.Vector3(), fw = new THREE.Vector3();
+    cam.getWorldPosition(cp); cam.getWorldDirection(fw); fw.y = 0; if(fw.lengthSq() < 1e-6) fw.set(0,0,-1); fw.normalize();
+    S.grupo.position.copy(cp).addScaledVector(fw, 0.8); S.grupo.position.y = cp.y - 0.35 + S.offsetY;
+    S.grupo.rotation.y = S.rotY; S.grupo.visible = true; S.anclado = true;
+    olvidarAncla(S.session); S._pedirAncla = true;
+    registrar('apoyada al frente (sin aro) a 0,8 m');
+    UI.msg('Apoyada al frente. 1 dedo la mueve · 2 dedos la giran y suben/bajan · cuando esté bien, "Fijar".');
   }else{
     colocarAlFrente();
     // sin retícula: ancla libre en el punto donde quedó
@@ -2475,9 +2490,9 @@ function puntoDeProfundidadCentro(frame){
   for(let j=-2;j<=2;j++) for(let i=-2;i<=2;i++){
     let d = 0;
     try{ d = di.getDepthInMeters(0.5 + i*0.012, 0.5 + j*0.012); }catch(e){ continue; }
-    if(d > 0.2 && d < 5) ds.push(d);
+    if(d > 0.15 && d < 6) ds.push(d);
   }
-  if(ds.length < 8) return null;
+  if(ds.length < 5) return null;
   ds.sort((a,b) => a-b);
   const d = ds[Math.floor(ds.length/2)];
   _pdInvP.fromArray(view.projectionMatrix).invert();
