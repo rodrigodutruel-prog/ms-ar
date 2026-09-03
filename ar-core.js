@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.0.4',
+  marca: 'AR', version: 'v3.1.0',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -35,7 +35,7 @@ const S = {
   grupo: null,        // THREE.Group con la conductería
   escala: 1,          // 1 = 1:1 ; 20 = 1:20 ; 50 = 1:50
   anclado: false,
-  opacidad: 0.55,
+  opacidad: 1,        // la red arranca OPACA; el botón Transparencia baja a 70/45/25 %
   verEtiquetas: true,
   verMaquinas: true,
   verPiso: true,      // replanteo: ejes proyectados, cotas y cruces de tiza en el piso
@@ -326,16 +326,69 @@ function construirGrupoMS(tz){
     if(_matsD[k]) return _matsD[k];
     const col = colorPorDiametro(d/1000, dMinMS/1000, dMaxMS/1000)
       .lerp(new THREE.Color(0xc9ced4), 0.35);        // tinte + un toque de chapa
+    const _op = (typeof S.opacidad === 'number') ? S.opacidad : 1;
     _matsD[k] = new THREE.MeshStandardMaterial({ color:col, metalness:.75, roughness:.4,
       emissive: col, emissiveIntensity:.18,
-      transparent:true, opacity:S.opacidad, side:THREE.DoubleSide, depthWrite:false });
+      transparent:_op < .99, opacity:_op, side:THREE.DoubleSide, depthWrite:_op >= .99 });
     return _matsD[k];
   }
+  const _op0 = (typeof S.opacidad === 'number') ? S.opacidad : 1;
   const matBrida = new THREE.MeshStandardMaterial({ color:0x878e97, metalness:.9, roughness:.3,
-    transparent:true, opacity:Math.min(1, S.opacidad + .3), depthWrite:false });
+    transparent:_op0 < .99, opacity:_op0, depthWrite:_op0 >= .99 });
   const matAguj  = new THREE.MeshBasicMaterial({ color:0x0c0f14, transparent:true, opacity:.95 });
   const matHose  = new THREE.MeshStandardMaterial({ color:0x2f343b, metalness:.15, roughness:.85,
-    transparent:true, opacity:Math.min(1, S.opacidad + .25), side:THREE.DoubleSide, depthWrite:false });
+    transparent:_op0 < .99, opacity:_op0, side:THREE.DoubleSide, depthWrite:_op0 >= .99 });
+
+  /* ── TUBO POR GAJOS A INGLETE: cada corte entre gajos va en el plano
+        bisector (mitad del ángulo), como se fabrica: sin cuñas ni solapes ── */
+  function tuboGajos(pts, r, seg, mat){
+    const n = pts.length; if(n < 2) return null;
+    const dirs = [];
+    for(let i=0;i<n-1;i++) dirs.push(new THREE.Vector3().subVectors(pts[i+1], pts[i]).normalize());
+    const perp = d => { const a = Math.abs(d.y) < .9 ? new THREE.Vector3(0,1,0) : new THREE.Vector3(1,0,0); return new THREE.Vector3().crossVectors(d, a).normalize(); };
+    const anillos = [];
+    let prevE1 = perp(dirs[0]);
+    for(let i=0;i<n;i++){
+      const dIn = dirs[Math.max(0, i-1)], dOut = dirs[Math.min(n-2, i)];
+      const nrm = (i === 0) ? dirs[0].clone() : (i === n-1 ? dirs[n-2].clone() : dIn.clone().add(dOut).normalize());
+      // marco transportado a lo largo del gajo (sin torsión)
+      let f1 = prevE1.clone().addScaledVector(dIn, -prevE1.dot(dIn));
+      if(f1.lengthSq() < 1e-9) f1 = perp(dIn);
+      f1.normalize();
+      const f2 = new THREE.Vector3().crossVectors(dIn, f1).normalize();
+      prevE1 = f1;
+      const dn = Math.max(0.2, dIn.dot(nrm));
+      const ring = [];
+      for(let k=0;k<seg;k++){
+        const a = k/seg*Math.PI*2;
+        const q = pts[i].clone().addScaledVector(f1, r*Math.cos(a)).addScaledVector(f2, r*Math.sin(a));
+        // proyección del círculo (⊥ al gajo de entrada) sobre el plano bisector, a lo largo del gajo
+        const t = new THREE.Vector3().subVectors(pts[i], q).dot(nrm) / dn;
+        q.addScaledVector(dIn, t);
+        ring.push(q);
+      }
+      anillos.push(ring);
+    }
+    // cada gajo con sus propios vértices: suave alrededor, arista dura entre gajos
+    const pos = [], idx = [];
+    for(let i=0;i<n-1;i++){
+      const base = pos.length/3;
+      for(let k=0;k<seg;k++){ const q = anillos[i][k]; pos.push(q.x, q.y, q.z); }
+      for(let k=0;k<seg;k++){ const q = anillos[i+1][k]; pos.push(q.x, q.y, q.z); }
+      for(let k=0;k<seg;k++){
+        const k1 = (k+1)%seg;
+        idx.push(base+k, base+seg+k, base+seg+k1,  base+k, base+seg+k1, base+k1);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat);
+    m.userData.esTubo = true;
+    grpTubos.add(m);
+    return m;
+  }
 
   function tubo(A, B, d, seg){
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
@@ -453,13 +506,19 @@ function construirGrupoMS(tz){
       const A = bocas[0], B = bocas[1];
       const dC = Math.max(A.d, B.d);
       const ang = (acc.angulo_gr != null) ? acc.angulo_gr : 90;
-      const nSeg = Math.max(2, Math.round(ang / 25));      // codo FACETADO: gajos rectos
-      const h = A.p.distanceTo(B.p) * .42;
+      const th = ang * Math.PI/180;
+      // gajos: los que dice la pieza (tabla MS) o uno cada ~22°
+      const nSeg = Math.max(2, acc.gajos ? Math.round(acc.gajos) : Math.round(ang / 22.5));
+      // ARCO CIRCULAR real: R sale de la distancia boca–vértice (= R·tan(θ/2)),
+      // y la Bezier con manija (4/3)·tan(θ/4)·R reproduce ese arco
+      const Vn = n.pos ? V(n.pos) : A.p.clone().lerp(B.p, .5);
+      const R = Math.tan(th/2) > 1e-3 ? A.p.distanceTo(Vn) / Math.tan(th/2) : dC/500;
+      const h = (4/3) * Math.tan(th/4) * R;
       const curva = new THREE.CubicBezierCurve3(
         A.p, A.p.clone().addScaledVector(A.u, -h),
         B.p.clone().addScaledVector(B.u, -h), B.p);
       const pts = curva.getPoints(nSeg);
-      for(let i=0;i<pts.length-1;i++) tubo(pts[i], pts[i+1], dC, 18);
+      tuboGajos(pts, dC/2000, 22, matD(dC));
       addBrida(A.p, A.u.clone().negate(), A.d);
       addBrida(B.p, B.u.clone().negate(), B.d);
       return;
@@ -608,6 +667,7 @@ function construirGrupoMS(tz){
   g.userData.grpEtiq = grpEtiq;
   g.userData.grpMaq  = grpMaq;
   g.userData.grpPiso = grpPiso;
+  g.userData.matsRed = Object.keys(_matsD).map(k => _matsD[k]).concat([matBrida, matHose]);
   return g;
 }
 
@@ -1535,11 +1595,8 @@ function aplicarCalibGuardada(){
   // modelos OBJ arrancan derechos y se orientan con el flujo de 2 puntos.
   S.rotY = (S.trazado && !S.trazado.esModelo) ? (c.rotY || 0) : 0;
   S.offsetY = 0;
-  if(typeof c.opacidad === 'number') S.opacidad = c.opacidad;
-  if(S.grupo){
-    S.grupo.rotation.y = S.rotY;
-    S.grupo.traverse(o => { if(o.userData.esTubo) o.material.opacity = S.opacidad; });
-  }
+  // (la opacidad guardada ya no se restaura: la red arranca opaca siempre)
+  if(S.grupo) S.grupo.rotation.y = S.rotY;
   return true;
 }
 
@@ -3036,8 +3093,17 @@ $('panelAR').addEventListener('click', ev => {
       });
       $('hudMsg').textContent = 'Transparencia: ' + Math.round(op*100) + '%';
     }else{
-      S.opacidad = S.opacidad >= .85 ? .3 : S.opacidad + .15;
-      S.grupo.traverse(o => { if(o.userData.esTubo) o.material.opacity = S.opacidad; });
+      const niveles = [1, .7, .45, .25];
+      S.opNivel = ((S.opNivel == null ? 0 : S.opNivel) + 1) % niveles.length;
+      const op = niveles[S.opNivel];
+      S.opacidad = op;
+      const mats = S.grupo.userData.matsRed;
+      if(mats && mats.length){
+        mats.forEach(m => { m.opacity = op; m.transparent = op < .99; m.depthWrite = op >= .99; m.needsUpdate = true; });
+      }else{
+        S.grupo.traverse(o => { if(o.userData.esTubo){ o.material.opacity = op; o.material.transparent = op < .99; o.material.depthWrite = op >= .99; o.material.needsUpdate = true; } });
+      }
+      UI.msg('Transparencia: ' + Math.round(op*100) + '%');
     }
   }
   if(a==='reancla'){
