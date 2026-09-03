@@ -2,45 +2,376 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#09090B">
-<title>MS · Herramientas AR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#283459">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>MS AR — Realidad Aumentada en obra</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
-:root{ --rojo:#E31E24; --cyan:#00AEEF; }
-*{ box-sizing:border-box; }
+/* ============================================================
+   MS AR — interfaz Metalúrgica Sarmiento
+   Identidad oficial: rojo #e0292a · azul liviano #0095b8 ·
+   azul profundo #283459 · gris titanio #e9e8ed
+   Space Grotesk (títulos) + Clash Grotesk (texto) embebidas.
+   ============================================================ */
+@font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-Medium.ttf') format('truetype'); font-weight:500; font-display:swap; }
+@font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-SemiBold.ttf') format('truetype'); font-weight:600; font-display:swap; }
+@font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-Bold.ttf') format('truetype'); font-weight:700; font-display:swap; }
+@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
+@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Medium.woff2') format('woff2'); font-weight:500; font-display:swap; }
+@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
+
+:root{
+  --rojo:#e0292a; --rojo2:#c1272d; --azul:#0095b8; --azulp:#283459; --titanio:#e9e8ed;
+  --fondo:#0a0d16; --panel:rgba(40,52,89,.55); --panel2:rgba(14,18,34,.85);
+  --txt:#f4f5f8; --txt2:#aab3c5; --borde:rgba(233,232,237,.14);
+  --t-tit:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+  --t-txt:'Clash Grotesk','Segoe UI',system-ui,sans-serif;
+  --t-mono:'Consolas','Courier New',monospace;
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ margin:0; padding:0; height:100%; }
 body{
-  margin:0; min-height:100vh; background:#09090B; color:#E8ECF1;
-  font-family:'Segoe UI',system-ui,sans-serif;
-  display:flex; flex-direction:column; align-items:center;
-  padding:32px 16px calc(24px + env(safe-area-inset-bottom));
+  background:var(--fondo); color:var(--txt); font-family:var(--t-txt);
+  touch-action:manipulation; overscroll-behavior:none;
 }
-.mono{ font-weight:700; letter-spacing:.14em; color:#fff; background:var(--rojo);
-  border-radius:8px; padding:4px 14px; font-size:1.05rem; }
-h1{ font-size:clamp(1.2rem,5vw,1.6rem); letter-spacing:.12em; margin:14px 0 2px; }
-.sub{ font-size:.7rem; letter-spacing:.18em; color:var(--cyan); text-transform:uppercase; margin-bottom:28px; }
-a.card{
-  display:block; width:100%; max-width:420px; text-decoration:none; color:inherit;
-  background:linear-gradient(145deg,#171A1F,#0E1013);
-  border:1px solid rgba(255,255,255,.08); border-left:4px solid var(--rojo);
-  border-radius:12px; padding:18px 16px; margin-bottom:14px;
-  box-shadow:0 6px 22px rgba(0,0,0,.3);
-}
-a.card:active{ transform:scale(.985); }
-a.card h2{ margin:0 0 6px; font-size:1rem; letter-spacing:.1em; color:var(--cyan); text-transform:uppercase; }
-a.card p{ margin:0; font-size:.82rem; color:#9AA4B2; line-height:1.5; }
-footer{ margin-top:auto; padding-top:26px; font-size:.68rem; color:#9AA4B2; font-family:monospace; }
+.oculto{ display:none !important; }
+
+/* ---------- pantalla de carga (fuera de AR) ---------- */
+#capaUI{ position:relative; min-height:100%;
+  background:radial-gradient(120% 80% at 50% -10%, #283459 0%, #18203a 45%, #0a0d16 100%); }
+#capaUI::before{ content:''; position:fixed; inset:0; background:url(img/ondas.svg) center/cover no-repeat; opacity:.55; pointer-events:none; z-index:0; }
+#capaUI > *{ position:relative; z-index:1; }
+
+.cab{ display:flex; align-items:center; gap:14px; padding:calc(16px + env(safe-area-inset-top)) 18px 12px;
+  border-bottom:3px solid var(--rojo); background:linear-gradient(180deg, rgba(10,13,22,.35), rgba(10,13,22,0)); }
+.cab img{ height:44px; width:auto; }
+.cab .tit{ font-family:var(--t-tit); font-weight:700; font-size:1.45rem; letter-spacing:.06em; line-height:1; }
+.cab .sub{ font-family:var(--t-txt); font-weight:500; font-size:.68rem; letter-spacing:.2em; text-transform:uppercase; color:var(--azul); margin-top:4px; }
+
+.wrap{ padding:14px 14px 96px; max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+.card{ background:linear-gradient(145deg, rgba(40,52,89,.62), rgba(14,18,34,.88));
+  border:1px solid var(--borde); border-left:4px solid var(--rojo); border-radius:12px; padding:14px;
+  box-shadow:0 8px 28px rgba(0,0,0,.35); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
+.card h2{ font-family:var(--t-tit); font-weight:600; font-size:.8rem; letter-spacing:.16em; text-transform:uppercase; color:var(--azul); margin:0 0 10px; }
+.card h2 small{ color:var(--txt2); letter-spacing:.04em; text-transform:none; font-family:var(--t-txt); font-weight:400; margin-left:8px; }
+
+.fila{ display:flex; flex-wrap:wrap; gap:8px; }
+.tile{ flex:1 1 46%; min-height:76px; border-radius:10px; cursor:pointer; text-align:left; padding:10px 12px;
+  background:rgba(233,232,237,.06); color:var(--txt); border:1px solid var(--borde);
+  font-family:var(--t-txt); display:flex; flex-direction:column; justify-content:center; gap:4px; }
+.tile b{ font-family:var(--t-tit); font-weight:600; font-size:.98rem; letter-spacing:.02em; }
+.tile span{ font-size:.74rem; color:var(--txt2); line-height:1.3; }
+.tile:active{ background:rgba(0,149,184,.18); }
+.tile.obj{ border-left:3px solid var(--azul); }
+.tile.json{ border-left:3px solid var(--rojo); }
+.mini{ flex:0 0 auto; min-height:40px; padding:0 12px; border-radius:8px; background:transparent; color:var(--txt2);
+  border:1px solid var(--borde); font-family:var(--t-txt); font-size:.8rem; cursor:pointer; }
+.mini:active{ color:var(--txt); border-color:var(--azul); }
+select.mini{ color:var(--txt); background:var(--panel2); }
+
+.seg{ display:flex; gap:6px; }
+.seg label{ flex:1 1 0; position:relative; }
+.seg input{ position:absolute; opacity:0; pointer-events:none; }
+.seg span{ display:block; text-align:center; padding:9px 6px; border-radius:8px; border:1px solid var(--borde);
+  font-size:.8rem; line-height:1.2; color:var(--txt2); }
+.seg span small{ display:block; font-size:.66rem; margin-top:2px; }
+.seg input:checked + span{ color:#fff; border-color:var(--azul); background:rgba(0,149,184,.22); box-shadow:inset 0 0 0 1px var(--azul); }
+.lbl{ font-size:.72rem; color:var(--txt2); letter-spacing:.06em; text-transform:uppercase; margin:10px 0 6px; font-weight:500; }
+
+.chips{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+.ms-badge{ display:inline-block; padding:4px 10px; border-radius:999px; font-family:var(--t-mono); font-size:.72rem;
+  background:rgba(0,149,184,.14); color:#8fd8ea; border:1px solid rgba(0,149,184,.4); }
+.chip-d{ display:flex; align-items:center; gap:5px; font-family:var(--t-mono); font-size:.7rem; color:var(--txt2);
+  border:1px solid var(--borde); border-radius:6px; padding:3px 7px; }
+.chip-d i{ width:11px; height:11px; border-radius:3px; display:inline-block; }
+
+.btn{ width:100%; min-height:54px; border-radius:10px; cursor:pointer; font-family:var(--t-tit); font-weight:700;
+  font-size:1.02rem; letter-spacing:.12em; text-transform:uppercase; color:#fff; background:var(--rojo);
+  border:1px solid var(--rojo); box-shadow:0 6px 20px rgba(224,41,42,.35); }
+.btn:active{ background:var(--rojo2); }
+.btn:disabled{ opacity:.35; box-shadow:none; }
+.btn.sec{ background:transparent; color:var(--azul); border-color:var(--azul); box-shadow:none; margin-top:8px; font-size:.9rem; min-height:46px; }
+.nota{ margin-top:10px; font-size:.78rem; color:var(--txt2); line-height:1.45; }
+.nota.err{ color:#ff8a8b; }
+.nota.ok{ color:#8fd8ea; }
+details{ margin-top:10px; }
+summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
+.diag{ margin-top:8px; padding:10px; border-radius:8px; background:rgba(0,0,0,.35); border:1px solid var(--borde);
+  font-family:var(--t-mono); font-size:.68rem; line-height:1.5; color:var(--txt2); white-space:pre-wrap; word-break:break-all; }
+.pasos{ margin:0; padding-left:18px; font-size:.8rem; color:var(--txt2); line-height:1.6; }
+.pasos b{ color:var(--txt); }
+.pie{ position:fixed; left:0; right:0; bottom:0; z-index:2; padding:8px 14px calc(8px + env(safe-area-inset-bottom));
+  text-align:center; font-family:var(--t-mono); font-size:.68rem; color:var(--txt2); background:rgba(10,13,22,.9); border-top:1px solid var(--borde); }
+
+/* ---------- capa AR (encima de la cámara) ---------- */
+#videoCam{ position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:41; background:#000; }
+#capaAR{ position:fixed; inset:0; z-index:50; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; }
+#gestos{ position:fixed; inset:0; z-index:46; touch-action:none; pointer-events:auto; }
+#miniPlanta{ position:fixed; right:10px; top:calc(112px + env(safe-area-inset-top)); z-index:49; width:132px; height:132px;
+  border-radius:10px; border:1px solid rgba(0,149,184,.6); background:rgba(10,13,22,.55); pointer-events:none; }
+#miniPlanta.grande{ inset:0; width:100vw; height:100vh; border:none; border-radius:0; background:rgba(10,13,22,.32); z-index:45; }
+
+.hud{ position:relative; z-index:47; padding:calc(10px + env(safe-area-inset-top)) 12px 0; display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+.paso{ display:inline-block; font-family:var(--t-tit); font-weight:700; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase;
+  color:#fff; background:var(--rojo); border-radius:6px; padding:5px 10px; }
+.hud-msg{ display:inline-block; max-width:80%; background:rgba(10,13,22,.78); color:#fff; border-left:3px solid var(--rojo);
+  border-radius:8px; padding:9px 12px; font-size:.84rem; line-height:1.35; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+.hud-datos{ display:inline-block; font-family:var(--t-mono); font-size:.7rem; color:#8fd8ea; background:rgba(10,13,22,.6);
+  border-radius:6px; padding:5px 9px; white-space:pre-line; }
+
+/* botones rápidos a la derecha: siempre a mano */
+.rapidos{ position:fixed; right:10px; top:50%; transform:translateY(-40%); z-index:48; pointer-events:auto; display:flex; flex-direction:column; gap:10px; }
+.rapidos button{ width:58px; height:58px; border-radius:50%; border:1px solid rgba(233,232,237,.25); cursor:pointer;
+  background:rgba(14,18,34,.86); color:#fff; font-family:var(--t-tit); font-weight:600; font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; box-shadow:0 4px 14px rgba(0,0,0,.4); }
+.rapidos button i{ font-style:normal; font-size:1.25rem; line-height:1; }
+.rapidos button.salir{ background:var(--rojo); border-color:var(--rojo); }
+.rapidos button.fijado{ background:var(--azul); border-color:var(--azul); color:#04121a; }
+
+/* cinta inferior MS */
+.panel-ar{ position:relative; z-index:48; pointer-events:auto; padding:8px 10px calc(10px + env(safe-area-inset-bottom));
+  background:linear-gradient(180deg, rgba(10,13,22,0), rgba(10,13,22,.9) 22%); display:flex; flex-direction:column; gap:8px; }
+.ptabs{ display:flex; gap:6px; }
+.ptab{ flex:1 1 0; min-height:38px; border-radius:8px; cursor:pointer; background:rgba(40,52,89,.7); color:var(--txt2);
+  border:1px solid var(--borde); font-family:var(--t-tit); font-weight:600; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; }
+.ptab.activa{ color:#fff; background:var(--azulp); border-color:var(--azul); box-shadow:inset 0 -3px 0 var(--rojo); }
+.pgrupo{ display:flex; flex-wrap:wrap; gap:6px; }
+.bctrl{ flex:1 1 22%; min-width:72px; min-height:44px; border-radius:8px; cursor:pointer; background:rgba(14,18,34,.9); color:#dfe6f2;
+  border:1px solid rgba(0,149,184,.35); font-family:var(--t-txt); font-weight:500; font-size:.8rem; }
+.bctrl:active{ background:rgba(0,149,184,.25); }
+.bctrl.salir{ flex:none; color:#fff; background:var(--rojo); border-color:var(--rojo); font-family:var(--t-tit); font-weight:700; }
+.bctrl.destacado{ background:var(--azul) !important; border-color:var(--azul) !important; color:#04121a !important; font-weight:700; box-shadow:0 0 14px rgba(0,149,184,.65); }
+.bctrl.flotante{ position:fixed; z-index:60; top:calc(12px + env(safe-area-inset-top)); right:12px; width:auto; padding:0 16px; }
+.ayuda{ font-size:.7rem; color:var(--txt2); padding:0 2px; }
+#visor3D{ position:fixed; inset:0; z-index:40; background:#0a0d16; }
+#visor3D canvas{ display:block; }
+@media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
 </style>
 </head>
 <body>
-  <div class="mono">MS</div>
-  <h1>HERRAMIENTAS AR</h1>
-  <div class="sub">Depto. Innovación y Desarrollo</div>
 
-  <a class="card" href="ductos/">
-    <h2>AR Conductería</h2>
-    <p>Superpone el trazado de conductería calculado sobre la nave real, a escala, para verificar interferencias antes de fabricar.</p>
-  </a>
+<!-- ======= PANTALLA DE CARGA ======= -->
+<div id="capaUI">
+  <header class="cab">
+    <img src="img/logo_dark.png" alt="Metalúrgica Sarmiento">
+    <div>
+      <div class="tit">MS AR</div>
+      <div class="sub">Realidad aumentada en obra</div>
+    </div>
+  </header>
 
-  <footer>Instalables: menú ⋮ de Chrome → "Instalar aplicación"</footer>
+  <main class="wrap">
+
+    <section class="card">
+      <h2>1 · ¿Qué vas a ver?</h2>
+      <div class="fila">
+        <button id="btn3DFile" class="tile obj"><b>Modelo 3D · OBJ</b><span>Como sale de Inventor o de PlanObra, con sus colores. Galpones, máquinas, equipos, casas.</span></button>
+        <button id="btnArchivo" class="tile json"><b>Red de conductería · JSON</b><span>El botón AR de la Calculadora de Aspiración: caños, codos, derivaciones, bridas y máquinas.</span></button>
+      </div>
+      <div class="fila" style="margin-top:8px; align-items:center">
+        <select id="selUnid" class="mini" title="Unidades del OBJ">
+          <option value="mm" selected>OBJ en mm</option>
+          <option value="cm">OBJ en cm</option>
+          <option value="m">OBJ en m</option>
+        </select>
+        <button id="btnMTL" class="mini">Colores .mtl</button>
+        <button id="btnDemo" class="mini">Ejemplo</button>
+        <input type="file" id="inp3D" accept=".obj,.mtl,.stl" hidden>
+        <input type="file" id="inpMTL" accept=".mtl" hidden>
+        <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
+      </div>
+      <div id="infoTrazado" class="chips"><span class="ms-badge" id="bObra">nada cargado</span></div>
+      <div id="leyenda" class="chips"></div>
+      <div id="estadoAR" class="nota">Comprobando el AR del teléfono…</div>
+    </section>
+
+    <section class="card">
+      <h2>2 · ¿Cómo?</h2>
+      <div class="lbl">Tamaño</div>
+      <div class="seg">
+        <label><input type="radio" name="modo" value="1" checked><span>Real 1:1<small>parado en la obra</small></span></label>
+        <label><input type="radio" name="modo" value="20"><span>Maqueta 1:20<small>sobre una mesa</small></span></label>
+        <label><input type="radio" name="modo" value="50"><span>Maqueta 1:50<small>en la oficina</small></span></label>
+      </div>
+      <div class="lbl">Ubicación (solo a tamaño real)</div>
+      <div class="seg">
+        <label><input type="radio" name="ubic" value="auto" checked><span>Automática<small>según el tamaño</small></span></label>
+        <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza o equipo</small></span></label>
+        <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>galpón · casa</small></span></label>
+      </div>
+      <div class="nota">Con <b>un toque</b> el modelo se apoya donde está el aro rojo: tocás otro lugar y se mueve, 2 dedos lo giran, y "Fijar" lo deja clavado. Con <b>2 puntos</b> marcás dos esquinas del plano en el lugar real y el edificio queda orientado exacto.</div>
+    </section>
+
+    <section class="card">
+      <h2>3 · Ver</h2>
+      <button id="btnAR" class="btn" disabled>Iniciar AR</button>
+      <button id="btn3D" class="btn sec">Ver en 3D (sin AR)</button>
+      <details>
+        <summary>Más opciones</summary>
+        <button id="btnSensor" class="btn sec">AR por sensores (no queda fijo al caminar)</button>
+        <button id="btnDiag" class="btn sec">Diagnóstico del teléfono</button>
+        <pre id="diag" class="diag oculto"></pre>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Cómo se usa</h2>
+      <ol class="pasos">
+        <li>Desde la Calculadora: botón <b>AR</b> → el archivo llega por WhatsApp → abrilo con <b>Red de conductería</b>. Desde Inventor o PlanObra: exportá <b>OBJ</b> (con <b>Preparar OBJ para AR</b> en la PC quedan los colores adentro).</li>
+        <li><b>Iniciar AR</b>, apuntá al piso hasta ver el aro rojo y tocá: el modelo se apoya ahí. Tocá otro lugar para moverlo, 2 dedos lo giran.</li>
+        <li>Si lo perdés de vista: <b>Traer acá</b>. Cuando esté bien: <b>Fijar</b>.</li>
+        <li>Galpones y casas: la app pide <b>2 puntos</b> — elegís una esquina en el plano, la marcás en el lugar real, y lo mismo con una segunda esquina lejana.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="pie"><span id="ver">v3.0.0</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+</div>
+
+<!-- ======= CAPA AR ======= -->
+<video id="videoCam" class="oculto" autoplay playsinline muted></video>
+<div id="capaAR" class="oculto">
+  <div id="gestos"></div>
+  <canvas id="miniPlanta" width="300" height="300" class="oculto"></canvas>
+  <div id="hud" class="hud">
+    <div id="pasoAR" class="paso oculto"></div>
+    <div id="hudMsg" class="hud-msg">Iniciando AR…</div>
+    <div id="hudDatos" class="hud-datos"></div>
+  </div>
+
+  <div id="rapidos" class="rapidos">
+    <button id="rapTraer" title="Traer el modelo al frente"><i>⤓</i>Traer acá</button>
+    <button id="rapFijar" title="Fijar / liberar"><i>🔒</i>Fijar</button>
+    <button id="rapPlanta" title="Vista en planta"><i>▦</i>Planta</button>
+    <button id="btnSalirAR" class="salir" title="Salir del AR"><i>✕</i>Salir</button>
+  </div>
+
+  <div id="panelAR" class="panel-ar oculto">
+    <div class="ptabs">
+      <button class="ptab activa" data-tab="ubicar">Ubicar</button>
+      <button class="ptab" data-tab="ver">Ver</button>
+      <button class="ptab" data-tab="ajuste">Ajustar</button>
+      <button class="ptab" data-tab="medir">Medir</button>
+    </div>
+    <div class="ptab-cont" data-tab="ubicar">
+      <div class="pgrupo">
+        <button class="bctrl" data-act="fijar" id="btnFijar">Fijar</button>
+        <button class="bctrl" data-act="reancla">Apoyar de nuevo</button>
+        <button class="bctrl" data-act="traer">Traer acá</button>
+        <button class="bctrl" data-act="esquina" id="btnEsquina">2 puntos</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="escuadrar" id="btnEscuadrar">Escuadrar</button>
+        <button class="bctrl" data-act="auto" id="btnAuto">Auto-ajuste</button>
+        <button class="bctrl" data-act="rot90">Girar 90°</button>
+        <button class="bctrl" data-act="esc">Escala</button>
+      </div>
+      <div class="ayuda">Tocá el aro para apoyar · 1 dedo mueve · 2 dedos giran / suben · Fijar cuando esté bien</div>
+    </div>
+    <div class="ptab-cont oculto" data-tab="ver">
+      <div class="pgrupo">
+        <button class="bctrl" data-act="opac">Transparencia</button>
+        <button class="bctrl" data-act="color" id="btnColor">Color: real</button>
+        <button class="bctrl" data-act="etiq">Etiquetas</button>
+        <button class="bctrl" data-act="maq">Máquinas</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="piso">Marcas de piso</button>
+        <button class="bctrl" data-act="bandera" id="btnBandera">Bandera: ON</button>
+        <button class="bctrl" data-act="mini" id="btnMini">Planta: chica</button>
+        <button class="bctrl" data-act="ocl" id="btnOcl">Oclusión: ON</button>
+      </div>
+    </div>
+    <div class="ptab-cont oculto" data-tab="ajuste">
+      <div class="pgrupo">
+        <button class="bctrl" data-act="rot-">⟲ 15°</button>
+        <button class="bctrl" data-act="rot+">15° ⟳</button>
+        <button class="bctrl" data-act="alt-">▼ bajar</button>
+        <button class="bctrl" data-act="alt+">▲ subir</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="fino" id="btnFino">Ajuste fino: OFF</button>
+        <button class="bctrl" data-act="pasoMm" id="btnPasoMm">Paso: 10 mm</button>
+        <button class="bctrl" data-act="dist-">− cerca</button>
+        <button class="bctrl" data-act="dist+">+ lejos</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="-1">◀ X−</button>
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="1">X+ ▶</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="1">▲ Y+</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="-1">▼ Y−</button>
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="1">↑ Alto +</button>
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="-1">↓ Alto −</button>
+      </div>
+      <div class="ayuda">Los pasos en mm mueven según los ejes del plano (X+ = derecha del plano, Y+ = arriba del plano)</div>
+    </div>
+    <div class="ptab-cont oculto" data-tab="medir">
+      <div class="pgrupo">
+        <button class="bctrl" data-act="medir" id="btnMedir">Medir: OFF</button>
+      </div>
+      <div class="ayuda">Con Medir activo: tocá dos puntos del piso y te dice la distancia real</div>
+    </div>
+  </div>
+</div>
+
+<div id="visor3D" class="oculto">
+  <button id="btnSalir3D" class="bctrl salir flotante">Cerrar</button>
+</div>
+
+<script>
+/* configuración de MARCA que lee ar-core.js */
+window.AR_CONFIG = {
+  marca: 'MS', version: 'v3.0.0',
+  pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
+  cacheCompartido: 'ar-compartido',
+  etiquetaNombre: false,
+  colores: {
+    acento: 0xe0292a, acento2: 0x0095b8, aviso: 0xf2b705,
+    bajo: 0x0095b8, alto: 0xe0292a,
+    ejeX: 0xe0292a, ejeY: 0x21c063, ejeZ: 0x2e6bff,
+    grilla: 0x283459, fondoEtiq: 'rgba(12,16,32,0.86)', textoEtiq: '#FFFFFF',
+    tuboCyan: 0x0095b8, tuboRojo: 0xe0292a
+  }
+};
+</script>
+<script src="three.min.js"></script>
+<script src="ar-core.js"></script>
+<script>
+/* ── cableado propio de la interfaz MS ── */
+(function(){
+  const $ = id => document.getElementById(id);
+  // .mtl aparte (colores de Inventor)
+  $('btnMTL').addEventListener('click', () => $('inpMTL').click());
+  $('inpMTL').addEventListener('change', ev => { const f = ev.target.files && ev.target.files[0]; if(f) AR.cargarMTL(f); ev.target.value = ''; });
+  // botones rápidos (fuera del panel): no deben generar 'select' de WebXR
+  const rap = $('rapidos');
+  rap.addEventListener('beforexrselect', ev => ev.preventDefault());
+  $('rapTraer').addEventListener('click', () => AR.traerAca());
+  $('rapFijar').addEventListener('click', () => {
+    AR.fijarModelo(!AR.S.fijado);
+  });
+  $('rapPlanta').addEventListener('click', () => {
+    const b = document.querySelector('#panelAR [data-act="mini"]'); if(b) b.click();
+  });
+  // el estado "fijado" se refleja en el botón redondo
+  setInterval(() => {
+    const f = !!AR.S.fijado;
+    $('rapFijar').classList.toggle('fijado', f);
+    $('rapFijar').innerHTML = f ? '<i>🔒</i>Fijado' : '<i>🔓</i>Fijar';
+    // la cinta de abajo solo cuando hay sesión y no hay modal de plano
+    const panel = $('panelAR');
+    if(AR.S.session || AR.S.renderer){ panel.classList.remove('oculto'); }
+  }, 400);
+  // el botón Salir del panel es el redondo: el núcleo escucha #btnSalirAR (ya cableado)
+})();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.log('SW:', e); }); });
+}
+</script>
 </body>
 </html>

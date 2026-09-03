@@ -1,18 +1,19 @@
-# ms-ar — herramientas AR de MS
-
-Un solo repo con las dos apps:
+# MS AR — Realidad Aumentada en obra (Metalúrgica Sarmiento)
 
     ms-ar/
-    ├── index.html        <- portal
-    ├── ductos/           <- AR Conductería (PWA)
-    └── escaner/          <- Escáner 3D (PWA)
+    ├── index.html      <- la app (interfaz MS)
+    ├── ar-core.js      <- NÚCLEO compartido con 3DDUT AR (se copia desde ..\_core\ con sincronizar_core.py)
+    ├── three.min.js    <- three r160 (UMD)
+    ├── sw.js · manifest.json · icon-*.png · fonts/ · img/
+    └── ductos/         <- redirección de la app vieja "AR Conductería" (se auto-desinstala)
 
-## Publicar (una vez)
-1. github.com -> New repository -> `ms-ar` -> Public -> Create
-2. Add file -> Upload files -> arrastrar TODO el contenido de esta carpeta
-3. Settings -> Pages -> Deploy from a branch -> main -> /(root) -> Save
-4. En ~1 min queda: https://TUUSUARIO.github.io/ms-ar/
+## Qué abre
+- **OBJ** (Inventor, PlanObra, cualquier CAD). Con `v x y z r g b` trae los colores adentro; con
+  `usemtl` colorea por material (y se puede cargar el `.mtl` aparte). En la PC:
+  `..\Preparar_OBJ_para_AR.bat` deja un OBJ único con colores y liviano.
+- **JSON** del botón AR de la Calculadora de Aspiración (`formato: MS_ASPIRACION_RED`).
 
-## En el celular (una vez)
-Abrir la URL en Chrome Android -> entrar a cada herramienta ->
-menú ⋮ -> "Instalar aplicación". Quedan como apps, funcionan sin señal.
+## Publicar
+Commit + push a `main` (GitHub Pages desde /(root)). La URL no cambia:
+https://rodrigodutruel-prog.github.io/ms-ar/
+En el celu: Chrome → menú ⋮ → Instalar aplicación.
