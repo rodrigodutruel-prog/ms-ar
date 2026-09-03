@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.5',
+  marca: 'AR', version: 'v3.2.0',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -671,6 +671,16 @@ function construirGrupoMS(tz){
   });
 
   volcarInstancias();
+  // punto de referencia de la red (esquina 0,0 del galpón): tríada de ejes chica
+  if(tz.refEsquina){
+    const grpRef = new THREE.Group(); grpRef.userData.rol = 'referencia';
+    const Lt = 1.2;
+    [[new THREE.Vector3(1,0,0), PAL.ejeX], [new THREE.Vector3(0,1,0), PAL.ejeY], [new THREE.Vector3(0,0,1), PAL.ejeZ]]
+      .forEach(par => grpRef.add(new THREE.ArrowHelper(par[0], new THREE.Vector3(0,0,0), Lt, par[1], Lt*.22, Lt*.1)));
+    grpRef.position.copy(tz.refEsquina);
+    grpRef.visible = (S.verBandera !== false);
+    g.add(grpRef); g.userData.grpRef = grpRef;
+  }
   g.add(grpTubos); g.add(grpEtiq); g.add(grpMaq); g.add(grpPiso);
   g.userData.grpEtiq = grpEtiq;
   g.userData.grpMaq  = grpMaq;
@@ -1094,13 +1104,40 @@ function cargarModelo3D(file){
   if(ext==='obj') fr.readAsText(file); else fr.readAsArrayBuffer(file);
 }
 
+// La RED MS también se puede ubicar con 2 puntos (plano impreso / galpón):
+// esquina de referencia = esquina (0,0) del galpón, candidatos = las 4 esquinas
+// del galpón + cada máquina, y un plano cenital de la red dibujada.
+function prepararReferenciasMS(tz){
+  try{
+    const paq = tz.paq, g = paq.galpon || {};
+    const an = g.ancho_m > 0 ? g.ancho_m : tz.medidas.x, la = g.largo_m > 0 ? g.largo_m : tz.medidas.z;
+    const L = (x, y) => [x - tz.cx, y - tz.cz];
+    tz.refEsquina = new THREE.Vector3(L(0,0)[0], 0, L(0,0)[1]);
+    tz.refP2Sugerido = { x: L(an, la)[0], z: L(an, la)[1] };      // la cruz 2 del plano impreso
+    const cand = [];
+    [[0,0],[an,0],[an,la],[0,la]].forEach(e => { const q = L(e[0], e[1]); cand.push(q[0], q[1]); });
+    (paq.planta || []).forEach(pl => { const q = L(pl.x, pl.y); cand.push(q[0], q[1]); });
+    (paq.maquinas || []).forEach(m => { if(m.pos){ const q = L(m.pos.x, m.pos.y); cand.push(q[0], q[1]); } });
+    tz.refCandidatos = new Float32Array(cand);
+    // plano cenital: se dibuja el grupo de la red y se fotografía desde arriba
+    const gr = construirGrupoMS(tz);
+    const bb = new THREE.Box3().setFromObject(gr);
+    bb.min.x = Math.min(bb.min.x, -tz.cx); bb.min.z = Math.min(bb.min.z, -tz.cz);
+    bb.max.x = Math.max(bb.max.x, an - tz.cx); bb.max.z = Math.max(bb.max.z, la - tz.cz);
+    tz.bbox = bb;
+    tz.tris = 0;
+    prepararPlanoImagen(tz, gr);
+    gr.traverse(o => { if(o.geometry) o.geometry.dispose(); });
+  }catch(e){ tz.planImg = null; }
+}
+
 // FOTO DE PLANO: un render cenital ortográfico del modelo, hecho UNA vez al
 // cargar. La vista en planta dibuja esta imagen (paredes y máquinas como un
 // plano de verdad) en lugar de una lluvia de puntos ilegible.
-function prepararPlanoImagen(tz){
+function prepararPlanoImagen(tz, objeto){
   try{
     const w = 1024;
-    const bb = tz.geo.boundingBox;
+    const bb = objeto ? tz.bbox : tz.geo.boundingBox;
     // OJO: un segundo WebGLRenderer (otro contexto GL) alrededor de las
     // sesiones ARCore colgaba Chrome en algunos equipos. Se usa el renderer
     // ÚNICO de la app y se dibuja a un render target fuera de pantalla.
@@ -1110,9 +1147,14 @@ function prepararPlanoImagen(tz){
     // look de PLANO CAD: la masa en gris oscuro (DoubleSide: lo seccionado
     // por el corte se ve relleno, como el rayado de un plano) y las ARISTAS
     // en blanco.
-    const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0x1a2432, side: THREE.DoubleSide }));
-    esc.add(mesh);
-    if(tz.tris < 60000){   // en modelos grandes las aristas del plano costaban segundos: va la masa sola
+    if(objeto){
+      esc.add(objeto);
+      esc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.5));
+    }else{
+      const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0x1a2432, side: THREE.DoubleSide }));
+      esc.add(mesh);
+    }
+    if(!objeto && tz.tris < 60000){   // en modelos grandes las aristas del plano costaban segundos: va la masa sola
       try{
         const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
           new THREE.LineBasicMaterial({ color: 0xffffff }));
@@ -1125,7 +1167,7 @@ function prepararPlanoImagen(tz){
     // y las cerchas — puré. Como en un plano de arquitectura, se corta a
     // 1,8 m: paredes seccionadas, máquinas y piso. Piezas bajas: vista entera.
     const alto = bb.max.y - bb.min.y;
-    const corte = (alto > 3) ? (bb.min.y + 1.8) : (bb.max.y + 10);
+    const corte = (objeto || alto <= 3) ? (bb.max.y + 10) : (bb.min.y + 1.8);
     const cam = new THREE.OrthographicCamera(-H, H, H, -H, .01, (corte - bb.min.y) + 5);
     cam.position.set(pcx, corte, pcz);
     cam.up.set(0, 0, -1);
@@ -1472,8 +1514,10 @@ async function icpYaw(nube, modeloLocal, rotY0, pos0, escala, avance){
   // 1) barrido grueso (con una submuestra: alcanza para rankear)
   const nubeB = nube.filter((p,i) => i % 2 === 0);
   const cand = [];
-  const giros = [-45,-30,-15,0,15,30,45].map(d => d*Math.PI/180);
-  const pasos = [-0.15,-0.075,0,0.075,0.15];
+  // GIRO COMPLETO (el equipo real puede estar en cualquier orientación respecto
+  // de cómo se apoyó el 3D) y corrimientos de ±30 cm: barrido grueso, después ICP
+  const giros = []; for(let gd = -180; gd < 180; gd += (S.autoAmplio === false ? 15 : 15)) giros.push(gd*Math.PI/180);
+  const pasos = [-0.30,-0.15,0,0.15,0.30];
   let hecho = 0, total = giros.length*pasos.length*pasos.length;
   for(const dg of giros){
     for(const dx of pasos) for(const dz of pasos){
@@ -1486,7 +1530,7 @@ async function icpYaw(nube, modeloLocal, rotY0, pos0, escala, avance){
     await respiro();
   }
   cand.sort((a,b) => b.s - a.s);
-  const top = cand.slice(0, 3);
+  const top = cand.slice(0, 5);
   // el punto de partida del usuario siempre entra, por si el barrido no lo eligió
   if(!top.some(c => c.rotY === rotY0 && c.pos.equals(pos0))) top.push({ rotY:rotY0, pos:pos0.clone(), s:0 });
 
@@ -1567,6 +1611,7 @@ function pintarInfo(tz){
 function cargar(raw){
   try{
     S.trazado = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
+    if(S.trazado.esMS) prepararReferenciasMS(S.trazado);
     pintarInfo(S.trazado);
     $('estadoAR').classList.remove('err');
     revisarSoporte();
@@ -1627,7 +1672,7 @@ function aplicarEscala(){
   if(!S.grupo) return;
   let k = 1 / S.escala;
   S.escalaEf = S.escala;
-  if(S.escala > 1 && S.trazado && S.trazado.medidas){
+  if(S.escala > 1 && !S.modoPapel && S.trazado && S.trazado.medidas){
     // MAQUETA: tiene que caber en una mesa y VERSE. Una pieza de 60 cm a 1:50
     // mide 1 cm (imposible de encontrar); un galpón de 70 m a 1:20 mide 3,5 m.
     const maxD = Math.max(S.trazado.medidas.x, S.trazado.medidas.y, S.trazado.medidas.z) || 1;
@@ -1944,17 +1989,26 @@ async function iniciarAR(){
   // MODELO GRANDE (un galpón): el flujo normal de "tocá el piso y aparece
   // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
+  const _tieneRef = S.trazado && S.trazado.refEsquina && S.trazado.planImg;
   const _grande = S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= CFG.umbral2Puntos;
-  const _por2 = S.trazado && S.trazado.esModelo && S.escala === 1 &&
-                (S.modoUbic === '2puntos' || (S.modoUbic !== 'toque' && _grande));
-  if(S.trazado && S.trazado.esModelo && S.escala > 1){
+  const _por2 = _tieneRef && ((S.modoPapel) || (S.escala === 1 && (S.modoUbic === '2puntos' || (S.modoUbic !== 'toque' && _grande && S.trazado.esModelo))));
+  if(S.modoPapel && _tieneRef){
+    // SOBRE PLANO IMPRESO: cruz 1 y cruz 2 del papel
+    S.esquinando = 3; S.refP2 = S.trazado.refP2Sugerido ? { x: S.trazado.refP2Sugerido.x, z: S.trazado.refP2Sugerido.z } : null;
+    S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
+    const bM1 = $('btnMini'); if(bM1) bM1.textContent = 'Planta: GRANDE';
+    const bE1 = $('btnEsquina'); if(bE1){ bE1.textContent = '✔ Usar este punto'; bE1.classList.add('destacado'); }
+    UI.msg('PLANO IMPRESO · cruz 1: es la esquina marcada en el plano (rojo). Si tu plano tiene la cruz 1 en otro lado, tocala acá. Después "✔ Usar este punto".');
+    UI.paso('1', 'Plano impreso · paso 1 de 4 · la cruz 1 en el plano');
+  }
+  else if(S.trazado && S.escala > 1){
     // MAQUETA: sin puntos de referencia — apuntás a la mesa/piso y tocás
     UI.msg('Maqueta 1:' + S.escala + ' — apuntá a la mesa o al piso hasta ver el aro y tocá para apoyarla. 1 dedo mueve · 2 dedos giran.');
     UI.paso('1', 'Apoyar la maqueta');
   }
   else if(_por2){
-    S.esquinando = 3;  S.refP2 = null;      // paso 0: ELEGIR el punto de referencia
-    S.escala = 1;                            // los modelos van SIEMPRE 1:1
+    S.esquinando = 3;  S.refP2 = S.trazado.refP2Sugerido ? { x: S.trazado.refP2Sugerido.x, z: S.trazado.refP2Sugerido.z } : null;      // paso 0: ELEGIR el punto de referencia
+    if(!S.modoPapel) S.escala = 1;           // a tamaño real los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
     const bM0 = $('btnMini'); if(bM0) bM0.textContent = 'Planta: GRANDE';
     const bE = $('btnEsquina'); if(bE){ bE.textContent = '✔ Usar este punto'; bE.classList.add('destacado'); }
@@ -2004,7 +2058,7 @@ async function iniciarAR(){
       // el piso. La cámara de PROFUNDIDAD ve la superficie real donde apunta
       // el aro: si está más cerca que el hit (o no hay hit), manda ella.
       let pd = null;
-      if(!S.esquinando && !S.midiendo && !S.escuadrando){ try{ pd = puntoDeProfundidadCentro(frame); }catch(e){ pd = null; } }
+      if((!S.esquinando || S.modoPapel) && !S.midiendo && !S.escuadrando){ try{ pd = puntoDeProfundidadCentro(frame); }catch(e){ pd = null; } }
       let usarDepth = false;
       if(pd){
         if(!hit) usarDepth = true;
@@ -2056,7 +2110,7 @@ async function iniciarAR(){
     }
 
 
-    if(S.trazado && S.trazado.esModelo){
+    if(S.trazado && (S.trazado.esModelo || S.trazado.esMS)){
       S._miniTick = (S._miniTick||0) + 1;
       if(S._miniTick % 4 === 0) dibujarMiniPlanta();
     }
@@ -2091,6 +2145,13 @@ async function iniciarAR(){
     }
 
 
+    // AUTO-AJUSTE CONTINUO: mientras está activo, cada ~10 s vuelve a capturar y
+    // re-encaja (solo acepta si la coincidencia mejora) — caminando alrededor
+    // del equipo el 3D se va clavando solo
+    if(frame && S.autoContinuo && !S.autoCorriendo && S.autoPend === 0 && S.anclado){
+      S._autoContTick = (S._autoContTick||0) + 1;
+      if(S._autoContTick >= 600){ S._autoContTick = 0; S.autoNube = (S.nubeAcum || []).slice(); S.autoPend = 45; S._autoSilencioso = true; }
+    }
     // auto-ajuste: juntar nube de puntos de varios frames y encajar.
     // Se capturan cuadros salteados durante ~1,5 s MIENTRAS el usuario se
     // mueve: la profundidad por movimiento mejora mucho con paralaje.
@@ -2557,7 +2618,7 @@ function nubeDesdeFrame(frame){
       const u = (i + .5)/NX;
       let d = 0;
       try{ d = di.getDepthInMeters(u, v); }catch(e){ continue; }
-      if(!(d > 0.15 && d < 6)) continue;
+      if(!(d > 0.25 && d < 4.5)) continue;      // más de 4,5 m la profundidad por movimiento es invento
       const p = new THREE.Vector3(u*2-1, 1-2*v, 0.5).applyMatrix4(invP);   // punto en vista
       p.multiplyScalar(-d / p.z).applyMatrix4(M);                          // a la profundidad real → mundo
       if(p.distanceTo(centro) > R) continue;                               // solo alrededor del modelo
@@ -2575,7 +2636,17 @@ async function correrAutoAjuste(){
   S.autoCorriendo = true;
   try{
     if(!S.modeloPts) S.modeloPts = muestrearModelo(S.grupo, 3000);
-    const nube = S.autoNube || [];
+    let nube = S.autoNube || [];
+    // VOXELIZAR a 1,5 cm: los puntos repetidos de una misma cara no suman y ahogan el ICP
+    if(nube.length > 1500){
+      const vox = new Map(); const out = [];
+      for(let i=0;i<nube.length;i++){
+        const q = nube[i]; const k = (Math.round(q.x/0.015)*73856093) ^ (Math.round(q.y/0.015)*19349663) ^ (Math.round(q.z/0.015)*83492791);
+        if(vox.has(k)) continue; vox.set(k, 1); out.push(q);
+      }
+      nube = out;
+    }
+    S._ultimoGiroAuto = S.rotY; S._ultimaPosAuto = S.grupo.position.clone();
     // MOSTRAR lo que capturó el teléfono: la nube en puntos amarillos por 5 s.
     // Si los puntos no pintan la pieza real, el problema es la captura (luz,
     // distancia, moverse) — no el encaje.
@@ -2594,7 +2665,7 @@ async function correrAutoAjuste(){
     // RONDAS DE REFINAMIENTO: se busca el calce y se vuelve a encajar desde el
     // resultado hasta que la coincidencia deja de mejorar (ideal ≥95%).
     let r = null, rotY = S.rotY, pos = S.grupo.position.clone();
-    for(let ronda = 0; ronda < 3; ronda++){
+    for(let ronda = 0; ronda < 5; ronda++){
       const ri = await icpYaw(nube, S.modeloPts, rotY, pos, S.escala,
         f => { $('hudMsg').textContent = 'Encajando (ronda ' + (ronda+1) + ')… ' + Math.round(f*100) + '%'; });
       if(!ri.ok){ if(!r){ $('hudMsg').textContent = 'Auto-ajuste: ' + ri.motivo; return; } break; }
@@ -2603,17 +2674,25 @@ async function correrAutoAjuste(){
       if(r.pct >= 95) break;
     }
     if(r.pct < 40){
-      $('hudMsg').textContent = 'Coincidencia baja (' + r.pct + '%): no lo muevo. Acercá el modelo a mano sobre la pieza real y probá de nuevo (barré la pieza despacio al capturar).';
+      UI.msg('Coincidencia baja (' + r.pct + '%): no lo muevo. Apoyá el 3D más o menos sobre el equipo real y probá de nuevo (barré el equipo despacio al capturar).');
       return;
     }
+    S._deshacerAuto = { rotY: S._ultimoGiroAuto, pos: S._ultimaPosAuto, offsetY: S.offsetY };
+    if(S._autoSilencioso){
+      S._autoSilencioso = false;
+      if(S._mejorPct != null && r.pct <= S._mejorPct){ registrar('auto continuo: ' + r.pct + '% no mejora ' + S._mejorPct + '%'); return; }
+    }
+    S._mejorPct = Math.max(S._mejorPct || 0, r.pct);
     const giro = (r.rotY - S.rotY)*180/Math.PI, desp = r.pos.distanceTo(S.grupo.position);
     S.offsetY += (r.pos.y - S.grupo.position.y);
     S.rotY = r.rotY; S.grupo.rotation.y = S.rotY;
     S.grupo.position.copy(r.pos);
     sincronizarAncla(); guardarCalib();
-    $('hudMsg').textContent = (r.pct >= 95 ? '✓ CLAVADO — coincidencia ' : 'Coincidencia ') + r.pct + '% · ' +
+    S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
+    UI.msg((r.pct >= 95 ? '✓ CLAVADO — coincidencia ' : 'Coincidencia ') + r.pct + '% · ' +
       r.inliers + ' puntos a ' + (r.err*1000).toFixed(0) + ' mm (giró ' + giro.toFixed(1) + '°, movió ' +
-      (desp*100).toFixed(1) + ' cm).' + (r.pct < 95 ? ' Tocá AUTO de nuevo desde otro ángulo para subirla.' : '');
+      (desp*100).toFixed(1) + ' cm).' + (r.pct < 95 ? ' Auto-ajuste de nuevo desde otro lado para subirla, o "Deshacer ajuste".' : ''));
+    registrar('auto-ajuste ' + r.pct + '% giro ' + giro.toFixed(1) + ' desp ' + (desp*100).toFixed(0) + ' cm');
     refrescarHUD();
   }catch(e){
     $('hudMsg').textContent = 'Auto-ajuste falló: ' + (e.message || e);
@@ -2780,7 +2859,8 @@ function puntoEsquina(){
     // ── PUNTO 1 EN LA REALIDAD: el punto elegido del plano se clava acá ──
     S.esqP1 = p.clone();
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
-    S.grupo.position.copy(p).sub(ref.clone().applyQuaternion(q));
+    const kEsc = S.grupo.scale.x || 1;
+    S.grupo.position.copy(p).sub(ref.clone().multiplyScalar(kEsc).applyQuaternion(q));
     S.grupo.position.y += S.offsetY;
     S.grupo.rotation.y = S.rotY;
     S.grupo.visible = true; S.anclado = true;
@@ -2797,8 +2877,10 @@ function puntoEsquina(){
     S.planoModo = 'grande';
     const bE = $('btnEsquina');
     if(bE){ bE.textContent = '✔ Usar 2º punto'; bE.classList.add('destacado'); }
-    UI.msg((contraPared ? 'Punto 1 marcado contra la PARED ✓. ' : 'Punto 1 marcado ✓. ') +
-      'Ahora elegí el PUNTO 2 EN EL PLANO (una esquina bien alejada del primero): zoom y tocala. Después lo marcás en el lugar real.');
+    UI.msg(S.modoPapel
+      ? 'Cruz 1 marcada ✓. La cruz 2 (naranja) ya está sugerida en la esquina opuesta: si es la de tu plano, "✔ Usar 2º punto"; si no, tocá otra esquina.'
+      : ((contraPared ? 'Punto 1 marcado contra la PARED ✓. ' : 'Punto 1 marcado ✓. ') +
+      'Ahora elegí el PUNTO 2 EN EL PLANO (una esquina bien alejada del primero): zoom y tocala. Después lo marcás en el lugar real.'));
     UI.paso('3', 'Paso 3 de 4 · elegí el punto 2 en el plano');
     refrescarHUD();
     return;
@@ -2809,8 +2891,9 @@ function puntoEsquina(){
     if(!S.refP2){ S.esquinando = 4; return; }
     const uR = { x: p.x - S.esqP1.x, z: p.z - S.esqP1.z };
     const dReal = Math.hypot(uR.x, uR.z);
-    if(dReal < 1.5){
-      $('hudMsg').textContent = 'Muy cerca del punto 1 (' + dReal.toFixed(1) + ' m): cuanto más lejos, más precisa la orientación. Marcá el punto 2 en su lugar real.';
+    const dMin = S.modoPapel ? 0.08 : 1.5;
+    if(dReal < dMin){
+      UI.msg('Muy cerca del punto 1 (' + (dReal*100).toFixed(0) + ' cm): cuanto más lejos, más precisa la orientación. Marcá el punto 2 en su lugar.');
       return;
     }
     const uL = { x: S.refP2.x - ref.x, z: S.refP2.z - ref.z };
@@ -2820,7 +2903,16 @@ function puntoEsquina(){
     S.rotY = Math.atan2(-uR.z, uR.x) - Math.atan2(-uL.z, uL.x);
     const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
     S.grupo.rotation.y = S.rotY;
-    S.grupo.position.copy(S.esqP1).sub(ref.clone().applyQuaternion(q2));
+    if(S.modoPapel && dPlano > 0.01){
+      // SOBRE PLANO IMPRESO: la ESCALA la dan las dos cruces (dPlano real ↔ dReal en el papel)
+      S.escala = Math.min(1000, Math.max(5, dPlano / dReal));
+      S.escalaEf = Math.round(S.escala * 10) / 10;
+      S.grupo.scale.setScalar(1 / S.escala);
+      if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true;
+      registrar('plano impreso: escala deducida 1:' + S.escalaEf);
+    }
+    const kEsc2 = S.grupo.scale.x || 1;
+    S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(kEsc2).applyQuaternion(q2));
     S.grupo.position.y += S.offsetY;
     const dif = dReal - dPlano;
     S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
@@ -2839,9 +2931,11 @@ function puntoEsquina(){
     }
     S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
     sincronizarAncla(); guardarCalib();
-    let ctrl = 'Control de escala: plano ' + dPlano.toFixed(2) + ' m · medido ' + dReal.toFixed(2) + ' m (dif ' + Math.round(Math.abs(dif)*100) + ' cm).';
-    if(Math.abs(dif) > dPlano * .05 + .3) ctrl += ' ⚠ Diferencia grande: revisá que los puntos marcados sean los del plano.';
-    UI.msg('✓ Modelo ubicado con 2 puntos y FIJADO. ' + ctrl);
+    let ctrl = S.modoPapel
+      ? ('Escala del papel: 1:' + S.escalaEf + ' (' + dPlano.toFixed(2) + ' m reales = ' + (dReal*100).toFixed(1) + ' cm en el plano).')
+      : ('Control de escala: plano ' + dPlano.toFixed(2) + ' m · medido ' + dReal.toFixed(2) + ' m (dif ' + Math.round(Math.abs(dif)*100) + ' cm).');
+    if(!S.modoPapel && Math.abs(dif) > dPlano * .05 + .3) ctrl += ' ⚠ Diferencia grande: revisá que los puntos marcados sean los del plano.';
+    UI.msg((S.modoPapel ? '✓ 3D parado sobre el plano impreso y FIJADO. ' : '✓ Modelo ubicado con 2 puntos y FIJADO. ') + ctrl);
     UI.paso('', '');
     refrescarHUD();
     return;
@@ -2855,7 +2949,7 @@ function puntoEsquina(){
    ------------------------------------------------------------ */
 function dibujarMiniPlanta(){
   const cv = $('miniPlanta');
-  if(!cv || !S.trazado || !S.trazado.esModelo){ if(cv) cv.classList.add('oculto'); return; }
+  if(!cv || !S.trazado || !(S.trazado.esModelo || S.trazado.esMS)){ if(cv) cv.classList.add('oculto'); return; }
   const modo = S.planoModo || 'off';
   if(modo === 'off'){ cv.classList.add('oculto'); return; }
   let colocado = S.grupo && S.grupo.visible;
@@ -2917,7 +3011,7 @@ function dibujarMiniPlanta(){
   const esc = 1/S.escala, cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
   const gp = S.grupo.position;
   const aMundo = (x, z) => [ (x*cy + z*sy)*esc + gp.x, (-x*sy + z*cy)*esc + gp.z ];
-  const bb = S.trazado.geo.boundingBox;
+  const bb = (S.trazado.geo && S.trazado.geo.boundingBox) || S.trazado.bbox;
   let mnx=1e9, mnz=1e9, mxx=-1e9, mxz=-1e9;
   [[bb.min.x,bb.min.z],[bb.max.x,bb.min.z],[bb.min.x,bb.max.z],[bb.max.x,bb.max.z]].forEach(e => {
     const [wx,wz] = aMundo(e[0], e[1]);
@@ -3292,11 +3386,22 @@ $('panelAR').addEventListener('click', ev => {
     if(!S.oclDisponible){ $('hudMsg').textContent = 'Este equipo no entrega profundidad: el auto-ajuste no está disponible.'; }
     else if(!S.anclado){ $('hudMsg').textContent = 'Primero anclá el modelo más o menos sobre la pieza real.'; }
     else if(!S.autoCorriendo){
-      S.autoNube = (S.nubeAcum || []).slice(); S.autoPend = 45;
-      $('hudMsg').textContent = 'Auto-ajuste: movete DESPACIO alrededor de la pieza (1-2 pasos) mientras capturo…';
+      S.autoNube = (S.nubeAcum || []).slice(); S.autoPend = 75;
+      UI.msg('Auto-ajuste: movete DESPACIO alrededor del equipo (2-3 pasos, subiendo y bajando el celu) mientras capturo…');
     }
   }
   if(a==='color'){ cambiarPiel(); }
+  if(a==='autocont'){
+    S.autoContinuo = !S.autoContinuo;
+    b.textContent = 'Auto continuo: ' + (S.autoContinuo ? 'ON' : 'OFF');
+    UI.msg(S.autoContinuo ? 'Auto-ajuste continuo: cada 10 s vuelvo a capturar y encajar mientras caminás alrededor. Solo acepto mejoras.' : 'Auto-ajuste continuo apagado.');
+    if(S.autoContinuo) S._autoContTick = 550;
+  }
+  if(a==='deshacerauto'){
+    const u = S._deshacerAuto;
+    if(u){ S.rotY = u.rotY; S.grupo.rotation.y = S.rotY; S.grupo.position.copy(u.pos); S.offsetY = u.offsetY; sincronizarAncla(); guardarCalib(); S._deshacerAuto = null; UI.msg('Ajuste deshecho: el 3D volvió a donde lo apoyaste.'); }
+    else UI.msg('No hay ajuste para deshacer.');
+  }
   if(a==='bandera'){
     S.verBandera = S.verBandera === false ? true : false;
     if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.visible = S.verBandera;
@@ -3342,7 +3447,8 @@ $('panelAR').addEventListener('click', ev => {
       S.esquinando = 1;
       $('btnEsquina').classList.remove('destacado');
       $('btnEsquina').textContent = 'Cancelar 2 puntos';
-      UI.msg('Punto 1 confirmado ✔. Caminá hasta ESE lugar real, apuntá el aro al rincón (contra la pared es más preciso) y tocá.');
+      UI.msg(S.modoPapel ? 'Cruz 1 confirmada ✔. Apuntá el aro a la CRUZ 1 del papel (aro amarillo o rojo sobre la mesa) y tocá.'
+                         : 'Punto 1 confirmado ✔. Caminá hasta ESE lugar real, apuntá el aro al rincón (contra la pared es más preciso) y tocá.');
       UI.paso('2', 'Paso 2 de 4 · marcá el punto 1 en el lugar real');
     }else if(S.esquinando === 4){
       if(!S.refP2){
@@ -3351,7 +3457,8 @@ $('panelAR').addEventListener('click', ev => {
         S.esquinando = 5;
         $('btnEsquina').classList.remove('destacado');
         $('btnEsquina').textContent = '↩ Volver al plano';
-        UI.msg('Punto 2 confirmado ✔. Caminá hasta ESE lugar real (guiate por el plano), apuntá el aro y tocá. Ahí queda todo orientado.');
+        UI.msg(S.modoPapel ? 'Cruz 2 confirmada ✔. Apuntá el aro a la CRUZ 2 del papel y tocá. Ahí el 3D queda parado sobre el plano.'
+                           : 'Punto 2 confirmado ✔. Caminá hasta ESE lugar real (guiate por el plano), apuntá el aro y tocá. Ahí queda todo orientado.');
         UI.paso('4', 'Paso 4 de 4 · marcá el punto 2 en el lugar real');
       }
     }else if(S.esquinando === 5){
@@ -3364,8 +3471,8 @@ $('panelAR').addEventListener('click', ev => {
       $('btnEsquina').textContent = 'Anclar esquina';
       UI.msg('Ubicación por 2 puntos cancelada. Podés apoyarlo con un toque en el aro.');
       UI.paso('', '');
-    }else if(!S.trazado || !S.trazado.esModelo){
-      UI.msg('La ubicación por 2 puntos es para modelos OBJ (usa su punto de referencia).');
+    }else if(!S.trazado || !S.trazado.refEsquina){
+      UI.msg('Este trazado no tiene punto de referencia para ubicarlo por 2 puntos.');
     }else{
       // arrancar el flujo completo desde el plano
       S.esquinando = 3; S.refP2 = null; S.fijado = false;
@@ -3767,7 +3874,12 @@ document.querySelectorAll('input[name="ubic"]').forEach(r => {
 });
 document.querySelectorAll('input[name="modo"]').forEach(r => {
   r.addEventListener('change', () => {
-    S.escala = Number(r.value);
+    if(r.value === 'papel'){
+      // SOBRE PLANO IMPRESO: la escala la deducen las dos cruces del papel
+      S.modoPapel = true; S.escala = 50;
+    }else{
+      S.modoPapel = false; S.escala = Number(r.value) || 1;
+    }
     aplicarEscala();
     refrescarHUD();
   });
