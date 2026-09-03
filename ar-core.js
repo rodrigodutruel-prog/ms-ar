@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.3.0',
+  marca: 'AR', version: 'v3.3.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1847,7 +1847,7 @@ async function iniciarAR(){
   // chrome://flags/#webxr-incubations; si no está, se cae al flujo de 2 cruces)
   S.imgCfg = null; S.imgTrack = false;
   if(S.modoPapel && S.trazado && S.trazado.marcador){
-    const bmp = await bitmapMarcador();
+    const bmp = await bitmapMarcador(S.trazado.marcador);
     if(bmp){
       extras.push('image-tracking');
       S.imgCfg = { trackedImages: [{ image: bmp, widthInMeters: (S.trazado.marcador.lado_mm || 60) / 1000 }] };
@@ -2009,7 +2009,7 @@ async function iniciarAR(){
   if(S.modoPapel && S.imgTrack){
     // SOBRE PLANO IMPRESO con RECONOCIMIENTO: apuntar al marcador y listo
     S.esquinando = 0; S.marcadorBuscando = true;
-    UI.msg('Apuntá la cámara al MARCADOR del plano (el cuadrado con patrón junto a la cruz 1), a 30-50 cm. El 3D se ubica solo.');
+    UI.msg('Apuntá la cámara al QR del plano (junto a la cruz 1), a 30-50 cm, con la hoja bien iluminada. El 3D se monta solo sobre la hoja.');
     UI.paso('1', 'Plano impreso · buscando el marcador');
   }
   else if(S.modoPapel && _tieneRef){
@@ -2344,7 +2344,19 @@ function patronMarcador(){
   for(let j=0;j<n;j++) for(let i=0;i<n;i++){ const r = rnd(); cel.push(r < .42 ? 1 : (r < .58 ? 2 : 0)); }
   return cel;
 }
-async function bitmapMarcador(){
+async function bitmapMarcador(mk){
+  // QR embebido por la Calculadora (ar.marcador.png): se rastrea ESA imagen
+  if(mk && mk.png){
+    try{
+      const img = new Image();
+      await new Promise((ok, err) => { img.onload = ok; img.onerror = err; img.src = mk.png; });
+      // el QR va sobre fondo blanco con su zona muda (así lo imprime la hoja)
+      const W = 900, cv = document.createElement('canvas'); cv.width = cv.height = W;
+      const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, W);
+      g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, W, W);
+      return await createImageBitmap(cv);
+    }catch(e){ /* cae al patrón */ }
+  }
   const W = 900, cv = document.createElement('canvas'); cv.width = cv.height = W;
   const g = cv.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
