@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.0.2',
+  marca: 'AR', version: 'v3.0.3',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1557,7 +1557,17 @@ function nuevaEscena(){
 
 function aplicarEscala(){
   if(!S.grupo) return;
-  const k = 1 / S.escala;
+  let k = 1 / S.escala;
+  S.escalaEf = S.escala;
+  if(S.escala > 1 && S.trazado && S.trazado.medidas){
+    // MAQUETA: tiene que caber en una mesa y VERSE. Una pieza de 60 cm a 1:50
+    // mide 1 cm (imposible de encontrar); un galpón de 70 m a 1:20 mide 3,5 m.
+    const maxD = Math.max(S.trazado.medidas.x, S.trazado.medidas.y, S.trazado.medidas.z) || 1;
+    const lado = maxD * k;
+    if(lado < 0.30) k = 0.30 / maxD;
+    if(lado > 2.0)  k = 2.0 / maxD;
+    S.escalaEf = Math.round(1 / k * 10) / 10;
+  }
   S.grupo.scale.setScalar(k);
   if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = S.escala > 1;
 }
@@ -1840,6 +1850,7 @@ async function iniciarAR(){
       : 'Sin detección de piso: tocá la pantalla o usá "Traer acá".'));
   $('hudDatos').textContent = 'MODO ' + usado;
   SENS.dist = (S.escala === 1) ? 6 : 2.5;
+  S.oclusion = (S.escala === 1);   // en maqueta la profundidad ruidosa de cerca "tapaba" el modelo
   $('btnOcl').textContent = 'Oclusión: ' + (S.oclusion ? 'ON' : 'OFF');
   $('btnMedir').textContent = 'Medir: OFF';
 
@@ -2015,9 +2026,10 @@ async function iniciarAR(){
         S.rotY = S.ancRotLocal + yA;
         S.grupo.rotation.y = S.rotY;
         S.grupo.visible = true;
-      }else if(!S.ancListo && S.anclado){
-        S.grupo.visible = false;   // todavía no re-localizó: no mostrar en cualquier lado
       }
+      // (antes: si el ancla todavía no tenía pose, el modelo se ESCONDÍA — en una
+      // mesa con tracking pobre el ancla puede no trackear nunca y la maqueta
+      // "desaparecía". Ahora se queda donde se apoyó hasta que el ancla hable.)
     }
 
     // luz ambiente: modular el brillo del modelo con la luz real del lugar
@@ -2091,7 +2103,8 @@ function apoyarEnReticula(){
     S._pedirAncla = true;
   }
   if(S.escala > 1){
-    UI.msg('Maqueta apoyada. Tocá otro lugar para moverla · 2 dedos giran · cuando esté bien, "Fijar".');
+    const _mx = S.trazado && S.trazado.medidas ? Math.max(S.trazado.medidas.x, S.trazado.medidas.y, S.trazado.medidas.z) / (S.escalaEf || S.escala) : 0;
+    UI.msg('Maqueta apoyada (mide ' + (_mx >= 1 ? _mx.toFixed(1) + ' m' : Math.round(_mx*100) + ' cm') + ' de lado, escala 1:' + (S.escalaEf || S.escala) + '). Tocá otro lugar para moverla · 2 dedos giran · "Fijar" cuando esté bien.');
   }else if(S.trazado && S.trazado.esModelo){
     UI.msg('Modelo apoyado en el aro. Tocá otro lugar para re-apoyarlo · 1 dedo mueve · 2 dedos giran · "Fijar" cuando esté bien.');
   }else{
@@ -2742,7 +2755,7 @@ function dibujarMiniPlanta(){
 }
 
 function refrescarHUD(){
-  const esc = S.escala === 1 ? '1:1' : ('1:' + S.escala);
+  const esc = S.escala === 1 ? '1:1' : ('1:' + (S.escalaEf || S.escala));
   let lejos = '';
   if(S._distModelo != null && S.anclado){
     if(S._distModelo > 30) lejos = '\n⚠ EL MODELO ESTÁ A ' + Math.round(S._distModelo) + ' m — usá "Traer acá"';
@@ -3165,6 +3178,7 @@ $('panelAR').addEventListener('click', ev => {
     }
     S.escala = escalas[(escalas.indexOf(S.escala)+1) % escalas.length];
     aplicarEscala();
+    S.oclusion = (S.escala === 1); $('btnOcl').textContent = 'Oclusión: ' + (S.oclusion ? 'ON' : 'OFF');
     if(SENS.activo){ SENS.dist = (S.escala===1) ? 8 : 2.5; colocarAlFrente(); }
   }
   guardarCalib();
