@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.4.1',
+  marca: 'AR', version: 'v3.4.2',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -596,6 +596,11 @@ function construirGrupoMS(tz){
   const matValv = new THREE.MeshStandardMaterial({ color:0x3b4048, metalness:.85, roughness:.35 });
   const matPal  = new THREE.MeshBasicMaterial({ color:PAL.acento });
   const bajantes = (paq.tramos||[]).filter(t => t.tipo === 'bajante' && t.a && t.b);
+  // altura de las BOCAS de máquina: donde terminan los bajantes de una boca (1,5 m típico);
+  // en las de varias bocas el bajante termina más arriba, en la salida del pantalón
+  let zBocas = 1e9;
+  bajantes.forEach(t => { const zb = Math.min(t.a.z || 0, t.b.z || 0); if(zb < zBocas) zBocas = zb; });
+  if(!(zBocas < 1e8)) zBocas = 1.5;
   (paq.maquinas||[]).forEach(m => {
     if(m.x == null || m.y == null) return;
     // el bajante de esta máquina: el que baja hasta su posición
@@ -640,7 +645,7 @@ function construirGrupoMS(tz){
       const cono = new THREE.Mesh(new THREE.CylinderGeometry(rB, ancho/2, hP, 20, 1, true), matD(dB));
       cono.position.set(P.x, P.y - hP/2, P.z); cono.userData.esTubo = true; grpTubos.add(cono);
       addBrida(P, new THREE.Vector3(0,-1,0), dB);
-      const zBase = P.y - hP, zBoca = Math.max(0.6, P.y - 0.9);
+      const zBase = P.y - hP, zBoca = Math.min(zBase - 0.3, zBocas);   // las mangueras bajan hasta la boca de la máquina
       bocasM.forEach((b, i) => {
         const off = (i - (bocasM.length-1)/2) * 0.12 * 2;
         const A = new THREE.Vector3(P.x + off*.5, zBase, P.z), B = new THREE.Vector3(P.x + off, zBoca, P.z);
