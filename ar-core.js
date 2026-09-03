@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.0',
+  marca: 'AR', version: 'v3.1.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1104,11 +1104,13 @@ function prepararPlanoImagen(tz){
     // en blanco.
     const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0x1a2432, side: THREE.DoubleSide }));
     esc.add(mesh);
-    try{
-      const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
-        new THREE.LineBasicMaterial({ color: 0xffffff }));
-      esc.add(bordes);
-    }catch(e){}
+    if(tz.tris < 60000){   // en modelos grandes las aristas del plano costaban segundos: va la masa sola
+      try{
+        const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
+          new THREE.LineBasicMaterial({ color: 0xffffff }));
+        esc.add(bordes);
+      }catch(e){}
+    }
     const pcx = (bb.min.x + bb.max.x) / 2, pcz = (bb.min.z + bb.max.z) / 2;
     const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2) * 1.04;
     // CORTE DE PLANO: en un edificio, mirar desde el techo muestra las chapas
@@ -1214,8 +1216,9 @@ function construirGrupoModelo(tz){
 
   // aristas blancas: los pliegues y gajos se leen como en el plano.
   // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
-  // (EdgesGeometry de 150k caras tardaba segundos y "tildaba" la colocación)
-  if(tz.tris < 80000){
+  // (EdgesGeometry de 80k caras = varios segundos de cuelgue en el celu: solo
+  // modelos chicos, y recién 1,5 s después de arrancar, con el AR ya andando)
+  if(tz.tris < 25000){
     setTimeout(() => {
       try{
         const bordes = new THREE.LineSegments(
@@ -1224,7 +1227,7 @@ function construirGrupoModelo(tz){
         );
         g.add(bordes);
       }catch(e){}
-    }, 60);
+    }, 1500);
   }
 
   const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 2, 20, PAL.acento, PAL.grilla);
@@ -1638,8 +1641,21 @@ function esWebView(){
   return /; wv\)/.test(ua) || (/Android/.test(ua) && !/Chrome\/\d+/.test(ua));
 }
 
+// registro de lo que pasa en la sesión: se guarda en el celu y se muestra
+// con el botón Diagnóstico — así se puede ver qué pasó aunque Chrome se cuelgue
+S._log = [];
+function registrar(txt){
+  try{
+    const t = new Date(); const hh = t.toTimeString().slice(0,8);
+    S._log.push(hh + ' ' + txt); if(S._log.length > 80) S._log.shift();
+    localStorage.setItem('ar-registro', JSON.stringify(S._log));
+  }catch(e){}
+}
+try{ const prev = JSON.parse(localStorage.getItem('ar-registro') || '[]'); if(prev.length){ S._log = prev.slice(-40); registrar('--- app abierta ' + VERSION + ' ---'); } }catch(e){}
+
 async function diagnostico(){
   const l = [];
+  l.push('version     : ' + VERSION + ' (' + CFG.marca + ')');
   l.push('protocolo   : ' + location.protocol);
   l.push('host        : ' + (location.host || '(ninguno)'));
   l.push('secureCtx   : ' + window.isSecureContext);
@@ -1653,6 +1669,9 @@ async function diagnostico(){
     catch(e){}
   }
   l.push('UA          : ' + navigator.userAgent);
+  l.push('');
+  l.push('REGISTRO (ultima sesion):');
+  (S._log || []).slice(-40).forEach(x => l.push('  ' + x));
   const d = $('diag');
   d.classList.remove('oculto');
   d.textContent = l.join('\n');
@@ -1790,7 +1809,7 @@ async function iniciarAR(){
   for(const it of intentos){
     try{
       session = await navigator.xr.requestSession('immersive-ar', it.cfg);
-      usado = it.nom;
+      usado = it.nom; registrar('sesion AR: ' + it.nom);
       usaFloor = !!(it.cfg.requiredFeatures && it.cfg.requiredFeatures.indexOf('local-floor') >= 0);
       break;
     }catch(e){
@@ -1812,6 +1831,7 @@ async function iniciarAR(){
 
   S.session = session;
   S.overlayOK = !!(session.domOverlayState && session.domOverlayState.type);
+  registrar('overlay ' + (S.overlayOK ? 'OK' : 'NO') + ' - escala 1:' + S.escala + ' - ' + (S.trazado && S.trazado.esModelo ? 'modelo ' + Math.round(S.trazado.tris) + ' caras' : 'red'));
   // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
   // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
   // y la pantalla queda "en la cámara" sin dibujar nada.
@@ -1859,10 +1879,7 @@ async function iniciarAR(){
       }catch(e2){
         S.hitSource = await session.requestHitTestSource({ space: refViewer });
       }
-      // para APOYAR (mesa / piso) se usa solo lo que ARCore detectó como PLANO:
-      // los puntos sueltos traen una normal cualquiera y hacían saltar el modelo
-      try{ S.hitPlanos = await session.requestHitTestSource({ space: refViewer, entityTypes: ['plane'] }); }catch(e3){ S.hitPlanos = null; }
-    }catch(e){ S.hitSource = null; S.hitPlanos = null; }
+    }catch(e){ S.hitSource = null; }
   }
 
   // ── v0.8: anclaje persistente ─────────────────────────────────
@@ -1963,15 +1980,23 @@ async function iniciarAR(){
   renderer.setAnimationLoop((t, frame) => {
     // retícula: antes de anclar, y también mientras se mide
     if(frame && (!S.anclado || !S.fijado || S.midiendo || S.escuadrando || S.esquinando) && S.hitSource){
-      const fuente = (S.esquinando || !S.hitPlanos) ? S.hitSource : S.hitPlanos;
-      const hits = frame.getHitTestResults(fuente);
-      if(hits.length){
-        const pose = hits[0].getPose(S.refSpaceLocal);
+      const hits = frame.getHitTestResults(S.hitSource);
+      // Para APOYAR: el impacto MÁS CERCANO cuya superficie mira hacia arriba
+      // (mesa, banco, piso). Los puntos sueltos SÍ cuentan: en una mesa chica
+      // ARCore tarda en armar el plano y, sin ellos, el aro caía al piso de abajo.
+      // En el replanteo por 2 puntos vale cualquiera (marcar contra la pared).
+      let hit = null, pose = null;
+      for(let hi = 0; hi < hits.length; hi++){
+        const ps = hits[hi].getPose(S.refSpaceLocal); if(!ps) continue;
+        if(S.esquinando || S.midiendo || S.escuadrando || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
+      }
+      if(!hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
+      if(hit && pose){
         S.reticula.visible = true;
         S.reticula.matrix.fromArray(pose.transform.matrix);
         S.reticula.matrix.decompose(S.reticula.position, S.reticula.quaternion, S.reticula.scale);
         S.reticula.scale.setScalar(1);
-        S.ultimoHit = hits[0];
+        S.ultimoHit = hit;
         // piso u pared: el eje Y del pose del hit es la normal de la superficie
         const _ny = S.reticula.matrix.elements[5];  // normal del hit (antes de re-escalar)
         S.hitEsPared = Math.abs(_ny) < 0.5;
@@ -2129,6 +2154,7 @@ async function iniciarAR(){
    ------------------------------------------------------------ */
 function tapPantalla(ev){
   if(!S.session || !S.grupo) return;
+  registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
   if(S.esquinando){ puntoEsquina(); return; }
   if(S.midiendo){ agregarPuntoMedicion(); return; }
   if(S.escuadrando){ agregarPuntoEscuadra(); return; }
@@ -2149,6 +2175,7 @@ function tapPantalla(ev){
 
 function apoyarEnReticula(){
   S.grupo.position.copy(S.reticula.position);
+  registrar('apoyado en (' + S.reticula.position.x.toFixed(2) + ', ' + S.reticula.position.y.toFixed(2) + ', ' + S.reticula.position.z.toFixed(2) + ') escala ef 1:' + (S.escalaEf || S.escala));
   // (se apoya EXACTAMENTE donde está el aro — sobre una mesa, sobre el piso —
   // sin proyectar a ningún lado: la proyección al piso mandaba la maqueta
   // de la mesa al suelo cuando el hit venía con la normal torcida)
@@ -2220,8 +2247,11 @@ function leerAncla(){
   const k = claveAncla(); if(!k) return null;
   try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; }
 }
+let _tGuardAncla = 0;
 function guardarAncla(){
   const k = claveAncla(); if(!k || !S.ancUuid) return;
+  const ahora = performance.now(); if(ahora - _tGuardAncla < 500) return;   // no en cada pointermove
+  _tGuardAncla = ahora;
   try{ localStorage.setItem(k, JSON.stringify({ uuid:S.ancUuid, delta:S.ancDelta.toArray(), rotLocal:S.ancRotLocal })); }catch(e){}
 }
 function borrarAncla(){
@@ -2254,6 +2284,7 @@ function sincronizarAncla(){
 
 async function instalarAncla(anchor, session){
   if(!anchor || !S.grupo) return;
+  registrar('ancla instalada');
   S.anchor = anchor; S.ancListo = false;
   S._fijarDelta = true;   // en la primera pose, el offset se calcula desde el trazado
   // handle persistente
@@ -2849,12 +2880,12 @@ function obtenerRenderer(){
 
 function cerrarAR(desdeEvento){
   if(S._cerrando) return;            // guard de reentrada: 'end' + botón Salir
+  registrar('cierre AR ' + (desdeEvento ? '(evento end / atras)' : '(boton Salir)'));
   S._cerrando = true;
   setTimeout(() => { S._cerrando = false; }, 1500);
   const r = S.renderer;
   const hs = S.hitSource;
   if(hs){ try{ hs.cancel(); }catch(e){} }
-  if(S.hitPlanos){ try{ S.hitPlanos.cancel(); }catch(e){} S.hitPlanos = null; }
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
@@ -3564,6 +3595,7 @@ const DEMO = {
 
 /* --- errores visibles en pantalla, para no quedarse sin saber qué pasó --- */
 function mostrarError(txt){
+  registrar('ERROR: ' + txt);
   const d = $('diag');
   d.classList.remove('oculto');
   d.textContent = 'ERROR: ' + txt + '\n\n' + (d.textContent || '');
