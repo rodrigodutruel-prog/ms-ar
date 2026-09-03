@@ -205,6 +205,15 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
         <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza o equipo</small></span></label>
         <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>galpón · casa</small></span></label>
       </div>
+      <div class="lbl">Hoja impresa (solo "Sobre plano impreso")</div>
+      <select id="selImpreso" class="mini" style="width:100%">
+        <option value="0" selected>Medir el QR con la cámara (automático)</option>
+        <option value="1">Impresa al 100 % (como se generó)</option>
+        <option value="0.7071">Reducida una hoja (A1 en A2, A3 en A4): 71 %</option>
+        <option value="0.5">Reducida dos hojas (A1 en A3): 50 %</option>
+        <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
+        <option value="2">Ampliada dos hojas: 200 %</option>
+      </select>
       <div class="nota"><b>Sobre plano impreso</b>: imprimí el plano con el botón "Plano AR" de la Calculadora (o con Plano_AR_desde_OBJ para cualquier 3D), apoyalo en la mesa y apuntá al QR de la hoja: el 3D se monta solo encima, a la escala del papel. Si el teléfono no tiene el reconocimiento de imagen (Chrome: chrome://flags/#webxr-incubations), tocás la cruz 1 y la cruz 2. Con <b>un toque</b> el modelo se apoya donde está el aro rojo: tocás otro lugar y se mueve, 2 dedos lo giran, y "Fijar" lo deja clavado. Con <b>2 puntos</b> marcás dos esquinas del plano en el lugar real y el edificio queda orientado exacto.</div>
     </section>
 
@@ -231,7 +240,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
     </section>
   </main>
 
-  <footer class="pie"><span id="ver">v3.4.2</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+  <footer class="pie"><span id="ver">v3.4.3</span> · MS AR · Depto. Innovación y Desarrollo</footer>
 </div>
 
 <!-- ======= CAPA AR ======= -->
@@ -329,7 +338,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v3.4.2',
+  marca: 'MS', version: 'v3.4.3',
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,

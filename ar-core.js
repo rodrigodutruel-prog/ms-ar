@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.4.2',
+  marca: 'AR', version: 'v3.4.3',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1944,7 +1944,9 @@ async function iniciarAR(){
     const bmp = await bitmapMarcador(S.trazado.marcador);
     if(bmp){
       extras.push('image-tracking');
-      S.imgCfg = { trackedImages: [{ image: bmp, widthInMeters: (S.trazado.marcador.lado_mm || 60) / 1000 }] };
+      const fImp = S.factorImpresion || 1;   // hoja impresa reducida/ampliada (A1→A2 = 0,71…)
+      S.imgCfg = { trackedImages: [{ image: bmp, widthInMeters: (S.trazado.marcador.lado_mm || 60) / 1000 * fImp }] };
+      registrar('marcador declarado ' + Math.round((S.trazado.marcador.lado_mm || 60) * fImp) + ' mm (factor impresión ' + fImp.toFixed(2) + ')');
     }
   }
 
@@ -2275,8 +2277,21 @@ async function iniciarAR(){
           const dirX = new THREE.Vector3(1,0,0).applyQuaternion(q);
           const th = Math.atan2(-dirX.z, dirX.x);
           const mk = S.trazado.marcador;
-          const esc = mk.escala || S.escala || 50;
-          if(S.escala !== esc){ S.escala = esc; S.escalaEf = esc; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
+          // FACTOR DE IMPRESIÓN: si la hoja se imprimió en otro tamaño (A1 en A2 = 71 %),
+          // el QR mide distinto y la escala del papel también. Manda el selector "Hoja
+          // impresa"; si está en "medir", se usa el ancho que ARCore le mide al QR.
+          let fac = S.factorImpresion || 0;
+          if(!fac){
+            const mw = r.measuredWidthInMeters;
+            const decl = (mk.lado_mm || 60) / 1000;
+            if(mw > 0.01 && decl > 0){
+              const fm = mw / decl;
+              if(fm > 0.2 && fm < 5){ S._facMedido = S._facMedido ? (S._facMedido*0.9 + fm*0.1) : fm; }
+            }
+            fac = S._facMedido || 1;
+          }
+          const esc = (mk.escala || S.escala || 50) / fac;
+          if(Math.abs(S.escala - esc) > esc*0.01){ S.escala = esc; S.escalaEf = Math.round(esc*10)/10; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
           const k = 1/esc;
           // centro del marcador en coordenadas LOCALES del modelo (metros reales) → escalado y girado
           let mLocal;
@@ -2293,8 +2308,8 @@ async function iniciarAR(){
           S.grupo.visible = true; S.anclado = true; visto = true;
           if(S.marcadorBuscando){
             S.marcadorBuscando = false;
-            registrar('marcador reconocido: escala 1:' + esc + ' giro ' + (th*180/Math.PI).toFixed(1));
-            UI.msg('✓ Plano reconocido: el 3D está parado sobre el papel (escala 1:' + esc + '). Sigue al plano mientras se vea el marcador; "Fijar" lo deja clavado.');
+            registrar('marcador reconocido: escala 1:' + (Math.round(esc*10)/10) + ' giro ' + (th*180/Math.PI).toFixed(1) + ' factor impresión ' + fac.toFixed(2) + (S.factorImpresion ? ' (manual)' : ' (medido)'));
+            UI.msg('✓ Plano reconocido: el 3D está parado sobre el papel (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Sigue al plano mientras se vea el QR; "Fijar" lo deja clavado.');
             UI.paso('', '');
           }
           break;
@@ -3297,7 +3312,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
@@ -4067,6 +4082,8 @@ $('inpArchivo').addEventListener('change', ev => {
   fr.readAsText(f);
 });
 
+const _selImp = document.getElementById('selImpreso');
+if(_selImp) _selImp.addEventListener('change', () => { S.factorImpresion = parseFloat(_selImp.value) || 0; S._facMedido = 0; });
 document.querySelectorAll('input[name="ubic"]').forEach(r => {
   r.addEventListener('change', () => { S.modoUbic = r.value; });
 });
