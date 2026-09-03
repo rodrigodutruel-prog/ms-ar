@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.0.1',
+  marca: 'AR', version: 'v3.0.2',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1649,6 +1649,7 @@ async function iniciarAR(){
 
   const renderer = obtenerRenderer();
   const canvas = renderer.domElement;
+  canvas.style.visibility = '';
   document.body.appendChild(canvas);
   canvas.style.position = 'fixed';
   canvas.style.top = '0'; canvas.style.left = '0';
@@ -1883,7 +1884,10 @@ async function iniciarAR(){
   if(!S.overlayOK) session.addEventListener('select', ev => tapPantalla(ev));
 
 
-  session.addEventListener('end', cerrarAR);
+  session.addEventListener('end', () => cerrarAR(true));
+  // BOTÓN ATRÁS de Android: en vez de que Chrome mate la sesión de golpe, se
+  // sale por el camino limpio (el mismo que el botón Salir)
+  try{ history.pushState({ ar: 1 }, ''); S._histAR = true; }catch(e){}
 
   renderer.setAnimationLoop((t, frame) => {
     // retícula: antes de anclar, y también mientras se mide
@@ -2767,8 +2771,13 @@ function obtenerRenderer(){
   return _rendererUnico;
 }
 
-function cerrarAR(){
+function cerrarAR(desdeEvento){
+  if(S._cerrando) return;            // guard de reentrada: 'end' + botón Salir
+  S._cerrando = true;
+  setTimeout(() => { S._cerrando = false; }, 1500);
   const r = S.renderer;
+  const hs = S.hitSource;
+  if(hs){ try{ hs.cancel(); }catch(e){} }
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
@@ -2784,11 +2793,39 @@ function cerrarAR(){
   $('capaUI').classList.remove('oculto');
   if(r){
     try{ r.setAnimationLoop(null); }catch(e){}
-    try{ r.domElement.remove(); }catch(e){}
+    // el canvas se ESCONDE ya, pero se saca del DOM recién cuando ARCore terminó
+    // de desarmar la sesión: sacarlo en el mismo instante del 'end' (botón atrás
+    // de Android) dejaba a Chrome colgado hasta el "no responde".
+    try{ r.domElement.style.visibility = 'hidden'; }catch(e){}
+    setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, desdeEvento ? 900 : 400);
     // el renderer NO se destruye: se reusa en la próxima sesión (destruirlo
     // durante el desarme de ARCore congelaba la app al Salir)
   }
 }
+
+// Salir de la sesión AR por el camino seguro: devolver la pantalla YA y pedir
+// el cierre de la sesión aparte (llamar end() desde adentro de un evento de la
+// capa AR deadlockeaba Chrome con cuadros XR en vuelo).
+function salirAR(){
+  if(SENS.activo){ cerrarARSensor(); return; }
+  const s = S.session;
+  if(!s){ if(S.renderer) cerrarAR(false); return; }
+  cerrarAR(false);
+  setTimeout(() => {
+    try{
+      const p = s.end();
+      if(p && p.catch) p.catch(() => {});
+    }catch(e){}
+  }, 50);
+}
+
+// El botón ATRÁS: cierra lo que esté abierto (AR, sensores o visor 3D) en vez
+// de dejar que el navegador lo mate a su manera.
+window.addEventListener('popstate', () => {
+  if(S.session || SENS.activo){ S._histAR = false; salirAR(); return; }
+  if(!$('visor3D').classList.contains('oculto')){ S._hist3D = false; const b = $('btnSalir3D'); if(b.onclick) b.onclick(); return; }
+  S._histAR = false; S._hist3D = false;
+});
 
 /* ------------------------------------------------------------
    7pre. GESTOS DE CALIBRACIÓN EN AR
@@ -3133,22 +3170,7 @@ $('panelAR').addEventListener('click', ev => {
   guardarCalib();
   refrescarHUD();
 });
-$('btnSalirAR').addEventListener('click', () => {
-  if(SENS.activo){ cerrarARSensor(); return; }
-  const s = S.session;
-  if(S.hitSource){ try{ S.hitSource.cancel(); }catch(e){} S.hitSource = null; }
-  // devolver la pantalla YA y pedir el cierre de la sesión aparte:
-  // llamar end() desde adentro del tap en la capa AR deadlockeaba Chrome
-  cerrarAR();
-  if(s){
-    setTimeout(() => {
-      try{
-        const p = s.end();
-        if(p && p.catch) p.catch(() => {});
-      }catch(e){}
-    }, 50);
-  }
-});
+$('btnSalirAR').addEventListener('click', salirAR);
 
 /* ------------------------------------------------------------
    7bis. MODO AR POR SENSORES (sin ARCore, sin WebXR)
@@ -3336,7 +3358,7 @@ function cerrarARSensor(){
   if(SENS.stream){ SENS.stream.getTracks().forEach(t => t.stop()); SENS.stream = null; }
   const vid = $('videoCam');
   vid.srcObject = null; vid.classList.add('oculto');
-  if(S.renderer){ try{ S.renderer.setAnimationLoop(null); }catch(e){} S.renderer.domElement.remove(); S.renderer = null; }  // el renderer se reusa, no se destruye
+  if(S.renderer){ const r = S.renderer; S.renderer = null; try{ r.setAnimationLoop(null); }catch(e){} try{ r.domElement.style.visibility = 'hidden'; }catch(e){} setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, 400); }  // el renderer se reusa, no se destruye
   S.grupo = null; S.anclado = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
@@ -3352,7 +3374,9 @@ function iniciar3D(){
   $('capaUI').classList.add('oculto');
 
   const renderer = obtenerRenderer();
+  renderer.domElement.style.visibility = '';
   cont.appendChild(renderer.domElement);
+  try{ history.pushState({ v3d: 1 }, ''); S._hist3D = true; }catch(e){}
 
   const scene = nuevaEscena();
   const cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, .05, 500);
@@ -3414,6 +3438,7 @@ function iniciar3D(){
     el.remove();                    // el renderer se reusa, no se destruye
     cont.classList.add('oculto');
     $('capaUI').classList.remove('oculto');
+    $('btnSalir3D').onclick = null;
   };
 }
 
