@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.1',
+  marca: 'AR', version: 'v3.1.2',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2000,7 +2000,24 @@ async function iniciarAR(){
         // piso u pared: el eje Y del pose del hit es la normal de la superficie
         const _ny = S.reticula.matrix.elements[5];  // normal del hit (antes de re-escalar)
         S.hitEsPared = Math.abs(_ny) < 0.5;
-        S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : PAL.acento);
+        S.hitDesdeDepth = false;
+        // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
+        // mesa lisa no da puntos) → el hit atraviesa hasta el PISO. Si la cámara
+        // de profundidad ve una superficie MÁS CERCA que el hit, manda esa.
+        if(!S.esquinando && !S.midiendo && !S.escuadrando){
+          const pd = puntoDeProfundidadCentro(frame);
+          if(pd){
+            const camP = pd.cam, dHit = camP.distanceTo(S.reticula.position);
+            if(pd.dist < dHit - 0.12){
+              S.reticula.position.copy(pd.p);
+              S.reticula.quaternion.identity();       // superficie horizontal (mesa / banco)
+              S.hitEsPared = false;
+              S.hitDesdeDepth = true;
+              S.ultimoHit = null;                     // ancla libre (no hay trackable en ese punto)
+            }
+          }
+        }
+        S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : (S.hitDesdeDepth ? PAL.aviso : PAL.acento));
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
@@ -2154,7 +2171,7 @@ async function iniciarAR(){
    ------------------------------------------------------------ */
 function tapPantalla(ev){
   if(!S.session || !S.grupo) return;
-  registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
+  registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '') + (S.hitDesdeDepth ? ' (por profundidad)' : ' (hit ARCore)')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
   if(S.esquinando){ puntoEsquina(); return; }
   if(S.midiendo){ agregarPuntoMedicion(); return; }
   if(S.escuadrando){ agregarPuntoEscuadra(); return; }
@@ -2418,6 +2435,39 @@ function agregarPuntoEscuadra(){
   $('btnEscuadrar').textContent = 'Escuadrar';
   $('hudMsg').textContent = 'Escuadrado: el modelo quedó paralelo al borde. Girar 90° si hace falta.';
   refrescarHUD();
+}
+
+/* ------------------------------------------------------------
+   7f0. PUNTO DE PROFUNDIDAD en el centro de la pantalla (ref space)
+   Lo que la cámara de profundidad ve justo donde apunta el aro:
+   {p: punto en el mundo, dist: distancia a la cámara, cam: pos cámara}
+   ------------------------------------------------------------ */
+const _pdInvP = new THREE.Matrix4(), _pdM = new THREE.Matrix4();
+function puntoDeProfundidadCentro(frame){
+  let di = null, view = null;
+  try{
+    const vp = frame.getViewerPose(S.refSpaceLocal);
+    if(!vp || !vp.views.length) return null;
+    view = vp.views[0];
+    di = frame.getDepthInformation(view);
+  }catch(e){ return null; }
+  if(!di || typeof di.getDepthInMeters !== 'function') return null;
+  // promedio robusto de un parche chico alrededor del centro (la profundidad por movimiento es ruidosa)
+  const ds = [];
+  for(let j=-2;j<=2;j++) for(let i=-2;i<=2;i++){
+    let d = 0;
+    try{ d = di.getDepthInMeters(0.5 + i*0.012, 0.5 + j*0.012); }catch(e){ continue; }
+    if(d > 0.2 && d < 5) ds.push(d);
+  }
+  if(ds.length < 8) return null;
+  ds.sort((a,b) => a-b);
+  const d = ds[Math.floor(ds.length/2)];
+  _pdInvP.fromArray(view.projectionMatrix).invert();
+  _pdM.fromArray(view.transform.matrix);
+  const p = new THREE.Vector3(0, 0, 0.5).applyMatrix4(_pdInvP);     // rayo del centro en coords de vista
+  p.multiplyScalar(-d / p.z).applyMatrix4(_pdM);                     // a la profundidad medida → mundo
+  const cam = new THREE.Vector3().setFromMatrixPosition(_pdM);
+  return { p: p, dist: d, cam: cam };
 }
 
 /* ------------------------------------------------------------
@@ -2904,8 +2954,15 @@ function cerrarAR(desdeEvento){
     // el canvas se ESCONDE ya, pero se saca del DOM recién cuando ARCore terminó
     // de desarmar la sesión: sacarlo en el mismo instante del 'end' (botón atrás
     // de Android) dejaba a Chrome colgado hasta el "no responde".
-    try{ r.domElement.style.visibility = 'hidden'; }catch(e){}
-    setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, desdeEvento ? 900 : 400);
+    if(desdeEvento){
+      // la sesión la terminó Android (atrás / otra app): no tocar el canvas en ese instante
+      try{ r.domElement.style.visibility = 'hidden'; }catch(e){}
+      setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, 900);
+    }else{
+      // botón Salir: sacar el canvas YA y pedir session.end() aparte — es el patrón
+      // que venía funcionando; esconderlo primero y sacarlo después bloqueaba la app
+      try{ r.domElement.remove(); }catch(e){}
+    }
     // el renderer NO se destruye: se reusa en la próxima sesión (destruirlo
     // durante el desarme de ARCore congelaba la app al Salir)
   }
@@ -3476,7 +3533,7 @@ function cerrarARSensor(){
   if(SENS.stream){ SENS.stream.getTracks().forEach(t => t.stop()); SENS.stream = null; }
   const vid = $('videoCam');
   vid.srcObject = null; vid.classList.add('oculto');
-  if(S.renderer){ const r = S.renderer; S.renderer = null; try{ r.setAnimationLoop(null); }catch(e){} try{ r.domElement.style.visibility = 'hidden'; }catch(e){} setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, 400); }  // el renderer se reusa, no se destruye
+  if(S.renderer){ const r = S.renderer; S.renderer = null; try{ r.setAnimationLoop(null); }catch(e){} try{ r.domElement.remove(); }catch(e){} }  // el renderer se reusa, no se destruye
   S.grupo = null; S.anclado = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
