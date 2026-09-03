@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.1.2',
+  marca: 'AR', version: 'v3.1.3',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1838,7 +1838,7 @@ async function iniciarAR(){
   try{
     const nat = (typeof XRWebGLLayer !== 'undefined' && XRWebGLLayer.getNativeFramebufferScaleFactor)
       ? XRWebGLLayer.getNativeFramebufferScaleFactor(session) : 1;
-    renderer.xr.setFramebufferScaleFactor(Math.min(Math.max(nat || 1, 1), 2));
+    renderer.xr.setFramebufferScaleFactor(Math.min(Math.max(nat || 1, 1), 1.2));
   }catch(e){}
   renderer.xr.setReferenceSpaceType(usaFloor ? 'local-floor' : 'local');
   try{
@@ -1991,7 +1991,30 @@ async function iniciarAR(){
         if(S.esquinando || S.midiendo || S.escuadrando || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
       }
       if(!hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
-      if(hit && pose){
+      // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
+      // mesa lisa no da puntos): o no devuelve NADA, o el hit atraviesa hasta
+      // el piso. La cámara de PROFUNDIDAD ve la superficie real donde apunta
+      // el aro: si está más cerca que el hit (o no hay hit), manda ella.
+      let pd = null;
+      if(!S.esquinando && !S.midiendo && !S.escuadrando){ try{ pd = puntoDeProfundidadCentro(frame); }catch(e){ pd = null; } }
+      let usarDepth = false;
+      if(pd){
+        if(!hit) usarDepth = true;
+        else{
+          const hp = new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
+          if(pd.dist < pd.cam.distanceTo(hp) - 0.12) usarDepth = true;
+        }
+      }
+      if(usarDepth){
+        S.reticula.visible = true;
+        S.reticula.position.copy(pd.p);
+        S.reticula.quaternion.identity();          // superficie horizontal (mesa / banco / piso)
+        S.reticula.scale.setScalar(1);
+        S.hitEsPared = false;
+        S.hitDesdeDepth = true;
+        S.ultimoHit = null;                        // ancla libre (no hay trackable ahí)
+        S.reticula.material.color.setHex(PAL.aviso);
+      }else if(hit && pose){
         S.reticula.visible = true;
         S.reticula.matrix.fromArray(pose.transform.matrix);
         S.reticula.matrix.decompose(S.reticula.position, S.reticula.quaternion, S.reticula.scale);
@@ -2001,23 +2024,7 @@ async function iniciarAR(){
         const _ny = S.reticula.matrix.elements[5];  // normal del hit (antes de re-escalar)
         S.hitEsPared = Math.abs(_ny) < 0.5;
         S.hitDesdeDepth = false;
-        // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
-        // mesa lisa no da puntos) → el hit atraviesa hasta el PISO. Si la cámara
-        // de profundidad ve una superficie MÁS CERCA que el hit, manda esa.
-        if(!S.esquinando && !S.midiendo && !S.escuadrando){
-          const pd = puntoDeProfundidadCentro(frame);
-          if(pd){
-            const camP = pd.cam, dHit = camP.distanceTo(S.reticula.position);
-            if(pd.dist < dHit - 0.12){
-              S.reticula.position.copy(pd.p);
-              S.reticula.quaternion.identity();       // superficie horizontal (mesa / banco)
-              S.hitEsPared = false;
-              S.hitDesdeDepth = true;
-              S.ultimoHit = null;                     // ancla libre (no hay trackable en ese punto)
-            }
-          }
-        }
-        S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : (S.hitDesdeDepth ? PAL.aviso : PAL.acento));
+        S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : PAL.acento);
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
@@ -2044,6 +2051,13 @@ async function iniciarAR(){
     if(S.trazado && S.trazado.esModelo){
       S._miniTick = (S._miniTick||0) + 1;
       if(S._miniTick % 4 === 0) dibujarMiniPlanta();
+    }
+    // mientras no está apoyado: registrar cada 2 s qué ve (para el Diagnóstico)
+    S._regTick = (S._regTick||0) + 1;
+    if(frame && !S.anclado && S._regTick % 120 === 0){
+      let nh = -1; try{ nh = S.hitSource ? frame.getHitTestResults(S.hitSource).length : -1; }catch(e){}
+      let pdd = null; try{ const q = puntoDeProfundidadCentro(frame); pdd = q ? q.dist.toFixed(2) : 'no'; }catch(e){ pdd = 'err'; }
+      registrar('buscando: hits ' + nh + ' - profundidad ' + pdd + ' m - aro ' + (S.reticula.visible ? (S.hitDesdeDepth ? 'amarillo' : 'rojo') : 'NO'));
     }
     // ¿el modelo quedó lejos? (medido cada medio segundo): el HUD avisa y ofrece "Traer acá"
     S._distTick = (S._distTick||0) + 1;
@@ -2181,7 +2195,11 @@ function tapPantalla(ev){
     return;
   }
   if(S.reticula && S.reticula.visible){ apoyarEnReticula(); }
-  else{
+  else if(S.escala > 1){
+    // maqueta sin aro: mandarla al piso a 2,5 m era justo lo que confundía
+    UI.msg('Todavía no veo la superficie. Movete despacio de lado a lado apuntando a la mesa hasta que aparezca el aro (rojo o amarillo) y ahí tocá.');
+    registrar('toque sin aro en maqueta: no se apoya');
+  }else{
     colocarAlFrente();
     // sin retícula: ancla libre en el punto donde quedó
     S._pedirAncla = true;
