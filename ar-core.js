@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.2.0',
+  marca: 'AR', version: 'v3.3.0',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -300,6 +300,7 @@ function parsePaqueteMS(raw){
   const cz = (g && g.largo_m>0) ? g.largo_m/2 : (miny+maxy)/2;
   return {
     esMS: true, paq: raw, cx: cx, cz: cz,
+    marcador: (raw.ar && raw.ar.marcador) || null,   // reconocimiento del plano impreso
     obra: (raw.proyecto && (raw.proyecto.cliente || raw.proyecto.ot)) || 'Paquete de red',
     medidas: new THREE.Vector3((g&&g.ancho_m)||maxx-minx, maxz||4, (g&&g.largo_m)||maxy-miny)
   };
@@ -1841,15 +1842,26 @@ async function iniciarAR(){
   // anchors y depth-sensing van como OPCIONALES: si el equipo no los tiene,
   // la sesión arranca igual y la app degrada sola (sin persistencia / sin oclusión)
   const extras = ['anchors','depth-sensing','light-estimation'];
+  // RECONOCIMIENTO DEL PLANO IMPRESO: si el paquete trae marcador y el modo es
+  // "Sobre plano impreso", se pide image-tracking (Chrome lo tiene detrás de
+  // chrome://flags/#webxr-incubations; si no está, se cae al flujo de 2 cruces)
+  S.imgCfg = null; S.imgTrack = false;
+  if(S.modoPapel && S.trazado && S.trazado.marcador){
+    const bmp = await bitmapMarcador();
+    if(bmp){
+      extras.push('image-tracking');
+      S.imgCfg = { trackedImages: [{ image: bmp, widthInMeters: (S.trazado.marcador.lado_mm || 60) / 1000 }] };
+    }
+  }
 
   const depthCfg = { usagePreference:['cpu-optimized'], dataFormatPreference:['luminance-alpha','float32'] };
   const intentos = [
     { nom:'hit-test + overlay + local-floor',
-      cfg:{ requiredFeatures:['hit-test','local-floor'], optionalFeatures:['dom-overlay'].concat(extras),
-            domOverlay:{ root:$('capaAR') }, depthSensing:depthCfg } },
+      cfg:Object.assign({ requiredFeatures:['hit-test','local-floor'], optionalFeatures:['dom-overlay'].concat(extras),
+            domOverlay:{ root:$('capaAR') }, depthSensing:depthCfg }, S.imgCfg || {}) },
     { nom:'hit-test + overlay',
-      cfg:{ requiredFeatures:['hit-test'], optionalFeatures:['dom-overlay'].concat(extras),
-            domOverlay:{ root:$('capaAR') }, depthSensing:depthCfg } },
+      cfg:Object.assign({ requiredFeatures:['hit-test'], optionalFeatures:['dom-overlay'].concat(extras),
+            domOverlay:{ root:$('capaAR') }, depthSensing:depthCfg }, S.imgCfg || {}) },
     { nom:'hit-test solo',
       cfg:{ requiredFeatures:['hit-test'] } },
     { nom:'sin hit-test (colocación manual)',
@@ -1884,6 +1896,8 @@ async function iniciarAR(){
 
   S.session = session;
   S.overlayOK = !!(session.domOverlayState && session.domOverlayState.type);
+  try{ S.imgTrack = !!(S.imgCfg && typeof session.getTrackedImageScores === 'function'); }catch(e){ S.imgTrack = false; }
+  if(S.imgCfg) registrar('image-tracking ' + (S.imgTrack ? 'DISPONIBLE' : 'NO disponible (flag webxr-incubations)'));
   registrar('overlay ' + (S.overlayOK ? 'OK' : 'NO') + ' - escala 1:' + S.escala + ' - ' + (S.trazado && S.trazado.esModelo ? 'modelo ' + Math.round(S.trazado.tris) + ' caras' : 'red'));
   // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
   // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
@@ -1992,8 +2006,15 @@ async function iniciarAR(){
   const _tieneRef = S.trazado && S.trazado.refEsquina && S.trazado.planImg;
   const _grande = S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= CFG.umbral2Puntos;
   const _por2 = _tieneRef && ((S.modoPapel) || (S.escala === 1 && (S.modoUbic === '2puntos' || (S.modoUbic !== 'toque' && _grande && S.trazado.esModelo))));
-  if(S.modoPapel && _tieneRef){
-    // SOBRE PLANO IMPRESO: cruz 1 y cruz 2 del papel
+  if(S.modoPapel && S.imgTrack){
+    // SOBRE PLANO IMPRESO con RECONOCIMIENTO: apuntar al marcador y listo
+    S.esquinando = 0; S.marcadorBuscando = true;
+    UI.msg('Apuntá la cámara al MARCADOR del plano (el cuadrado con patrón junto a la cruz 1), a 30-50 cm. El 3D se ubica solo.');
+    UI.paso('1', 'Plano impreso · buscando el marcador');
+  }
+  else if(S.modoPapel && _tieneRef){
+    // SOBRE PLANO IMPRESO sin reconocimiento: cruz 1 y cruz 2 del papel
+    if(S.trazado.marcador) UI.estado('Este teléfono no tiene el reconocimiento de imagen activo (chrome://flags/#webxr-incubations). Se usa el modo de 2 cruces.', 'err');
     S.esquinando = 3; S.refP2 = S.trazado.refP2Sugerido ? { x: S.trazado.refP2Sugerido.x, z: S.trazado.refP2Sugerido.z } : null;
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
     const bM1 = $('btnMini'); if(bM1) bM1.textContent = 'Planta: GRANDE';
@@ -2145,6 +2166,42 @@ async function iniciarAR(){
     }
 
 
+    // RECONOCIMIENTO DEL MARCADOR: el 3D queda parado sobre el plano impreso y
+    // sigue al papel mientras se vea (moviste el plano → se mueve el 3D) hasta "Fijar"
+    if(frame && S.imgTrack && S.modoPapel && S.grupo && !S.fijado && S.trazado && S.trazado.marcador && S.trazado.refEsquina){
+      try{
+        const res = frame.getImageTrackingResults();
+        let visto = false;
+        for(const r of res){
+          if(r.trackingState !== 'tracked') continue;
+          const pose = frame.getPose(r.imageSpace, S.refSpaceLocal); if(!pose) continue;
+          const tr = pose.transform;
+          const q = new THREE.Quaternion(tr.orientation.x, tr.orientation.y, tr.orientation.z, tr.orientation.w);
+          // el +X de la imagen = el +X del plano; el papel está apoyado (su normal mira arriba)
+          const dirX = new THREE.Vector3(1,0,0).applyQuaternion(q);
+          const th = Math.atan2(-dirX.z, dirX.x);
+          const mk = S.trazado.marcador;
+          const esc = mk.escala || S.escala || 50;
+          if(S.escala !== esc){ S.escala = esc; S.escalaEf = esc; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
+          const k = 1/esc;
+          // centro del marcador en coordenadas LOCALES del modelo (metros reales) → escalado y girado
+          const mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
+          const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
+          const pos = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
+          S.rotY = th; S.grupo.rotation.y = th;
+          S.grupo.position.copy(pos); S.grupo.position.y += S.offsetY;
+          S.grupo.visible = true; S.anclado = true; visto = true;
+          if(S.marcadorBuscando){
+            S.marcadorBuscando = false;
+            registrar('marcador reconocido: escala 1:' + esc + ' giro ' + (th*180/Math.PI).toFixed(1));
+            UI.msg('✓ Plano reconocido: el 3D está parado sobre el papel (escala 1:' + esc + '). Sigue al plano mientras se vea el marcador; "Fijar" lo deja clavado.');
+            UI.paso('', '');
+          }
+          break;
+        }
+        if(!visto && S.anclado && !S.anchor && !S._pedirAncla && S._marcadorPerdidoTick === undefined){ S._marcadorPerdidoTick = 0; }
+      }catch(e){}
+    }
     // AUTO-AJUSTE CONTINUO: mientras está activo, cada ~10 s vuelve a capturar y
     // re-encaja (solo acepta si la coincidencia mejora) — caminando alrededor
     // del equipo el 3D se va clavando solo
@@ -2276,6 +2333,33 @@ async function iniciarAR(){
 }
 
 /* ------------------------------------------------------------
+   6b. MARCADOR DEL PLANO IMPRESO — la imagen que rastrea WebXR
+   Es el cuadrado con patrón que la Calculadora imprime junto a la
+   cruz 1. Se dibuja acá con EL MISMO algoritmo (LCG 9×9) para que
+   lo impreso y lo buscado sean idénticos.
+   ------------------------------------------------------------ */
+function patronMarcador(){
+  let s = 20260901; const n = 9, cel = [];
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){ const r = rnd(); cel.push(r < .42 ? 1 : (r < .58 ? 2 : 0)); }
+  return cel;
+}
+async function bitmapMarcador(){
+  const W = 900, cv = document.createElement('canvas'); cv.width = cv.height = W;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
+  g.fillStyle = '#fff'; g.fillRect(W*.09, W*.09, W*.82, W*.82);
+  const c = W*.82/9, o = W*.09, cel = patronMarcador();
+  for(let j=0;j<9;j++) for(let i=0;i<9;i++){
+    const v = cel[j*9+i]; if(!v) continue;
+    g.fillStyle = v === 1 ? '#000' : '#0095b8';
+    g.fillRect(o + i*c, o + j*c, c + .5, c + .5);
+  }
+  g.fillStyle = '#e0292a'; g.fillRect(o, o, c*1.5, c*1.5);
+  try{ return await createImageBitmap(cv); }catch(e){ return null; }
+}
+
+/* ------------------------------------------------------------
    7·0. EL TOQUE EN PANTALLA — apoyar / re-apoyar el modelo
    Mientras el modelo NO está fijado, cada toque sobre el aro lo
    vuelve a apoyar ahí (así "marcar la base" siempre funciona y el
@@ -2368,6 +2452,7 @@ function fijarModelo(si){
   if(S.fijado){
     if(S.reticula) S.reticula.visible = false;
     if(!S.anchor) S._pedirAncla = true;
+    S.marcadorBuscando = false;
     sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
@@ -3099,7 +3184,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
