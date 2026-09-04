@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.3',
+  marca: 'AR', version: 'v3.6.4',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2330,121 +2330,8 @@ async function iniciarAR(){
           const pose = frame.getPose(r.imageSpace, S.refSpaceLocal); if(!pose) continue;
           const tr = pose.transform;
           const q = new THREE.Quaternion(tr.orientation.x, tr.orientation.y, tr.orientation.z, tr.orientation.w);
-          // el +X de la imagen = el +X del plano; el papel está apoyado (su normal mira arriba)
-          const dirX = new THREE.Vector3(1,0,0).applyQuaternion(q);
-          const th = Math.atan2(-dirX.z, dirX.x);
-          const mk = S.trazado.marcador;
-          // FACTOR DE IMPRESIÓN: si la hoja se imprimió en otro tamaño (A1 en A2 = 71 %),
-          // el QR mide distinto y la escala del papel también. Manda el selector "Hoja
-          // impresa"; si está en "medir", se usa el ancho que ARCore le mide al QR.
-          let fac = S.factorImpresion || 0;
-          if(!fac){
-            const mw = r.measuredWidthInMeters;
-            const decl = (mk.lado_mm || 60) / 1000;
-            if(mw > 0.01 && decl > 0){
-              const fm = mw / decl;
-              if(fm > 0.2 && fm < 5){ S._facMedido = S._facMedido ? (S._facMedido*0.9 + fm*0.1) : fm; }
-            }
-            fac = S._facMedido || 1;
-          }
-          const esc = (mk.escala || S.escala || 50) / fac;
-          if(Math.abs(S.escala - esc) > esc*0.01){ S.escala = esc; S.escalaEf = Math.round(esc*10)/10; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
-          const k = 1/esc;
-          // centro del marcador en coordenadas LOCALES del modelo (metros reales) → escalado y girado
-          let mLocal;
-          if(mk.x_file_mm != null && S.trazado.refOrigen){
-            const F = S.trazado.fUnid || 0.001, O = S.trazado.refOrigen;
-            mLocal = new THREE.Vector3(O.x + mk.x_file_mm*F, 0, O.z - mk.y_file_mm*F).multiplyScalar(k);
-          }else{
-            mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
-          }
-          const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
-          const posT = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
-          // El plano 0 del modelo va APOYADO en la hoja: la Y sale del papel y
-          // nada más. Cualquier altura de antes (un ▲ o un arrastre de dos dedos)
-          // lo dejaba flotando arriba del plano impreso.
-          if(!S._alturaCero){ S._alturaCero = true; S.offsetY = 0; }
-          posT.y += S.offsetY;
+          pasoMarcador(tr.position, q, r.measuredWidthInMeters);
           visto = true;
-
-          if(S._mkLock){
-            // YA CLAVADO. El marcador sigue siendo la referencia (no hay ancla):
-            // mientras se vea la hoja, el 3D se corrige MUY despacio hacia el
-            // promedio del papel, con zona muerta de 8 mm / 0,8°. Así queda
-            // pegado aunque el tracking derive, y no tiembla.
-            S._mkBuf = S._mkBuf || [];
-            S._mkBuf.push({ p: posT.clone(), th: th });
-            if(S._mkBuf.length > 20) S._mkBuf.shift();
-            let _ax=0,_ay=0,_az=0,_ac=0,_as=0;
-            S._mkBuf.forEach(b => { _ax+=b.p.x; _ay+=b.p.y; _az+=b.p.z; _ac+=Math.cos(b.th); _as+=Math.sin(b.th); });
-            const _an = S._mkBuf.length;
-            const pMed = new THREE.Vector3(_ax/_an, _ay/_an, _az/_an), thMed = Math.atan2(_as, _ac);
-            const dMed = pMed.distanceTo(S.grupo.position), aMed = Math.abs(angNorm(thMed - S.rotY));
-            if(_an >= 10 && (dMed > 0.008 || aMed > 0.8*Math.PI/180)){
-              S.grupo.position.lerp(pMed, 0.06);
-              S.rotY = S.rotY + angNorm(thMed - S.rotY) * 0.06;
-              S.grupo.rotation.y = S.rotY;
-              S._mkLock.pos.copy(S.grupo.position); S._mkLock.rotY = S.rotY;
-            }
-            const dp = posT.distanceTo(S._mkLock.pos), da = Math.abs(angNorm(th - S._mkLock.rotY));
-            if(dp > 0.05 || da > 5*Math.PI/180){
-              S._mkMovTick = (S._mkMovTick || 0) + 1;
-              if(S._mkMovTick >= 15){
-                S._mkLock = null; S._mkMovTick = 0; S._mkBuf = []; S._mkDesde = 0;
-                S.fijado = false; $('btnFijar').textContent = 'Fijar';
-                olvidarAncla(S.session); S._pedirAncla = false;
-                registrar('plano movido: vuelve a seguir el marcador');
-                UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a clavar en un segundo.');
-              }
-            }else S._mkMovTick = 0;
-            break;
-          }
-
-          // SIGUIENDO EL PAPEL: la pose que devuelve ARCore para una imagen
-          // TIEMBLA, y cambia con el angulo desde el que se mire. Si el 3D la
-          // copia cuadro a cuadro se mueve todo el tiempo. Por eso se promedian
-          // las ultimas ~15 lecturas (posicion y giro) y se va suave hacia ese
-          // promedio; despues se clava y no se toca mas.
-          if(!S._mkDesde) S._mkDesde = performance.now();
-          S._mkBuf = S._mkBuf || [];
-          S._mkBuf.push({ p: posT.clone(), th: th });
-          if(S._mkBuf.length > 15) S._mkBuf.shift();
-          let _sx = 0, _sy = 0, _sz = 0, _cs = 0, _sn = 0;
-          S._mkBuf.forEach(b => { _sx += b.p.x; _sy += b.p.y; _sz += b.p.z; _cs += Math.cos(b.th); _sn += Math.sin(b.th); });
-          const _n = S._mkBuf.length;
-          const pProm = new THREE.Vector3(_sx/_n, _sy/_n, _sz/_n), thProm = Math.atan2(_sn, _cs);
-          let _disp = 0;
-          S._mkBuf.forEach(b => { const d2 = b.p.distanceTo(pProm); if(d2 > _disp) _disp = d2; });
-
-          S.grupo.position.lerp(pProm, 0.25);
-          S.rotY = S.rotY + angNorm(thProm - S.rotY) * 0.25;
-          S.grupo.rotation.y = S.rotY;
-          S.grupo.visible = true; S.anclado = true;
-
-          if(S.marcadorBuscando){
-            S.marcadorBuscando = false;
-            registrar('marcador reconocido: escala 1:' + (Math.round(esc*10)/10) + ' giro ' + (th*180/Math.PI).toFixed(1) + ' factor impresión ' + fac.toFixed(2) + (S.factorImpresion ? ' (manual)' : ' (medido)'));
-            UI.msg('✓ Plano reconocido (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Sostené el celu apuntando al QR un segundo: se clava solo.');
-            UI.paso('', '');
-          }
-
-          // Se clava cuando la lectura se quedo quieta (15 muestras dentro de 2 cm)
-          // o, si nunca se aquieta (mano temblorosa, poca luz), a los 2,5 s igual:
-          // mejor clavado con 1 cm de error que bailando para siempre.
-          const _estable = (_n >= 15 && _disp < 0.02);
-          const _porTiempo = (performance.now() - S._mkDesde) > 2500;
-          if(_estable || _porTiempo){
-            S.grupo.position.copy(pProm); S.rotY = thProm; S.grupo.rotation.y = thProm;
-            S._mkLock = { pos: pProm.clone(), rotY: thProm }; S._mkMovTick = 0;
-            S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
-            // NADA de ancla acá: el ancla de ARCore se reacomoda con el plano de
-            // la mesa y levantaba y giraba el modelo. La hoja es la referencia.
-            S.papelSinAncla = true; olvidarAncla(S.session); S._pedirAncla = false;
-            if(S.reticula) S.reticula.visible = false;
-            registrar('marcador clavado (' + (_estable ? 'lectura estable' : 'por tiempo') + ') disp ' + Math.round(_disp*1000) + ' mm');
-            UI.msg('✓ 3D clavado sobre el plano. Si movés la hoja, la sigue solo · "Apoyar de nuevo" lo libera.');
-            refrescarHUD();
-          }
           break;
         }
         if(!visto && S.anclado && !S.anchor && !S._pedirAncla && S._marcadorPerdidoTick === undefined){ S._marcadorPerdidoTick = 0; }
@@ -2774,6 +2661,139 @@ function patronMarcador(){
   for(let j=0;j<n;j++) for(let i=0;i<n;i++){ const r = rnd(); cel.push(r < .42 ? 1 : (r < .58 ? 2 : 0)); }
   return cel;
 }
+/* ------------------------------------------------------------
+   6·bis. UN CUADRO DE LECTURA DEL MARCADOR
+   Vive afuera del render loop a propósito: así se puede probar con
+   lecturas simuladas (test_ar.py le mete el ruido que tiene ARCore
+   de verdad y comprueba que, una vez clavado, el 3D no se mueve).
+   pos  = posición del centro del marcador en el espacio local
+   quat = orientación de la imagen · medido = measuredWidthInMeters
+   ------------------------------------------------------------ */
+function pasoMarcador(pos, quat, medido){
+  if(!S.grupo || !S.trazado || !S.trazado.marcador) return;
+  const q = quat;
+                // el +X de la imagen = el +X del plano; el papel está apoyado (su normal mira arriba)
+      const dirX = new THREE.Vector3(1,0,0).applyQuaternion(q);
+      const th = Math.atan2(-dirX.z, dirX.x);
+      const mk = S.trazado.marcador;
+      // FACTOR DE IMPRESIÓN: si la hoja se imprimió en otro tamaño (A1 en A2 = 71 %),
+      // el QR mide distinto y la escala del papel también. Manda el selector "Hoja
+      // impresa"; si está en "medir", se usa el ancho que ARCore le mide al QR.
+      let fac = S.factorImpresion || 0;
+      if(!fac){
+        const mw = medido;
+        const decl = (mk.lado_mm || 60) / 1000;
+        if(mw > 0.01 && decl > 0){
+          const fm = mw / decl;
+          if(fm > 0.2 && fm < 5){ S._facMedido = S._facMedido ? (S._facMedido*0.9 + fm*0.1) : fm; }
+          S._anchoMedido = mw;
+        }
+        fac = S._facMedido || 1;
+      }
+      // LA ESCALA SE CONGELA AL CLAVAR. El ancho que ARCore le mide al QR
+      // tiembla; recalcular la escala en cada cuadro hacia crecer y achicar
+      // el modelo solo, y como se escala desde el marcador, TODO se corria.
+      let esc;
+      if(S._mkLock && S._escFija){
+        esc = S._escFija;
+      }else{
+        esc = (mk.escala || S.escala || 50) / fac;
+        if(Math.abs(S.escala - esc) > esc*0.01){ S.escala = esc; S.escalaEf = Math.round(esc*10)/10; S.grupo.scale.setScalar(1/esc); if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true; }
+      }
+      const k = 1/esc;
+      // centro del marcador en coordenadas LOCALES del modelo (metros reales) → escalado y girado
+      let mLocal;
+      if(mk.x_file_mm != null && S.trazado.refOrigen){
+        const F = S.trazado.fUnid || 0.001, O = S.trazado.refOrigen;
+        mLocal = new THREE.Vector3(O.x + mk.x_file_mm*F, 0, O.z - mk.y_file_mm*F).multiplyScalar(k);
+      }else{
+        mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
+      }
+      const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
+      const posT = new THREE.Vector3(pos.x, pos.y, pos.z).sub(mLocal.applyQuaternion(qY));
+      // El plano 0 del modelo va APOYADO en la hoja: la Y sale del papel y
+      // nada más. Cualquier altura de antes (un ▲ o un arrastre de dos dedos)
+      // lo dejaba flotando arriba del plano impreso.
+      if(!S._alturaCero){ S._alturaCero = true; S.offsetY = 0; }
+      posT.y += S.offsetY;
+
+      if(S._mkLock){
+        // CLAVADO ES CLAVADO: acá NO se mueve nada. La lectura del QR tiembla
+        // uno o dos centímetros según el ángulo desde el que se mire, así que
+        // cualquier corrección "suave" termina siendo el modelo nadando sobre
+        // la hoja. Solo se vuelve a leer si el PAPEL se corrió de verdad.
+        const dp = posT.distanceTo(S._mkLock.pos), da = Math.abs(angNorm(th - S._mkLock.rotY));
+        // Diagnóstico: cada 3 s se anota cuánto se aparta la lectura viva del
+        // punto clavado. Si eso es chico y aun así se ve moverse, lo que se
+        // mueve es el tracking del teléfono, no la lectura del QR.
+        S._mkDiagTick = (S._mkDiagTick || 0) + 1;
+        if(S._mkDiagTick % 180 === 0) registrar('clavado: la lectura viva se aparta ' + Math.round(dp*1000) + ' mm y ' + (da*180/Math.PI).toFixed(1) + '°');
+        if(dp > 0.04 || da > 4*Math.PI/180){
+          S._mkMovTick = (S._mkMovTick || 0) + 1;
+          if(S._mkMovTick >= 20){
+            S._mkLock = null; S._mkMovTick = 0; S._mkBuf = []; S._mkDesde = 0; S._escFija = 0;
+            S.fijado = false; $('btnFijar').textContent = 'Fijar';
+            olvidarAncla(S.session); S._pedirAncla = false;
+            registrar('plano movido: vuelve a leer el marcador');
+            UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a clavar en un segundo.');
+          }
+        }else S._mkMovTick = 0;
+        return;
+      }
+
+      // SIGUIENDO EL PAPEL: la pose que devuelve ARCore para una imagen
+      // TIEMBLA, y cambia con el angulo desde el que se mire. Si el 3D la
+      // copia cuadro a cuadro se mueve todo el tiempo. Por eso se promedian
+      // las ultimas ~15 lecturas (posicion y giro) y se va suave hacia ese
+      // promedio; despues se clava y no se toca mas.
+      if(!S._mkDesde) S._mkDesde = performance.now();
+      S._mkBuf = S._mkBuf || [];
+      S._mkBuf.push({ p: posT.clone(), th: th });
+      if(S._mkBuf.length > 15) S._mkBuf.shift();
+      let _sx = 0, _sy = 0, _sz = 0, _cs = 0, _sn = 0;
+      S._mkBuf.forEach(b => { _sx += b.p.x; _sy += b.p.y; _sz += b.p.z; _cs += Math.cos(b.th); _sn += Math.sin(b.th); });
+      const _n = S._mkBuf.length;
+      const pProm = new THREE.Vector3(_sx/_n, _sy/_n, _sz/_n), thProm = Math.atan2(_sn, _cs);
+      let _disp = 0;
+      S._mkBuf.forEach(b => { const d2 = b.p.distanceTo(pProm); if(d2 > _disp) _disp = d2; });
+
+      S.grupo.position.lerp(pProm, 0.25);
+      S.rotY = S.rotY + angNorm(thProm - S.rotY) * 0.25;
+      S.grupo.rotation.y = S.rotY;
+      S.grupo.visible = true; S.anclado = true;
+
+      if(S.marcadorBuscando){
+        S.marcadorBuscando = false;
+        registrar('marcador reconocido: escala 1:' + (Math.round(esc*10)/10) + ' giro ' + (th*180/Math.PI).toFixed(1) + ' factor impresión ' + fac.toFixed(2) + (S.factorImpresion ? ' (manual)' : ' (medido)'));
+        UI.msg('✓ Plano reconocido (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Sostené el celu apuntando al QR un segundo: se clava solo.');
+        UI.paso('', '');
+      }
+
+      // Se clava cuando la lectura se quedo quieta (15 muestras dentro de 2 cm)
+      // o, si nunca se aquieta (mano temblorosa, poca luz), a los 2,5 s igual:
+      // mejor clavado con 1 cm de error que bailando para siempre.
+      const _estable = (_n >= 15 && _disp < 0.02);
+      const _porTiempo = (performance.now() - S._mkDesde) > 2500;
+      if(_estable || _porTiempo){
+        S.grupo.position.copy(pProm); S.rotY = thProm; S.grupo.rotation.y = thProm;
+        S._mkLock = { pos: pProm.clone(), rotY: thProm }; S._mkMovTick = 0; S._escFija = esc;
+        S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
+        // NADA de ancla acá: el ancla de ARCore se reacomoda con el plano de
+        // la mesa y levantaba y giraba el modelo. La hoja es la referencia.
+        S.papelSinAncla = true; olvidarAncla(S.session); S._pedirAncla = false;
+        if(S.reticula) S.reticula.visible = false;
+        registrar('marcador clavado (' + (_estable ? 'lectura estable' : 'por tiempo') + ') disp ' + Math.round(_disp*1000) + ' mm' +
+          ' · QR declarado ' + Math.round((mk.lado_mm || 60) * (S.factorImpresion || 1)) + ' mm' +
+          (S._anchoMedido ? ' · medido por ARCore ' + Math.round(S._anchoMedido*1000) + ' mm' : '') +
+          ' · escala 1:' + (Math.round(esc*10)/10) + ' (congelada)');
+        if(S._anchoMedido && Math.abs(S._anchoMedido*1000 - (mk.lado_mm||60)*(S.factorImpresion||1)) > (mk.lado_mm||60)*0.12){
+          UI.msg('⚠ El QR impreso NO mide lo que dice la hoja (medido ' + Math.round(S._anchoMedido*1000) + ' mm, esperado ' + Math.round((mk.lado_mm||60)*(S.factorImpresion||1)) + ' mm): imprimí al 100 %, sin "ajustar a página", o elegí la reducción en "Hoja impresa".');
+        }
+        UI.msg('✓ 3D clavado sobre el plano. Si movés la hoja, la sigue solo · "Apoyar de nuevo" lo libera.');
+        refrescarHUD();
+      }
+}
+
 async function bitmapMarcador(mk){
   // QR embebido por la Calculadora (ar.marcador.png): se rastrea ESA imagen
   if(mk && mk.png){
@@ -2999,7 +3019,7 @@ function marcarPivoteReal(){
 function traerAca(){
   if(!S.grupo) return;
   S.offsetY = 0;
-  S.fijado = false; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false;
+  S.fijado = false; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._escFija = 0;
   if(S.piv || S.pivMode) cancelarPivote(true);
   olvidarAncla(S.session);
   if(SENS.activo){ colocarAlFrente(); refrescarHUD(); return; }
@@ -3021,7 +3041,7 @@ function fijarModelo(si){
     sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
-    S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false;
+    S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._escFija = 0;
     UI.msg('Liberado: tocá el aro para apoyarlo en otro lado.');
   }
 }
@@ -3752,7 +3772,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0; S._anchoMedido = 0; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
@@ -4029,7 +4049,7 @@ $('panelAR').addEventListener('click', ev => {
       S.anclado = false; S.fijado = false; S.grupo.visible = false; S.offsetY = 0;
       S.grupo.position.y = 0;
       S._distModelo = null;
-      S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._alturaCero = false;
+      S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0;
       if(S.piv || S.pivMode) cancelarPivote(true);
       $('btnFijar').textContent = 'Fijar';
       if(S.midiendo){ S.midiendo = false; limpiarMedicion(); $('btnMedir').textContent = 'Medir: OFF'; }
@@ -4596,4 +4616,4 @@ if(location.hash === '#compartido'){
 /* ── API para las interfaces (index.html de cada marca) ── */
 window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION,
-              construirGrupoMS, girarRed, marcadorCompuesto, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };
+              construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };

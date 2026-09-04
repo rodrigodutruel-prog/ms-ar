@@ -1,7 +1,7 @@
 /* Service worker de MS AR — cachea todo para uso offline en obra.
    HTML y ar-core.js van RED-PRIMERO (no-cache): las correcciones llegan al
    celu apenas hay señal; sin señal se sirve la copia cacheada. */
-const CACHE = 'ms-ar-v54';
+const CACHE = 'ms-ar-v55';
 const ASSETS = ["./", "./index.html", "./ar-core.js", "./three.min.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./img/logo_dark.png", "./img/ondas.svg", "./fonts/SpaceGrotesk-Medium.ttf", "./fonts/SpaceGrotesk-SemiBold.ttf", "./fonts/SpaceGrotesk-Bold.ttf", "./fonts/ClashGrotesk-Regular.woff2", "./fonts/ClashGrotesk-Medium.woff2", "./fonts/ClashGrotesk-Semibold.woff2"];
 
 self.addEventListener('install', e => {
