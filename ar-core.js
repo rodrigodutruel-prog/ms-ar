@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.1',
+  marca: 'AR', version: 'v3.6.2',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2362,48 +2362,66 @@ async function iniciarAR(){
           const posT = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
           posT.y += S.offsetY;
           visto = true;
+
           if(S._mkLock){
-            // YA FIJADO POR EL MARCADOR: solo se mira si el papel se movió de verdad
-            // (más de 2,5 cm o 2,5° durante ~0,4 s) → vuelve a seguirlo. El temblor
-            // normal de la lectura no lo mueve.
+            // YA CLAVADO: solo se mira si el PAPEL se movio de verdad (5 cm o 5°
+            // sostenidos medio segundo). El temblor de la lectura y el cambio de
+            // angulo del celu NO lo mueven: eso era lo que hacia "bailar" el 3D.
             const dp = posT.distanceTo(S._mkLock.pos), da = Math.abs(angNorm(th - S._mkLock.rotY));
-            if(dp > 0.025 || da > 2.5*Math.PI/180){
+            if(dp > 0.05 || da > 5*Math.PI/180){
               S._mkMovTick = (S._mkMovTick || 0) + 1;
-              if(S._mkMovTick >= 12){
-                S._mkLock = null; S._mkMovTick = 0; S._mkEst = 0; S._mkPrev = null;
+              if(S._mkMovTick >= 15){
+                S._mkLock = null; S._mkMovTick = 0; S._mkBuf = []; S._mkDesde = 0;
                 S.fijado = false; $('btnFijar').textContent = 'Fijar';
                 olvidarAncla(S.session);
                 registrar('plano movido: vuelve a seguir el marcador');
-                UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a fijar cuando quede quieto.');
+                UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a clavar en un segundo.');
               }
             }else S._mkMovTick = 0;
             break;
           }
-          // SIGUIENDO EL PAPEL: pose suavizada (la lectura cruda de ARCore tiembla y
-          // el 3D "bailaba"); el primer cuadro va directo
-          if(!S._mkPrev){ S.grupo.position.copy(posT); S.rotY = th; }
-          else{ S.grupo.position.lerp(posT, 0.35); S.rotY = S.rotY + angNorm(th - S.rotY) * 0.35; }
+
+          // SIGUIENDO EL PAPEL: la pose que devuelve ARCore para una imagen
+          // TIEMBLA, y cambia con el angulo desde el que se mire. Si el 3D la
+          // copia cuadro a cuadro se mueve todo el tiempo. Por eso se promedian
+          // las ultimas ~15 lecturas (posicion y giro) y se va suave hacia ese
+          // promedio; despues se clava y no se toca mas.
+          if(!S._mkDesde) S._mkDesde = performance.now();
+          S._mkBuf = S._mkBuf || [];
+          S._mkBuf.push({ p: posT.clone(), th: th });
+          if(S._mkBuf.length > 15) S._mkBuf.shift();
+          let _sx = 0, _sy = 0, _sz = 0, _cs = 0, _sn = 0;
+          S._mkBuf.forEach(b => { _sx += b.p.x; _sy += b.p.y; _sz += b.p.z; _cs += Math.cos(b.th); _sn += Math.sin(b.th); });
+          const _n = S._mkBuf.length;
+          const pProm = new THREE.Vector3(_sx/_n, _sy/_n, _sz/_n), thProm = Math.atan2(_sn, _cs);
+          let _disp = 0;
+          S._mkBuf.forEach(b => { const d2 = b.p.distanceTo(pProm); if(d2 > _disp) _disp = d2; });
+
+          S.grupo.position.lerp(pProm, 0.25);
+          S.rotY = S.rotY + angNorm(thProm - S.rotY) * 0.25;
           S.grupo.rotation.y = S.rotY;
-          // ¿quieto? (menos de 4 mm y 0,5° entre lecturas seguidas)
-          if(S._mkPrev && S._mkPrev.pos.distanceTo(posT) < 0.004 && Math.abs(angNorm(th - S._mkPrev.rotY)) < 0.5*Math.PI/180) S._mkEst = (S._mkEst || 0) + 1;
-          else S._mkEst = 0;
-          S._mkPrev = { pos: posT.clone(), rotY: th };
           S.grupo.visible = true; S.anclado = true;
+
           if(S.marcadorBuscando){
             S.marcadorBuscando = false;
             registrar('marcador reconocido: escala 1:' + (Math.round(esc*10)/10) + ' giro ' + (th*180/Math.PI).toFixed(1) + ' factor impresión ' + fac.toFixed(2) + (S.factorImpresion ? ' (manual)' : ' (medido)'));
-            UI.msg('✓ Plano reconocido (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Quedate quieto un segundo: se fija solo.');
+            UI.msg('✓ Plano reconocido (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Sostené el celu apuntando al QR un segundo: se clava solo.');
             UI.paso('', '');
           }
-          if(S._mkEst >= 24){
-            // ~0,8 s quieto: se clava ahí (ancla de ARCore) y deja de temblar
-            S.grupo.position.copy(posT); S.rotY = th; S.grupo.rotation.y = th;
-            S._mkLock = { pos: posT.clone(), rotY: th }; S._mkEst = 0; S._mkMovTick = 0;
+
+          // Se clava cuando la lectura se quedo quieta (15 muestras dentro de 2 cm)
+          // o, si nunca se aquieta (mano temblorosa, poca luz), a los 2,5 s igual:
+          // mejor clavado con 1 cm de error que bailando para siempre.
+          const _estable = (_n >= 15 && _disp < 0.02);
+          const _porTiempo = (performance.now() - S._mkDesde) > 2500;
+          if(_estable || _porTiempo){
+            S.grupo.position.copy(pProm); S.rotY = thProm; S.grupo.rotation.y = thProm;
+            S._mkLock = { pos: pProm.clone(), rotY: thProm }; S._mkMovTick = 0;
             S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
             olvidarAncla(S.session); S._pedirAncla = true;
             if(S.reticula) S.reticula.visible = false;
-            registrar('marcador estable: fijado solo en (' + posT.x.toFixed(2) + ', ' + posT.y.toFixed(2) + ', ' + posT.z.toFixed(2) + ')');
-            UI.msg('✓ Plano leído y 3D FIJADO sobre el papel. Si movés la hoja, la sigue solo. "Apoyar de nuevo" lo libera.');
+            registrar('marcador clavado (' + (_estable ? 'lectura estable' : 'por tiempo') + ') disp ' + Math.round(_disp*1000) + ' mm');
+            UI.msg('✓ 3D clavado sobre el plano. Si movés la hoja, la sigue solo · "Apoyar de nuevo" lo libera.');
             refrescarHUD();
           }
           break;
@@ -2883,14 +2901,19 @@ function mostrarListaPivote(){
   const viejo = document.getElementById('listaPiv'); if(viejo) viejo.remove();
   const capa = $('capaAR');
   const box = document.createElement('div'); box.id = 'listaPiv';
-  box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:110px;z-index:80;background:rgba(10,13,22,.94);color:#fff;border-left:5px solid ' + cssPal('acento') + ';border-radius:10px;padding:12px 12px 8px;font:15px/1.3 system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.6);max-height:60vh;overflow:auto';
+  box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:110px;z-index:80;pointer-events:auto;touch-action:manipulation;' +
+    'background:rgba(10,13,22,.96);color:#fff;border-left:5px solid ' + cssPal('acento') + ';border-radius:10px;padding:12px 12px 8px;' +
+    'font:15px/1.3 system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.6);max-height:55vh;overflow:auto';
   const tit = document.createElement('div'); tit.style.cssText = 'font-weight:700;margin-bottom:8px;letter-spacing:.5px';
   tit.textContent = '¿Qué punto del 3D vas a clavar en la realidad?'; box.appendChild(tit);
   const mk = (txt, fn, sub) => {
     const b = document.createElement('button');
-    b.style.cssText = 'display:block;width:100%;text-align:left;margin:6px 0;padding:11px 12px;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;font:inherit';
+    b.style.cssText = 'display:block;width:100%;text-align:left;margin:6px 0;padding:13px 12px;pointer-events:auto;touch-action:manipulation;' +
+      'background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;font:inherit';
     b.innerHTML = txt + (sub ? '<br><small style="opacity:.7">' + sub + '</small>' : '');
-    b.addEventListener('click', ev => { ev.stopPropagation(); fn(); });
+    const _ir = ev => { ev.preventDefault(); ev.stopPropagation(); if(b.dataset.usado) return; b.dataset.usado = '1'; fn(); };
+    b.addEventListener('click', _ir);
+    b.addEventListener('pointerup', _ir);
     box.appendChild(b); return b;
   };
   const refs = (S.grupo.userData && S.grupo.userData.puntosRef) || [];
@@ -2904,7 +2927,11 @@ function mostrarListaPivote(){
   box.addEventListener('beforexrselect', ev => ev.preventDefault());
   box.addEventListener('pointerdown', ev => ev.stopPropagation());
   box.addEventListener('pointerup', ev => ev.stopPropagation());
+  box.addEventListener('touchstart', ev => ev.stopPropagation(), { passive: true });
   capa.appendChild(box);
+  // RED DE SEGURIDAD: si por lo que sea el panel no responde, se va solo a los
+  // 25 s. Nunca puede dejar la pantalla trabada.
+  setTimeout(() => { const v = document.getElementById('listaPiv'); if(v === box) box.remove(); }, 25000);
 }
 function elegirPuntoDel3D(){
   if(!S.grupo || !S.grupo.visible){ UI.msg('El 3D no está a la vista: apoyalo primero (o "Traer acá") y después elegí el punto.'); return; }
@@ -2950,7 +2977,7 @@ function marcarPivoteReal(){
 function traerAca(){
   if(!S.grupo) return;
   S.offsetY = 0;
-  S.fijado = false; S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
+  S.fijado = false; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
   if(S.piv || S.pivMode) cancelarPivote(true);
   olvidarAncla(S.session);
   if(SENS.activo){ colocarAlFrente(); refrescarHUD(); return; }
@@ -2972,7 +2999,7 @@ function fijarModelo(si){
     sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
-    S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
+    S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
     UI.msg('Liberado: tocá el aro para apoyarlo en otro lado.');
   }
 }
@@ -3703,7 +3730,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkPrev = null; S._mkEst = 0; S.piv = null; S.pivMode = 0; S._pivMesh = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
@@ -3970,7 +3997,7 @@ $('panelAR').addEventListener('click', ev => {
       S.anclado = false; S.fijado = false; S.grupo.visible = false; S.offsetY = 0;
       S.grupo.position.y = 0;
       S._distModelo = null;
-      S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
+      S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
       if(S.piv || S.pivMode) cancelarPivote(true);
       $('btnFijar').textContent = 'Fijar';
       if(S.midiendo){ S.midiendo = false; limpiarMedicion(); $('btnMedir').textContent = 'Medir: OFF'; }
