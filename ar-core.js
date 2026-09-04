@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.6',
+  marca: 'AR', version: 'v3.6.7',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2709,41 +2709,29 @@ function pasoMarcador(pos, quat, medido){
       // FACTOR DE IMPRESIÓN: si la hoja se imprimió en otro tamaño (A1 en A2 = 71 %),
       // el QR mide distinto y la escala del papel también. Manda el selector "Hoja
       // impresa"; si está en "medir", se usa el ancho que ARCore le mide al QR.
-      // ¿A QUÉ DISTANCIA ESTÁ REALMENTE LA HOJA? El aro del hit-test apoya en la
-      // MESA. Si ARCore dice que el marcador está más lejos que la mesa, es porque
-      // el QR impreso es más chico que el declarado (la impresora achicó la hoja):
-      // esa relación ES el factor de impresión, y con él el 3D vuelve al papel.
+      // LA ESCALA LA MANDA LA HOJA. Se probó deducirla midiendo contra la mesa
+      // (comparando la distancia del aro con la del marcador) y sale MAL: si el
+      // aro cae en una pared, en el piso o pasando el borde de la mesa, deduce
+      // una hoja "impresa al 136 %" y arruina la escala en silencio. Si la
+      // impresora achicó la hoja, se arregla con el campo "¿cuánto mide el QR
+      // impreso?" (una regla, 5 segundos) o con el selector de reducción.
       const camP = new THREE.Vector3();
       try{ (S.renderer && S.renderer.xr.isPresenting ? S.renderer.xr.getCamera() : S.camera).getWorldPosition(camP); }catch(e){}
       const posM = new THREE.Vector3(pos.x, pos.y, pos.z);
-      if(!S._mkLock && !S.factorImpresion && S.reticula && S.reticula.visible && !S.hitEsPared && camP.lengthSq() > 0){
+      // solo para el Diagnóstico: si el aro está justo sobre el marcador y da otra
+      // distancia, se anota (puede ser la hoja achicada... o una pared de fondo)
+      if(!S._mkLock && S.reticula && S.reticula.visible && !S.hitEsPared && camP.lengthSq() > 0 && !S._avisoFac){
         const dM = camP.distanceTo(posM), dP = camP.distanceTo(S.reticula.position);
-        // SOLO si el aro está apuntando AL MARCADOR (menos de 10° de separación):
-        // si el centro de la pantalla cae en la mesa de al lado, en el piso o
-        // pasando el borde, la distancia no es la de la hoja y "corregir" con eso
-        // manda el 3D a cualquier lado. Mejor no corregir nada.
         const uM = posM.clone().sub(camP), uR = S.reticula.position.clone().sub(camP);
-        const alineado = (dM > 0.05 && dP > 0.05) && uM.normalize().dot(uR.normalize()) > 0.985;
-        if(alineado){
+        if(dM > 0.05 && dP > 0.05 && uM.normalize().dot(uR.normalize()) > 0.985){
           const rel = dP / dM;
-          if(rel > 0.45 && rel < 2.2){
-            S._facLista = S._facLista || [];
-            S._facLista.push(rel); if(S._facLista.length > 20) S._facLista.shift();
-            S._facPlano = S._facPlano ? (S._facPlano*0.85 + rel*0.15) : rel;
-            S._facPlanoN = (S._facPlanoN || 0) + 1;
+          if(rel > 0.45 && rel < 2.2 && Math.abs(rel - 1) > 0.10){
+            S._avisoFac = true;
+            registrar('aviso: el aro da ' + Math.round(rel*100) + ' % de la distancia al marcador (¿hoja achicada al imprimir? medí el QR con una regla)');
           }
         }
       }
-      // y ademas el numero tiene que ser ESTABLE: si las lecturas del aro bailan,
-      // no se toca la escala (mejor quedarse con la de la hoja que inventar otra)
-      let _facEstable = false;
-      if(S._facLista && S._facLista.length >= 15){
-        let _mn = 9, _mx = 0;
-        S._facLista.forEach(v => { if(v < _mn) _mn = v; if(v > _mx) _mx = v; });
-        _facEstable = (_mx - _mn) < 0.06;
-      }
       let fac = S.factorImpresion || 0;
-      let corrPos = 1;
       if(!fac){
         const mw = medido;
         const decl = (mk.lado_mm || 60) / 1000;
@@ -2752,30 +2740,7 @@ function pasoMarcador(pos, quat, medido){
           if(fm > 0.2 && fm < 5){ S._facMedido = S._facMedido ? (S._facMedido*0.9 + fm*0.1) : fm; }
           S._anchoMedido = mw;
         }
-        // el ancho "medido" por ARCore suele ser el MISMO que se le declaró (no mide
-        // nada): por eso manda lo que se dedujo contra la mesa, cuando hay bastantes
-        // muestras y se aparta del 100 % más de un 4 %.
-        if(S._facPlano && _facEstable && (S._facPlanoN || 0) >= 15 && Math.abs(S._facPlano - 1) > 0.06){
-          fac = S._facPlano;
-          corrPos = fac;   // la posición también viene mal: el marcador está más cerca
-          if(!S._avisoFac){
-            S._avisoFac = true;
-            // las lecturas de antes se promediaron SIN corregir: se tiran, si no
-            // el punto clavado queda a mitad de camino entre lo malo y lo bueno.
-            S._mkBuf = []; S._mkDesde = 0;
-            registrar('hoja impresa al ' + Math.round(fac*100) + ' % (deducido contra la mesa)');
-            UI.msg('La hoja está impresa al ' + Math.round(fac*100) + ' % del tamaño original: lo corrijo solo. Para que salga exacto, imprimí al 100 % o medí el QR con una regla.');
-          }
-        }else{
-          fac = S._facMedido || 1;
-        }
-      }
-      // el marcador reportado está más lejos de lo que está: se lo trae sobre la mesa
-      // OJO con el alias: hay que sacar el vector cámara→marcador ANTES de tocar
-      // posM, si no queda todo en la posición de la cámara.
-      if(corrPos !== 1){
-        const _d = posM.clone().sub(camP);
-        posM.copy(camP).addScaledVector(_d, corrPos);
+        fac = S._facMedido || 1;
       }
       // LA ESCALA SE CONGELA AL CLAVAR. El ancho que ARCore le mide al QR
       // tiembla; recalcular la escala en cada cuadro hacia crecer y achicar
@@ -2859,11 +2824,7 @@ function pasoMarcador(pos, quat, medido){
       // Se clava cuando la lectura se quedo quieta (15 muestras dentro de 2 cm)
       // o, si nunca se aquieta (mano temblorosa, poca luz), a los 2,5 s igual:
       // mejor clavado con 1 cm de error que bailando para siempre.
-      // no se clava hasta tener decidida la ESCALA: si el aro ve la mesa, se
-      // esperan sus 10 muestras (si no, se congelaba una escala equivocada y el
-      // 3D quedaba flotando lejos de la hoja).
-      const _escListo = !!S.factorImpresion || !S.reticula || !S.reticula.visible || (S._facPlanoN || 0) >= 15 || (S._mkBuf && S._mkBuf.length > 45);
-      const _estable = (_n >= 15 && _disp < 0.02 && _escListo);
+      const _estable = (_n >= 15 && _disp < 0.02);
       const _porTiempo = (performance.now() - S._mkDesde) > 2500;
       if(_estable || _porTiempo){
         S.grupo.position.copy(pProm); S.rotY = thProm; S.grupo.rotation.y = thProm;
