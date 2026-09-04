@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.2',
+  marca: 'AR', version: 'v3.6.3',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -2360,20 +2360,39 @@ async function iniciarAR(){
           }
           const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
           const posT = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
+          // El plano 0 del modelo va APOYADO en la hoja: la Y sale del papel y
+          // nada más. Cualquier altura de antes (un ▲ o un arrastre de dos dedos)
+          // lo dejaba flotando arriba del plano impreso.
+          if(!S._alturaCero){ S._alturaCero = true; S.offsetY = 0; }
           posT.y += S.offsetY;
           visto = true;
 
           if(S._mkLock){
-            // YA CLAVADO: solo se mira si el PAPEL se movio de verdad (5 cm o 5°
-            // sostenidos medio segundo). El temblor de la lectura y el cambio de
-            // angulo del celu NO lo mueven: eso era lo que hacia "bailar" el 3D.
+            // YA CLAVADO. El marcador sigue siendo la referencia (no hay ancla):
+            // mientras se vea la hoja, el 3D se corrige MUY despacio hacia el
+            // promedio del papel, con zona muerta de 8 mm / 0,8°. Así queda
+            // pegado aunque el tracking derive, y no tiembla.
+            S._mkBuf = S._mkBuf || [];
+            S._mkBuf.push({ p: posT.clone(), th: th });
+            if(S._mkBuf.length > 20) S._mkBuf.shift();
+            let _ax=0,_ay=0,_az=0,_ac=0,_as=0;
+            S._mkBuf.forEach(b => { _ax+=b.p.x; _ay+=b.p.y; _az+=b.p.z; _ac+=Math.cos(b.th); _as+=Math.sin(b.th); });
+            const _an = S._mkBuf.length;
+            const pMed = new THREE.Vector3(_ax/_an, _ay/_an, _az/_an), thMed = Math.atan2(_as, _ac);
+            const dMed = pMed.distanceTo(S.grupo.position), aMed = Math.abs(angNorm(thMed - S.rotY));
+            if(_an >= 10 && (dMed > 0.008 || aMed > 0.8*Math.PI/180)){
+              S.grupo.position.lerp(pMed, 0.06);
+              S.rotY = S.rotY + angNorm(thMed - S.rotY) * 0.06;
+              S.grupo.rotation.y = S.rotY;
+              S._mkLock.pos.copy(S.grupo.position); S._mkLock.rotY = S.rotY;
+            }
             const dp = posT.distanceTo(S._mkLock.pos), da = Math.abs(angNorm(th - S._mkLock.rotY));
             if(dp > 0.05 || da > 5*Math.PI/180){
               S._mkMovTick = (S._mkMovTick || 0) + 1;
               if(S._mkMovTick >= 15){
                 S._mkLock = null; S._mkMovTick = 0; S._mkBuf = []; S._mkDesde = 0;
                 S.fijado = false; $('btnFijar').textContent = 'Fijar';
-                olvidarAncla(S.session);
+                olvidarAncla(S.session); S._pedirAncla = false;
                 registrar('plano movido: vuelve a seguir el marcador');
                 UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a clavar en un segundo.');
               }
@@ -2418,7 +2437,9 @@ async function iniciarAR(){
             S.grupo.position.copy(pProm); S.rotY = thProm; S.grupo.rotation.y = thProm;
             S._mkLock = { pos: pProm.clone(), rotY: thProm }; S._mkMovTick = 0;
             S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
-            olvidarAncla(S.session); S._pedirAncla = true;
+            // NADA de ancla acá: el ancla de ARCore se reacomoda con el plano de
+            // la mesa y levantaba y giraba el modelo. La hoja es la referencia.
+            S.papelSinAncla = true; olvidarAncla(S.session); S._pedirAncla = false;
             if(S.reticula) S.reticula.visible = false;
             registrar('marcador clavado (' + (_estable ? 'lectura estable' : 'por tiempo') + ') disp ' + Math.round(_disp*1000) + ' mm');
             UI.msg('✓ 3D clavado sobre el plano. Si movés la hoja, la sigue solo · "Apoyar de nuevo" lo libera.');
@@ -2451,7 +2472,7 @@ async function iniciarAR(){
 
     // apoyado por PROFUNDIDAD (ancla libre): cuando ARCore arma el plano de la
     // mesa justo bajo el modelo, se pasa el ancla a ese plano (mucho más estable)
-    if(frame && S._mejorarAncla && S.anclado && !S.fijado && S.grupo && S.hitSource && S._regTick % 45 === 0){
+    if(frame && S._mejorarAncla && S.anclado && !S.fijado && !S.papelSinAncla && S.grupo && S.hitSource && S._regTick % 45 === 0){
       try{
         const hs2 = frame.getHitTestResults(S.hitSource);
         for(let k=0;k<hs2.length;k++){
@@ -2468,7 +2489,7 @@ async function iniciarAR(){
       }catch(e){}
     }
     // fallback: si el ancla del hit no salio, se crea una libre en la pose actual
-    if(frame && S._pedirAncla && !S.anchor && S.anclado && S.grupo && typeof frame.createAnchor === 'function'){
+    if(frame && S._pedirAncla && !S.anchor && S.anclado && S.grupo && !S.papelSinAncla && typeof frame.createAnchor === 'function'){
       S._pedirAncla = false;
       try{
         const gp = S.grupo.position;
@@ -2502,7 +2523,7 @@ async function iniciarAR(){
     // La ORIENTACIÓN también se corrige en cada cuadro (antes solo se tomaba
     // al instalar el ancla → al caminar el edificio quedaba girado): con dos
     // anclas manda el rumbo entre ellas, con una el yaw vivo del ancla.
-    if(frame && S.anchor && S.grupo){
+    if(frame && S.anchor && S.grupo && !S.papelSinAncla){
       let pose = null;
       try{ pose = frame.getPose(S.anchor.anchorSpace, S.refSpaceLocal); }catch(e){}
       if(pose){
@@ -2950,6 +2971,7 @@ function elegirPuntoDel3D(){
 }
 function marcarPivoteReal(){
   if(!S.grupo || !S.piv) { S.pivMode = 0; return; }
+  S.papelSinAncla = false;      // ya no es el papel el que manda: va ancla real
   if(!S.reticula || !S.reticula.visible){ UI.msg('No veo superficie ahí: acercate a la marca (pared o piso) hasta que aparezca el aro y tocá.'); return; }
   const P = S.reticula.position.clone();
   const Y = new THREE.Vector3(0,1,0), k = S.grupo.scale.x || 1;
@@ -2977,7 +2999,7 @@ function marcarPivoteReal(){
 function traerAca(){
   if(!S.grupo) return;
   S.offsetY = 0;
-  S.fijado = false; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
+  S.fijado = false; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false;
   if(S.piv || S.pivMode) cancelarPivote(true);
   olvidarAncla(S.session);
   if(SENS.activo){ colocarAlFrente(); refrescarHUD(); return; }
@@ -2999,7 +3021,7 @@ function fijarModelo(si){
     sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
-    S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
+    S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false;
     UI.msg('Liberado: tocá el aro para apoyarlo en otro lado.');
   }
 }
@@ -3730,7 +3752,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.piv = null; S.pivMode = 0; S._pivMesh = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
@@ -3890,6 +3912,16 @@ $('gestos').addEventListener('pointermove', ev => {
   const p = GES.punteros.get(ev.pointerId);
   if(p.x0 != null && Math.hypot(ev.clientX - p.x0, ev.clientY - p.y0) > 14) S._gesMovio = true;
   if(!S.anclado || S.midiendo || S.escuadrando || S.esquinando || S.autoCorriendo || S.pivMode || !S.grupo) return;
+  // FIJADO = FIJADO. Antes los gestos no miraban esto: con el modelo fijado, el
+  // pulgar que sostiene el celu lo arrastraba, dos dedos lo giraban y el arrastre
+  // vertical lo levantaba del piso (o de la hoja). Eso era "se mueve solo".
+  if(S.fijado){
+    if(!S._avisoFijado || performance.now() - S._avisoFijado > 4000){
+      S._avisoFijado = performance.now();
+      UI.msg('Está FIJADO: los dedos no lo mueven. Para reacomodarlo, "Apoyar de nuevo" o soltá con "Fijado ✓".');
+    }
+    return;
+  }
   const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
   p.x = ev.clientX; p.y = ev.clientY;
   if(!S._gesMovio) return;   // temblor del dedo: todavía es un tap
@@ -3997,7 +4029,7 @@ $('panelAR').addEventListener('click', ev => {
       S.anclado = false; S.fijado = false; S.grupo.visible = false; S.offsetY = 0;
       S.grupo.position.y = 0;
       S._distModelo = null;
-      S._mkLock = null; S._mkBuf = []; S._mkDesde = 0;
+      S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._alturaCero = false;
       if(S.piv || S.pivMode) cancelarPivote(true);
       $('btnFijar').textContent = 'Fijar';
       if(S.midiendo){ S.midiendo = false; limpiarMedicion(); $('btnMedir').textContent = 'Medir: OFF'; }
