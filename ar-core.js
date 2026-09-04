@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.0',
+  marca: 'AR', version: 'v3.6.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -92,11 +92,14 @@ function angNorm(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
 
 // EL MARCADOR IMPRESO (QR + marco): la imagen que ARCore rastrea. Un QR pelado
 // de 60 mm se reconocía tarde (patrón repetitivo, chico): ahora va más grande
-// según la hoja y con un marco negro y esquinas de color asimétricas, que le
-// dan a ARCore rasgos únicos para engancharlo rápido y saber la orientación.
+// según la hoja y con un marco negro y esquinas asimétricas, que le dan a
+// ARCore rasgos únicos para engancharlo rápido y saber la orientación.
+// TODO EN BLANCO Y NEGRO: la primera versión tenía esquinas rojo/cyan y una
+// impresora en negro las sacaba grises o negras — distinto de lo que la app
+// le daba a ARCore, y no lo reconocía. Así sale igual en cualquier impresora.
 // La MISMA función arma lo que se imprime y lo que se rastrea (el PNG embebido).
-const MARCADOR_LADO_MM = { a4: 62, a3: 76, a2: 112, a1: 112 };
-const MARCADOR_MARGEN_MM = { a4: 90, a3: 90, a2: 130, a1: 130 };
+const MARCADOR_LADO_MM = { a4: 84, a3: 84, a2: 112, a1: 112 };
+const MARCADOR_MARGEN_MM = { a4: 100, a3: 100, a2: 130, a1: 130 };
 function marcadorCompuesto(qrCv, L){
   L = L || 1000;
   const cv = document.createElement('canvas'); cv.width = cv.height = L;
@@ -105,10 +108,12 @@ function marcadorCompuesto(qrCv, L){
   g.fillStyle = '#fff'; g.fillRect(L*.05, L*.05, L*.90, L*.90);
   g.imageSmoothingEnabled = false;
   g.drawImage(qrCv, L*.18, L*.18, L*.64, L*.64);                    // el QR en el 64 % central
-  g.fillStyle = '#e0292a'; g.fillRect(L*.07, L*.07, L*.09, L*.09);  // rojo arriba-izquierda
-  g.fillStyle = '#000';    g.fillRect(L*.84, L*.07, L*.09, L*.09);  // negro arriba-derecha
-  g.fillStyle = '#0095b8'; g.fillRect(L*.84, L*.84, L*.09, L*.09);  // cyan abajo-derecha
-  g.fillStyle = '#000';    g.fillRect(L*.07, L*.865, L*.38, L*.065); // barra abajo-izquierda
+  g.fillStyle = '#000';
+  g.fillRect(L*.07, L*.07, L*.09, L*.09);                           // cuadrado lleno arriba-izquierda
+  g.fillRect(L*.84, L*.07, L*.09, L*.09); g.fillStyle = '#fff'; g.fillRect(L*.865, L*.095, L*.04, L*.04);   // cuadrado hueco arriba-derecha
+  g.fillStyle = '#000';
+  g.beginPath(); g.moveTo(L*.84, L*.93); g.lineTo(L*.93, L*.93); g.lineTo(L*.93, L*.84); g.closePath(); g.fill();   // triángulo abajo-derecha
+  g.fillRect(L*.07, L*.865, L*.38, L*.065);                          // barra abajo-izquierda
   return cv;
 }
 
