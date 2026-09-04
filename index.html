@@ -216,6 +216,9 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
         <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
         <option value="2">Ampliada dos hojas: 200 %</option>
       </select>
+      <div class="lbl">¿Cuánto mide el QR impreso? (medilo con una regla)</div>
+      <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
+             placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
       <div class="nota"><b>Sobre plano impreso</b>: imprimí el plano con el botón "Plano AR" de la Calculadora (o con Plano_AR_desde_OBJ para cualquier 3D), apoyalo en la mesa y apuntá al QR de la hoja: el 3D se monta solo encima, a la escala del papel. Si el teléfono no tiene el reconocimiento de imagen (Chrome: chrome://flags/#webxr-incubations), tocás la cruz 1 y la cruz 2. Con <b>un toque</b> el modelo se apoya donde está el aro rojo: tocás otro lugar y se mueve, 2 dedos lo giran, y "Fijar" lo deja clavado. Con <b>2 puntos</b> marcás dos esquinas del plano en el lugar real y el edificio queda orientado exacto.</div>
     </section>
 
@@ -242,7 +245,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
     </section>
   </main>
 
-  <footer class="pie"><span id="ver">v3.6.4</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+  <footer class="pie"><span id="ver">v3.6.5</span> · MS AR · Depto. Innovación y Desarrollo</footer>
 </div>
 
 <!-- ======= CAPA AR ======= -->
@@ -341,7 +344,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v3.6.4',
+  marca: 'MS', version: 'v3.6.5',
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
