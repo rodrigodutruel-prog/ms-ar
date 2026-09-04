@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.5',
+  marca: 'AR', version: 'v3.6.6',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1879,7 +1879,29 @@ async function diagnostico(){
   (S._log || []).slice(-40).forEach(x => l.push('  ' + x));
   const d = $('diag');
   d.classList.remove('oculto');
-  d.textContent = l.join('\n');
+  const texto = l.join('\n');
+  d.textContent = texto;
+  // COPIAR / COMPARTIR: sin esto el diagnóstico queda encerrado en el teléfono
+  // y hay que transcribirlo a mano. Un toque y se manda por WhatsApp.
+  let bC = document.getElementById('btnCopiarDiag');
+  if(!bC){
+    bC = document.createElement('button');
+    bC.id = 'btnCopiarDiag'; bC.className = 'btn sec';
+    bC.style.cssText = 'margin:8px 0;width:100%';
+    bC.textContent = 'Copiar / compartir el diagnóstico';
+    d.parentNode.insertBefore(bC, d);
+    bC.addEventListener('click', async () => {
+      const t = $('diag').textContent || '';
+      try{
+        if(navigator.share){ await navigator.share({ title: 'Diagnóstico ' + CFG.marca + ' AR', text: t }); bC.textContent = 'Compartido ✓'; }
+        else { await navigator.clipboard.writeText(t); bC.textContent = 'Copiado ✓ — pegalo en WhatsApp'; }
+      }catch(e){
+        try{ await navigator.clipboard.writeText(t); bC.textContent = 'Copiado ✓ — pegalo en WhatsApp'; }
+        catch(e2){ bC.textContent = 'No pude copiar: seleccioná el texto a mano'; }
+      }
+      setTimeout(() => { bC.textContent = 'Copiar / compartir el diagnóstico'; }, 4000);
+    });
+  }
 }
 $('btnDiag').addEventListener('click', diagnostico);
 
@@ -2051,6 +2073,11 @@ async function iniciarAR(){
   S.overlayOK = !!(session.domOverlayState && session.domOverlayState.type);
   try{ S.imgTrack = !!(S.imgCfg && typeof session.getTrackedImageScores === 'function'); }catch(e){ S.imgTrack = false; }
   if(S.imgCfg) registrar('image-tracking ' + (S.imgTrack ? 'DISPONIBLE' : 'NO disponible (flag webxr-incubations)'));
+  if(S.imgCfg && !S.imgTrack){
+    // Sin esto el QR no ubica NADA y el modelo queda donde uno lo apoye: hay que
+    // decirlo con todas las letras, no dejarlo escondido en el Diagnóstico.
+    UI.msg('⚠ Este teléfono NO tiene el reconocimiento de imágenes de WebXR: el QR no puede ubicar el 3D. Activalo en chrome://flags/#webxr-incubations (Enabled) y reiniciá Chrome. Mientras tanto, usá "2 puntos" tocando la cruz 1 y la cruz 2 del plano.');
+  }
   registrar('overlay ' + (S.overlayOK ? 'OK' : 'NO') + ' - escala 1:' + S.escala + ' - ' + (S.trazado && S.trazado.esModelo ? 'modelo ' + Math.round(S.trazado.tris) + ' caras' : 'red'));
   // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
   // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
@@ -2691,13 +2718,29 @@ function pasoMarcador(pos, quat, medido){
       const posM = new THREE.Vector3(pos.x, pos.y, pos.z);
       if(!S._mkLock && !S.factorImpresion && S.reticula && S.reticula.visible && !S.hitEsPared && camP.lengthSq() > 0){
         const dM = camP.distanceTo(posM), dP = camP.distanceTo(S.reticula.position);
-        if(dM > 0.05 && dP > 0.05){
+        // SOLO si el aro está apuntando AL MARCADOR (menos de 10° de separación):
+        // si el centro de la pantalla cae en la mesa de al lado, en el piso o
+        // pasando el borde, la distancia no es la de la hoja y "corregir" con eso
+        // manda el 3D a cualquier lado. Mejor no corregir nada.
+        const uM = posM.clone().sub(camP), uR = S.reticula.position.clone().sub(camP);
+        const alineado = (dM > 0.05 && dP > 0.05) && uM.normalize().dot(uR.normalize()) > 0.985;
+        if(alineado){
           const rel = dP / dM;
           if(rel > 0.45 && rel < 2.2){
+            S._facLista = S._facLista || [];
+            S._facLista.push(rel); if(S._facLista.length > 20) S._facLista.shift();
             S._facPlano = S._facPlano ? (S._facPlano*0.85 + rel*0.15) : rel;
             S._facPlanoN = (S._facPlanoN || 0) + 1;
           }
         }
+      }
+      // y ademas el numero tiene que ser ESTABLE: si las lecturas del aro bailan,
+      // no se toca la escala (mejor quedarse con la de la hoja que inventar otra)
+      let _facEstable = false;
+      if(S._facLista && S._facLista.length >= 15){
+        let _mn = 9, _mx = 0;
+        S._facLista.forEach(v => { if(v < _mn) _mn = v; if(v > _mx) _mx = v; });
+        _facEstable = (_mx - _mn) < 0.06;
       }
       let fac = S.factorImpresion || 0;
       let corrPos = 1;
@@ -2712,7 +2755,7 @@ function pasoMarcador(pos, quat, medido){
         // el ancho "medido" por ARCore suele ser el MISMO que se le declaró (no mide
         // nada): por eso manda lo que se dedujo contra la mesa, cuando hay bastantes
         // muestras y se aparta del 100 % más de un 4 %.
-        if(S._facPlano && (S._facPlanoN || 0) >= 10 && Math.abs(S._facPlano - 1) > 0.04){
+        if(S._facPlano && _facEstable && (S._facPlanoN || 0) >= 15 && Math.abs(S._facPlano - 1) > 0.06){
           fac = S._facPlano;
           corrPos = fac;   // la posición también viene mal: el marcador está más cerca
           if(!S._avisoFac){
@@ -2819,7 +2862,7 @@ function pasoMarcador(pos, quat, medido){
       // no se clava hasta tener decidida la ESCALA: si el aro ve la mesa, se
       // esperan sus 10 muestras (si no, se congelaba una escala equivocada y el
       // 3D quedaba flotando lejos de la hoja).
-      const _escListo = !!S.factorImpresion || !S.reticula || !S.reticula.visible || (S._facPlanoN || 0) >= 10;
+      const _escListo = !!S.factorImpresion || !S.reticula || !S.reticula.visible || (S._facPlanoN || 0) >= 15 || (S._mkBuf && S._mkBuf.length > 45);
       const _estable = (_n >= 15 && _disp < 0.02 && _escListo);
       const _porTiempo = (performance.now() - S._mkDesde) > 2500;
       if(_estable || _porTiempo){
@@ -3820,7 +3863,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0; S._anchoMedido = 0; S._facPlano = 0; S._facPlanoN = 0; S._avisoFac = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0; S._anchoMedido = 0; S._facPlano = 0; S._facPlanoN = 0; S._facLista = []; S._avisoFac = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
