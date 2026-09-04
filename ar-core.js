@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.5.0',
+  marca: 'AR', version: 'v3.6.0',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -87,6 +87,31 @@ function _fantasma(id){
 }
 const $ = id => document.getElementById(id) || _fantasma(id);
 // atajos de interfaz
+// ángulo normalizado a (-π, π]
+function angNorm(a){ return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+// EL MARCADOR IMPRESO (QR + marco): la imagen que ARCore rastrea. Un QR pelado
+// de 60 mm se reconocía tarde (patrón repetitivo, chico): ahora va más grande
+// según la hoja y con un marco negro y esquinas de color asimétricas, que le
+// dan a ARCore rasgos únicos para engancharlo rápido y saber la orientación.
+// La MISMA función arma lo que se imprime y lo que se rastrea (el PNG embebido).
+const MARCADOR_LADO_MM = { a4: 62, a3: 76, a2: 112, a1: 112 };
+const MARCADOR_MARGEN_MM = { a4: 90, a3: 90, a2: 130, a1: 130 };
+function marcadorCompuesto(qrCv, L){
+  L = L || 1000;
+  const cv = document.createElement('canvas'); cv.width = cv.height = L;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, L, L);                     // marco negro 5 %
+  g.fillStyle = '#fff'; g.fillRect(L*.05, L*.05, L*.90, L*.90);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(qrCv, L*.18, L*.18, L*.64, L*.64);                    // el QR en el 64 % central
+  g.fillStyle = '#e0292a'; g.fillRect(L*.07, L*.07, L*.09, L*.09);  // rojo arriba-izquierda
+  g.fillStyle = '#000';    g.fillRect(L*.84, L*.07, L*.09, L*.09);  // negro arriba-derecha
+  g.fillStyle = '#0095b8'; g.fillRect(L*.84, L*.84, L*.09, L*.09);  // cyan abajo-derecha
+  g.fillStyle = '#000';    g.fillRect(L*.07, L*.865, L*.38, L*.065); // barra abajo-izquierda
+  return cv;
+}
+
 const UI = {
   msg:   t => { $('hudMsg').textContent = t; },
   datos: t => { $('hudDatos').textContent = t; },
@@ -471,12 +496,16 @@ function construirGrupoMS(tz){
     }
     return [V(t.a), V(t.b)];
   }
+  // PUNTOS DE REFERENCIA para "Punto del 3D": la entrada al equipo (punta libre
+  // del colector), la boca de cada máquina y la esquina 0,0 del galpón
+  const puntosRef = [], extremos = [];
   (paq.tramos||[]).forEach(t => {
     const [A, B] = extremosTramo(t);
     const d = t.d_mm || 150;
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
     if(L < 0.003 || t.fabricar === false) return;   // conexión directa: las bridas de las piezas se juntan solas
     dir.normalize();
+    if(t.tipo !== 'manguera' && t.tipo !== 'bajante') extremos.push({ A, B, d });
     if(t.tipo === 'manguera'){
       const m = tubo(A, B, d, 18); if(m) m.material = matHose;
       const lst = (anillos[d] = anillos[d] || []);
@@ -500,6 +529,24 @@ function construirGrupoMS(tz){
       grpEtiq.add(et);
     }
   });
+
+  // "Entrada al equipo": la punta LIBRE (sin otro caño encima) más cercana al
+  // equipo de la planta; si no hay equipo dibujado, la del caño más gordo
+  (function(){
+    const pts = []; extremos.forEach(e => { pts.push({ p:e.A, d:e.d }); pts.push({ p:e.B, d:e.d }); });
+    const libres = pts.filter(pt => !pts.some(o => o !== pt && o.p.distanceTo(pt.p) < 0.06));
+    if(!libres.length) return;
+    const eq = (paq.planta||[]).find(pl => pl.tipo === 'equipo' && pl.x != null);
+    let mejor = null;
+    if(eq){
+      const ex = eq.x - cx, ez = eq.y - cz;
+      libres.forEach(pt => { const dd = Math.hypot(pt.p.x - ex, pt.p.z - ez); if(!mejor || dd < mejor.dd) mejor = { pt, dd }; });
+      mejor = mejor.pt;
+    }else{
+      libres.forEach(pt => { if(!mejor || pt.d > mejor.d) mejor = pt; });
+    }
+    puntosRef.push({ nombre: 'Entrada al ' + ((eq && eq.nombre) || 'equipo') + ' (Ø' + Math.round(mejor.d) + ')', p: mejor.p.clone() });
+  })();
 
   /* ── ACCESORIOS desde los nudos: codo facetado, derivación, pantalón ── */
   const segCierra = (a, b, p) => {         // punto del eje a-b más cercano a p
@@ -613,6 +660,7 @@ function construirGrupoMS(tz){
     if(!mejor || dm > 0.8) return;
     const bajo = (mejor.a.z || 0) <= (mejor.b.z || 0) ? mejor.a : mejor.b;
     const P = V(bajo);                                   // punta inferior del bajante (la boca)
+    puntosRef.push({ nombre: 'Boca ' + (m.nombre || m.name || ('máquina ' + (puntosRef.length + 1))), p: P.clone() });
     const dB = mejor.d_mm || (m.bocas && m.bocas[0] && m.bocas[0].d_mm) || 120;
     const rB = dB/2000;
     // VÁLVULA MARIPOSA a 35 cm por encima de la boca: cuerpo, disco girado a la apertura y palanca
@@ -757,6 +805,8 @@ function construirGrupoMS(tz){
   g.userData.grpMaq  = grpMaq;
   g.userData.grpPiso = grpPiso;
   g.userData.matsRed = Object.keys(_matsD).map(k => _matsD[k]).concat([matBrida, matHose]);
+  if(tz.refEsquina) puntosRef.push({ nombre: 'Esquina 0,0 del galpón', p: tz.refEsquina.clone() });
+  g.userData.puntosRef = puntosRef;
   return g;
 }
 
@@ -2160,7 +2210,7 @@ async function iniciarAR(){
 
   renderer.setAnimationLoop((t, frame) => {
     // retícula: antes de anclar, y también mientras se mide
-    if(frame && (!S.anclado || !S.fijado || S.midiendo || S.escuadrando || S.esquinando) && S.hitSource){
+    if(frame && (!S.anclado || !S.fijado || S.midiendo || S.escuadrando || S.esquinando || S.pivMode) && S.hitSource){
       const hits = frame.getHitTestResults(S.hitSource);
       // Para APOYAR: el impacto MÁS CERCANO cuya superficie mira hacia arriba
       // (mesa, banco, piso). Los puntos sueltos SÍ cuentan: en una mesa chica
@@ -2169,7 +2219,7 @@ async function iniciarAR(){
       let hit = null, pose = null;
       for(let hi = 0; hi < hits.length; hi++){
         const ps = hits[hi].getPose(S.refSpaceLocal); if(!ps) continue;
-        if(S.esquinando || S.midiendo || S.escuadrando || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
+        if(S.esquinando || S.midiendo || S.escuadrando || S.pivMode || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
       }
       if(!hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
       // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
@@ -2218,7 +2268,7 @@ async function iniciarAR(){
           S.esqGuia.rotation.y = S.rotY;
         }
       }
-    }else if(!S.midiendo && !S.escuadrando && !S.esquinando){
+    }else if(!S.midiendo && !S.escuadrando && !S.esquinando && !S.pivMode){
       S.reticula.visible = false;
     }
     // el aro se achica y atenúa cuando el modelo ya está apoyado (solo sugiere "tocá para re-apoyar")
@@ -2266,7 +2316,7 @@ async function iniciarAR(){
 
     // RECONOCIMIENTO DEL MARCADOR: el 3D queda parado sobre el plano impreso y
     // sigue al papel mientras se vea (moviste el plano → se mueve el 3D) hasta "Fijar"
-    if(frame && S.imgTrack && S.modoPapel && S.grupo && !S.fijado && S.trazado && S.trazado.marcador && S.trazado.refEsquina){
+    if(frame && S.imgTrack && S.modoPapel && S.grupo && (!S.fijado || S._mkLock) && S.trazado && S.trazado.marcador && S.trazado.refEsquina){
       try{
         const res = frame.getImageTrackingResults();
         let visto = false;
@@ -2304,15 +2354,52 @@ async function iniciarAR(){
             mLocal = new THREE.Vector3(S.trazado.refEsquina.x + (mk.dx_m || 0), 0, S.trazado.refEsquina.z + (mk.dy_m || 0)).multiplyScalar(k);
           }
           const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), th);
-          const pos = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
-          S.rotY = th; S.grupo.rotation.y = th;
-          S.grupo.position.copy(pos); S.grupo.position.y += S.offsetY;
-          S.grupo.visible = true; S.anclado = true; visto = true;
+          const posT = new THREE.Vector3(tr.position.x, tr.position.y, tr.position.z).sub(mLocal.applyQuaternion(qY));
+          posT.y += S.offsetY;
+          visto = true;
+          if(S._mkLock){
+            // YA FIJADO POR EL MARCADOR: solo se mira si el papel se movió de verdad
+            // (más de 2,5 cm o 2,5° durante ~0,4 s) → vuelve a seguirlo. El temblor
+            // normal de la lectura no lo mueve.
+            const dp = posT.distanceTo(S._mkLock.pos), da = Math.abs(angNorm(th - S._mkLock.rotY));
+            if(dp > 0.025 || da > 2.5*Math.PI/180){
+              S._mkMovTick = (S._mkMovTick || 0) + 1;
+              if(S._mkMovTick >= 12){
+                S._mkLock = null; S._mkMovTick = 0; S._mkEst = 0; S._mkPrev = null;
+                S.fijado = false; $('btnFijar').textContent = 'Fijar';
+                olvidarAncla(S.session);
+                registrar('plano movido: vuelve a seguir el marcador');
+                UI.msg('El plano se movió: el 3D lo sigue de nuevo y se vuelve a fijar cuando quede quieto.');
+              }
+            }else S._mkMovTick = 0;
+            break;
+          }
+          // SIGUIENDO EL PAPEL: pose suavizada (la lectura cruda de ARCore tiembla y
+          // el 3D "bailaba"); el primer cuadro va directo
+          if(!S._mkPrev){ S.grupo.position.copy(posT); S.rotY = th; }
+          else{ S.grupo.position.lerp(posT, 0.35); S.rotY = S.rotY + angNorm(th - S.rotY) * 0.35; }
+          S.grupo.rotation.y = S.rotY;
+          // ¿quieto? (menos de 4 mm y 0,5° entre lecturas seguidas)
+          if(S._mkPrev && S._mkPrev.pos.distanceTo(posT) < 0.004 && Math.abs(angNorm(th - S._mkPrev.rotY)) < 0.5*Math.PI/180) S._mkEst = (S._mkEst || 0) + 1;
+          else S._mkEst = 0;
+          S._mkPrev = { pos: posT.clone(), rotY: th };
+          S.grupo.visible = true; S.anclado = true;
           if(S.marcadorBuscando){
             S.marcadorBuscando = false;
             registrar('marcador reconocido: escala 1:' + (Math.round(esc*10)/10) + ' giro ' + (th*180/Math.PI).toFixed(1) + ' factor impresión ' + fac.toFixed(2) + (S.factorImpresion ? ' (manual)' : ' (medido)'));
-            UI.msg('✓ Plano reconocido: el 3D está parado sobre el papel (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Sigue al plano mientras se vea el QR; "Fijar" lo deja clavado.');
+            UI.msg('✓ Plano reconocido (escala 1:' + (Math.round(esc*10)/10) + (Math.abs(fac-1) > 0.05 ? ', hoja impresa al ' + Math.round(fac*100) + ' %' : '') + '). Quedate quieto un segundo: se fija solo.');
             UI.paso('', '');
+          }
+          if(S._mkEst >= 24){
+            // ~0,8 s quieto: se clava ahí (ancla de ARCore) y deja de temblar
+            S.grupo.position.copy(posT); S.rotY = th; S.grupo.rotation.y = th;
+            S._mkLock = { pos: posT.clone(), rotY: th }; S._mkEst = 0; S._mkMovTick = 0;
+            S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
+            olvidarAncla(S.session); S._pedirAncla = true;
+            if(S.reticula) S.reticula.visible = false;
+            registrar('marcador estable: fijado solo en (' + posT.x.toFixed(2) + ', ' + posT.y.toFixed(2) + ', ' + posT.z.toFixed(2) + ')');
+            UI.msg('✓ Plano leído y 3D FIJADO sobre el papel. Si movés la hoja, la sigue solo. "Apoyar de nuevo" lo libera.');
+            refrescarHUD();
           }
           break;
         }
@@ -2563,7 +2650,8 @@ async function generarHojaEnApp(hojaNom){
     const [W, H] = HOJAS_APP[hojaNom];
     const bb = tz.geo.boundingBox, f = tz.fUnid || 0.001, O = tz.refOrigen || new THREE.Vector3();
     const anMM = (bb.max.x - bb.min.x)/f, laMM = (bb.max.z - bb.min.z)/f, alMM = (bb.max.y - bb.min.y)/f;
-    const ox = 90, oy = 90, dispW = W - ox - 15, dispH = H - oy - 25;
+    const mg = MARCADOR_MARGEN_MM[hojaNom] || 90, ladoQR = MARCADOR_LADO_MM[hojaNom] || 62, cOff = 6 + ladoQR/2;   // centro del marcador: a cOff mm del origen del dibujo
+    const ox = mg, oy = mg, dispW = W - ox - 15, dispH = H - oy - 25;
     let esc = SERIE_ESC.find(e => anMM/e <= dispW && laMM/e <= dispH); if(!esc) esc = SERIE_ESC[SERIE_ESC.length-1];
     const k = 1/esc;
     const nombre = tz.obra.replace(/\.(obj|stl)$/i, '');
@@ -2571,9 +2659,9 @@ async function generarHojaEnApp(hojaNom){
     const aFile = (lx, lz) => [ (lx - O.x)/f, -(lz - O.z)/f ];
     const e1 = aFile(bb.min.x, bb.min.z), e2 = aFile(bb.max.x, bb.max.z);
     const texto = 'MS AR | ' + nombre.slice(0, 40) + ' | plano 1:' + esc;
-    const qrCv = qrCanvas(texto, 12);
+    const qrCv = marcadorCompuesto(qrCanvas(texto, 12), 1000);
     const png = qrCv.toDataURL('image/png');
-    const marcador = { patron:'QR', lado_mm:60, escala:esc, texto:texto, png:png, x_file_mm: e1[0] - 45*esc, y_file_mm: e1[1] + 45*esc };
+    const marcador = { patron:'QR2', lado_mm:ladoQR, escala:esc, texto:texto, png:png, x_file_mm: e1[0] - cOff*esc, y_file_mm: e1[1] + cOff*esc };
     const hoja = { version:1, hoja:hojaNom, escala:esc, titulo:nombre, esquina1_mm:e1, esquina2_mm:e2,
                    bbox_mm:[e1[0], e2[1], 0, e2[0], e1[1], alMM], marcador:marcador, origen:'app' };
     // ── la hoja como imagen ──
@@ -2598,7 +2686,7 @@ async function generarHojaEnApp(hojaNom){
     cruz(px(ox), px(oy), '1', -9, -4); cruz(px(ox) + dibW, px(oy) + dibH, '2', 5, 7);
     // QR
     g.imageSmoothingEnabled = false;
-    g.drawImage(qrCv, px(ox - 45 - 30), px(oy - 45 - 30), px(60), px(60));
+    g.drawImage(qrCv, px(ox - 6 - ladoQR), px(oy - 6 - ladoQR), px(ladoQR), px(ladoQR));
     g.imageSmoothingEnabled = true;
     // rótulo
     g.fillStyle = '#111'; g.font = 'bold ' + Math.round(px(4.6)) + 'px sans-serif'; g.fillText('PLANO PARA MS AR · ' + nombre, px(ox), px(12));
@@ -2679,6 +2767,8 @@ async function bitmapMarcador(mk){
 function tapPantalla(ev){
   if(!S.session || !S.grupo) return;
   registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '') + (S.hitDesdeDepth ? ' (por profundidad)' : ' (hit ARCore)')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
+  if(S.pivMode === 1){ elegirPuntoDel3D(); return; }
+  if(S.pivMode === 2){ marcarPivoteReal(); return; }
   if(S.esquinando){ puntoEsquina(); return; }
   if(S.midiendo){ agregarPuntoMedicion(); return; }
   if(S.escuadrando){ agregarPuntoEscuadra(); return; }
@@ -2741,12 +2831,122 @@ function apoyarEnReticula(){
   UI.paso('', '');
 }
 
+/* ------------------------------------------------------------
+   7·1. PUNTO DEL 3D — clavar un punto conocido del modelo en una
+   marca real y girar alrededor de él.
+   El caso del taller: no está el galpón para referenciar, pero SÍ
+   está el filtro. Se elige "Entrada al equipo" (o se toca un punto
+   del 3D), se apunta el aro a la marca hecha en la pared/piso donde
+   va esa boca y se toca: la boca queda clavada ahí. Desde ese
+   momento ⟲ ⟳, "Girar 90°" y el twist de 2 dedos giran la red
+   ALREDEDOR de ese punto hasta que calce con la planta real.
+   ------------------------------------------------------------ */
+function girarRed(nuevo){
+  if(!S.grupo) return;
+  if(S.piv && S.piv.local){
+    const Y = new THREE.Vector3(0,1,0), k = S.grupo.scale.x || 1;
+    const off = S.piv.local.clone().multiplyScalar(k);
+    const pw = off.clone().applyAxisAngle(Y, S.rotY).add(S.grupo.position);   // el punto, quieto en el mundo
+    S.rotY = nuevo;
+    S.grupo.position.copy(pw).sub(off.applyAxisAngle(Y, nuevo));
+  }else{
+    S.rotY = nuevo;
+  }
+  S.grupo.rotation.y = S.rotY;
+}
+function _btnPiv(txt, dest){ const b = $('btnPivote'); if(b && b.textContent !== undefined){ b.textContent = txt; b.classList.toggle('destacado', !!dest); } }
+function marcarPivote3D(local, nombre){
+  S.piv = { local: local.clone(), nombre: nombre };
+  try{ if(S._pivMesh) S._pivMesh.parent.remove(S._pivMesh); }catch(e){}
+  const k = S.grupo.scale.x || 1;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.05 / Math.max(k, 1e-6), 14, 10),   // 5 cm en el mundo, a cualquier escala
+    new THREE.MeshBasicMaterial({ color: PAL.acento, transparent: true, opacity: .85, depthTest: false }));
+  m.position.copy(local); m.renderOrder = 999; m.userData.rol = 'pivote';
+  S.grupo.add(m); S._pivMesh = m;
+}
+function cancelarPivote(silencio){
+  S.pivMode = 0; S.piv = null;
+  try{ if(S._pivMesh) S._pivMesh.parent.remove(S._pivMesh); }catch(e){}
+  S._pivMesh = null;
+  const l = document.getElementById('listaPiv'); if(l) l.remove();
+  _btnPiv('Punto del 3D', false);
+  if(!silencio){ UI.msg('Punto del 3D cancelado.'); UI.paso('', ''); }
+  refrescarHUD();
+}
+function mostrarListaPivote(){
+  if(!S.grupo) return;
+  const viejo = document.getElementById('listaPiv'); if(viejo) viejo.remove();
+  const capa = $('capaAR');
+  const box = document.createElement('div'); box.id = 'listaPiv';
+  box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:110px;z-index:80;background:rgba(10,13,22,.94);color:#fff;border-left:5px solid ' + cssPal('acento') + ';border-radius:10px;padding:12px 12px 8px;font:15px/1.3 system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.6);max-height:60vh;overflow:auto';
+  const tit = document.createElement('div'); tit.style.cssText = 'font-weight:700;margin-bottom:8px;letter-spacing:.5px';
+  tit.textContent = '¿Qué punto del 3D vas a clavar en la realidad?'; box.appendChild(tit);
+  const mk = (txt, fn, sub) => {
+    const b = document.createElement('button');
+    b.style.cssText = 'display:block;width:100%;text-align:left;margin:6px 0;padding:11px 12px;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;font:inherit';
+    b.innerHTML = txt + (sub ? '<br><small style="opacity:.7">' + sub + '</small>' : '');
+    b.addEventListener('click', ev => { ev.stopPropagation(); fn(); });
+    box.appendChild(b); return b;
+  };
+  const refs = (S.grupo.userData && S.grupo.userData.puntosRef) || [];
+  refs.forEach(r => mk('📍 ' + r.nombre, () => { box.remove(); marcarPivote3D(r.p, r.nombre); S.pivMode = 2; _btnPiv('Cancelar punto', true);
+    UI.msg('"' + r.nombre + '" elegido. Ahora apuntá el aro a la MARCA REAL donde va ese punto (pared o piso) y tocá.'); UI.paso('2', 'Punto del 3D · paso 2 · tocá la marca real'); }));
+  mk('👆 Tocar un punto del 3D', () => { box.remove(); S.pivMode = 1; _btnPiv('Cancelar punto', true);
+    UI.msg('Apuntá el CENTRO de la pantalla al punto del 3D (una boca, una brida) y tocá.'); UI.paso('1', 'Punto del 3D · paso 1 · apuntá al punto del modelo y tocá'); },
+    'apuntás con el centro de la pantalla a una boca o brida del modelo');
+  if(S.piv) mk('✖ Quitar el punto actual (' + S.piv.nombre + ')', () => cancelarPivote());
+  mk('Cancelar', () => box.remove());
+  box.addEventListener('beforexrselect', ev => ev.preventDefault());
+  box.addEventListener('pointerdown', ev => ev.stopPropagation());
+  box.addEventListener('pointerup', ev => ev.stopPropagation());
+  capa.appendChild(box);
+}
+function elegirPuntoDel3D(){
+  if(!S.grupo || !S.grupo.visible){ UI.msg('El 3D no está a la vista: apoyalo primero (o "Traer acá") y después elegí el punto.'); return; }
+  const cam = S.renderer && S.renderer.xr.isPresenting ? S.renderer.xr.getCamera() : S.camera;
+  const o = new THREE.Vector3(), d = new THREE.Vector3(); cam.getWorldPosition(o); cam.getWorldDirection(d);
+  const rc = new THREE.Raycaster(o, d, 0.05, 300); rc.camera = cam;
+  let hits = [];
+  try{ hits = rc.intersectObject(S.grupo, true).filter(h => h.object.visible && h.object.type !== 'Sprite' && h.object.userData.rol !== 'pivote'); }catch(e){ hits = []; }
+  if(!hits.length){ UI.msg('No toqué el 3D: apuntá el centro de la pantalla a una boca o brida del modelo y tocá de nuevo.'); return; }
+  const local = S.grupo.worldToLocal(hits[0].point.clone());
+  marcarPivote3D(local, 'punto tocado');
+  S.pivMode = 2;
+  registrar('punto del 3D elegido en local (' + local.x.toFixed(2) + ', ' + local.y.toFixed(2) + ', ' + local.z.toFixed(2) + ')');
+  UI.msg('Punto marcado en el 3D (bolita). Ahora apuntá el aro a la MARCA REAL donde va (pared o piso) y tocá.');
+  UI.paso('2', 'Punto del 3D · paso 2 · tocá la marca real');
+}
+function marcarPivoteReal(){
+  if(!S.grupo || !S.piv) { S.pivMode = 0; return; }
+  if(!S.reticula || !S.reticula.visible){ UI.msg('No veo superficie ahí: acercate a la marca (pared o piso) hasta que aparezca el aro y tocá.'); return; }
+  const P = S.reticula.position.clone();
+  const Y = new THREE.Vector3(0,1,0), k = S.grupo.scale.x || 1;
+  const off = S.piv.local.clone().multiplyScalar(k);
+  S.grupo.position.copy(P).sub(off.applyAxisAngle(Y, S.rotY));
+  S.grupo.rotation.y = S.rotY;
+  S.grupo.visible = true; S.anclado = true; S.fijado = false; $('btnFijar').textContent = 'Fijar';
+  S.pivMode = 0; S._mkLock = null;
+  // ancla física en la marca: si el tracking se corrige, la boca vuelve sola a su lugar
+  olvidarAncla(S.session);
+  if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
+    S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
+  }else{
+    S._pedirAncla = true;
+  }
+  registrar('punto del 3D "' + S.piv.nombre + '" clavado en (' + P.x.toFixed(2) + ', ' + P.y.toFixed(2) + ', ' + P.z.toFixed(2) + ')' + (S.hitEsPared ? ' contra la pared' : ''));
+  _btnPiv('Punto: ' + S.piv.nombre, true);
+  UI.msg('✓ "' + S.piv.nombre + '" clavado en la marca. Girá con ⟲ ⟳ (o 2 dedos): la red gira ALREDEDOR de ese punto. Cuando calce, "Fijar".');
+  UI.paso('', '');
+  refrescarHUD();
+}
+
 // "TRAER ACÁ": rescate del modelo perdido — lo trae al frente, a la altura
 // del piso, sin fijar, y olvida el ancla vieja. Un botón siempre a mano.
 function traerAca(){
   if(!S.grupo) return;
   S.offsetY = 0;
-  S.fijado = false;
+  S.fijado = false; S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
+  if(S.piv || S.pivMode) cancelarPivote(true);
   olvidarAncla(S.session);
   if(SENS.activo){ colocarAlFrente(); refrescarHUD(); return; }
   colocarAlFrente();
@@ -2763,9 +2963,11 @@ function fijarModelo(si){
     if(S.reticula) S.reticula.visible = false;
     if(!S.anchor) S._pedirAncla = true;
     S.marcadorBuscando = false;
+    if(S.imgTrack && S.modoPapel && S.grupo) S._mkLock = { pos: S.grupo.position.clone(), rotY: S.rotY };   // fijado a mano sobre el papel: si movés la hoja, la sigue igual
     sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
+    S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
     UI.msg('Liberado: tocá el aro para apoyarlo en otro lado.');
   }
 }
@@ -3464,6 +3666,7 @@ function refrescarHUD(){
     '   ALT ' + (S.offsetY>=0?'+':'') + S.offsetY.toFixed(2) + ' m' +
     (S.anchor ? '   ⚓' : '') +
     (S.fijado ? '   🔒' : '') +
+    (S.piv ? '   📍' : '') +
     (S.oclDisponible && S.oclusion ? '   OCL' : '') + lejos;
 }
 
@@ -3495,7 +3698,7 @@ function cerrarAR(desdeEvento){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkPrev = null; S._mkEst = 0; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
   const _oclTex = S.ocl && S.ocl.tex;
@@ -3654,7 +3857,7 @@ $('gestos').addEventListener('pointermove', ev => {
   if(!GES.punteros.has(ev.pointerId)) return;
   const p = GES.punteros.get(ev.pointerId);
   if(p.x0 != null && Math.hypot(ev.clientX - p.x0, ev.clientY - p.y0) > 14) S._gesMovio = true;
-  if(!S.anclado || S.midiendo || S.escuadrando || S.esquinando || S.autoCorriendo || !S.grupo) return;
+  if(!S.anclado || S.midiendo || S.escuadrando || S.esquinando || S.autoCorriendo || S.pivMode || !S.grupo) return;
   const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
   p.x = ev.clientX; p.y = ev.clientY;
   if(!S._gesMovio) return;   // temblor del dedo: todavía es un tap
@@ -3678,8 +3881,7 @@ $('gestos').addEventListener('pointermove', ev => {
     let da = g.ang - GES.angPrev;
     if(da >  Math.PI) da -= Math.PI*2;
     if(da < -Math.PI) da += Math.PI*2;
-    S.rotY -= da;                      // twist de 2 dedos = girar
-    S.grupo.rotation.y = S.rotY;
+    girarRed(S.rotY - da);             // twist de 2 dedos = girar (alrededor del punto del 3D si hay uno)
     const dcy = g.cy - GES.cyPrev;     // arrastre vertical de 2 dedos = altura
     const dh = -dcy * 0.004 * (S.fino ? .25 : 1);
     S.offsetY += dh;
@@ -3707,8 +3909,8 @@ $('panelAR').addEventListener('click', ev => {
   const a = b.dataset.act;
   const pasoR = S.fino ? Math.PI/180 : Math.PI/12;   // 1° / 15°
   const pasoA = S.fino ? .02 : .2;                    // 2 cm / 20 cm
-  if(a==='rot+'){ S.rotY += pasoR; S.grupo.rotation.y = S.rotY; }
-  if(a==='rot-'){ S.rotY -= pasoR; S.grupo.rotation.y = S.rotY; }
+  if(a==='rot+'){ girarRed(S.rotY + pasoR); }
+  if(a==='rot-'){ girarRed(S.rotY - pasoR); }
   if(a==='alt+'){ S.offsetY += pasoA; S.grupo.position.y += pasoA; }
   if(a==='alt-'){ S.offsetY -= pasoA; S.grupo.position.y -= pasoA; }
   if(a==='fino'){
@@ -3763,6 +3965,8 @@ $('panelAR').addEventListener('click', ev => {
       S.anclado = false; S.fijado = false; S.grupo.visible = false; S.offsetY = 0;
       S.grupo.position.y = 0;
       S._distModelo = null;
+      S._mkLock = null; S._mkPrev = null; S._mkEst = 0;
+      if(S.piv || S.pivMode) cancelarPivote(true);
       $('btnFijar').textContent = 'Fijar';
       if(S.midiendo){ S.midiendo = false; limpiarMedicion(); $('btnMedir').textContent = 'Medir: OFF'; }
       UI.msg('Listo para apoyar de nuevo: apuntá al piso hasta ver el aro y tocá.');
@@ -3770,7 +3974,8 @@ $('panelAR').addEventListener('click', ev => {
   }
   if(a==='fijar'){ fijarModelo(!S.fijado); }
   if(a==='traer'){ traerAca(); }
-  if(a==='rot90'){ S.rotY += Math.PI/2; S.grupo.rotation.y = S.rotY; sincronizarAncla(); }
+  if(a==='rot90'){ girarRed(S.rotY + Math.PI/2); sincronizarAncla(); }
+  if(a==='pivote'){ if(S.pivMode) cancelarPivote(); else mostrarListaPivote(); }
   if(a==='escuadrar'){
     S.escuadrando = !S.escuadrando; S.escPts = [];
     b.textContent = S.escuadrando ? 'Escuadrar: tocá 2 pts' : 'Escuadrar';
@@ -4326,4 +4531,5 @@ if(location.hash === '#compartido'){
 
 /* ── API para las interfaces (index.html de cada marca) ── */
 window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
-              revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION };
+              revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION,
+              construirGrupoMS, girarRed, marcadorCompuesto, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };
