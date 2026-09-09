@@ -1,0 +1,5 @@
+# Model digests describe exact file bytes; do not normalize their line endings.
+*.obj -text
+*.mtl -text
+*.stl -text
+*.json -text
