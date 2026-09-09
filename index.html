@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#283459">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -152,6 +152,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 #visor3D canvas{ display:block; }
 @media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
 </style>
+<link rel="stylesheet" href="expo.css">
 </head>
 <body>
 
@@ -245,7 +246,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
     </section>
   </main>
 
-  <footer class="pie"><span id="ver">v3.6.7</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+  <footer class="pie"><span id="ver">v4.0.0-expo</span> · MS AR · Depto. Innovación y Desarrollo</footer>
 </div>
 
 <!-- ======= CAPA AR ======= -->
@@ -344,7 +345,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v3.6.7',
+  marca: 'MS', version: 'v4.0.0-expo',
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
@@ -384,13 +385,12 @@ window.AR_CONFIG = {
     $('rapFijar').innerHTML = f ? '<i>🔒</i>Fijado' : '<i>🔓</i>Fijar';
     // la cinta de abajo solo cuando hay sesión y no hay modal de plano
     const panel = $('panelAR');
-    if(AR.S.session || AR.S.renderer){ panel.classList.remove('oculto'); }
+    if(!document.getElementById('capaAR').classList.contains('oculto') && (AR.S.session || AR.S.renderer)){ panel.classList.remove('oculto'); }
   }, 400);
   // el botón Salir del panel es el redondo: el núcleo escucha #btnSalirAR (ya cableado)
 })();
-if('serviceWorker' in navigator){
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.log('SW:', e); }); });
-}
 </script>
+<script src="expo.js"></script>
+<noscript><p>Activá JavaScript en el navegador para explorar los modelos 3D.</p></noscript>
 </body>
 </html>

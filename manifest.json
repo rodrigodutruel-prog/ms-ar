@@ -2,6 +2,8 @@
   "name": "MS AR — Realidad Aumentada en obra",
   "short_name": "MS AR",
   "description": "Metalúrgica Sarmiento: modelos OBJ de Inventor y redes de conductería de la Calculadora de Aspiración, a escala real sobre la obra.",
+  "id": "./index.html",
+  "lang": "es-AR",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
@@ -32,6 +34,8 @@
           "name": "modelo",
           "accept": [
             "model/obj",
+            "model/stl",
+            "application/sla",
             "application/json",
             "application/octet-stream",
             "text/plain",

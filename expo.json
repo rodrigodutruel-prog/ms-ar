@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "defaultModel": "demo",
+  "models": [
+    {
+      "id": "demo",
+      "title": "Instalación de aspiración",
+      "description": "Modelo de demostración: explorá la red de conductos, sus conexiones y máquinas.",
+      "file": "examples/demo.json",
+      "units": "mm",
+      "scale": 20,
+      "sha256": "39081f0afdd5a88ca28ee61c38269440da243dba0f68ae7da47cbada062d8ac1"
+    }
+  ]
+}

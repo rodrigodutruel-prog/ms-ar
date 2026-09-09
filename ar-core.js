@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v3.6.7',
+  marca: 'AR', version: 'v4.0.0-expo',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -121,8 +121,37 @@ const UI = {
   msg:   t => { $('hudMsg').textContent = t; },
   datos: t => { $('hudDatos').textContent = t; },
   paso:  (n, t) => { const e = $('pasoAR'); e.textContent = t || ''; e.dataset.n = n || ''; e.classList.toggle('oculto', !t); },
-  estado:(t, clase) => { const e = $('estadoAR'); e.className = 'nota' + (clase ? ' ' + clase : ''); e.innerHTML = t; }
+  estado:(t, clase) => { const e = $('estadoAR'); e.className = 'nota' + (clase ? ' ' + clase : ''); e.textContent = t; }
 };
+
+function numeroValido(v){ return typeof v === 'number' && Number.isFinite(v); }
+function liberarObjeto(objeto, conservar){
+  if(!objeto) return;
+  const geometrias = new Set(), materiales = new Set(), texturas = new Set();
+  objeto.traverse(o => {
+    if(o.geometry && o.geometry !== conservar) geometrias.add(o.geometry);
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.filter(Boolean).forEach(m => {
+      materiales.add(m);
+      Object.values(m).forEach(v => { if(v && v.isTexture) texturas.add(v); });
+    });
+  });
+  texturas.forEach(t => t.dispose());
+  materiales.forEach(m => m.dispose());
+  geometrias.forEach(g => g.dispose());
+}
+
+function validarGeometria(g){
+  const p = g && g.getAttribute('position');
+  const n = g && g.index ? g.index.count : (p && p.count);
+  if(!p || !n || n % 3) throw new Error('El modelo no contiene triángulos completos.');
+  for(let i=0; i<p.array.length; i++){
+    if(!Number.isFinite(p.array[i])) throw new Error('El modelo contiene coordenadas inválidas.');
+  }
+  g.computeBoundingBox();
+  if(g.boundingBox.getSize(new THREE.Vector3()).lengthSq() === 0) throw new Error('El modelo no tiene dimensiones.');
+  return g;
+}
 
 
 /* ------------------------------------------------------------
@@ -138,27 +167,36 @@ const UI = {
    }
    ------------------------------------------------------------ */
 function parseTrazado(raw){
-  if(!raw || !raw.nodos || !raw.tramos) throw new Error('El JSON no tiene "nodos" y "tramos".');
+  if(!raw || !raw.nodos || typeof raw.nodos !== 'object' || Array.isArray(raw.nodos) || !Array.isArray(raw.tramos)) throw new Error('El JSON no tiene "nodos" y "tramos" válidos.');
+  if(raw.unidades && !['m','mm'].includes(raw.unidades)) throw new Error('Las unidades de la red deben ser m o mm.');
   const f = (raw.unidades === 'm') ? 1 : 0.001;   // todo a metros
 
-  const nodos = {};
+  const nodos = Object.create(null);
   for(const [k,v] of Object.entries(raw.nodos)){
-    if(!v || v.length < 3) throw new Error('Nodo inválido: ' + k);
+    if(!Array.isArray(v) || v.length < 3 || !v.slice(0,3).every(numeroValido)) throw new Error('Nodo inválido: ' + k);
     // planta (x,y) + altura (z)  ->  three (x, altura, y)
     nodos[k] = new THREE.Vector3(v[0]*f, v[2]*f, v[1]*f);
   }
 
-  const tramos = raw.tramos.filter(t => nodos[t.de] && nodos[t.a]).map(t => ({
+  raw.tramos.forEach(t => {
+    if(!t || !nodos[t.de] || !nodos[t.a]) throw new Error('Un tramo hace referencia a un nodo inexistente.');
+    if(t.d != null && (!numeroValido(t.d) || t.d <= 0)) throw new Error('Un tramo tiene un diámetro inválido.');
+  });
+  const tramos = raw.tramos.map(t => ({
     de:t.de, a:t.a,
-    d:(Number(t.d)||150)*f,
+    d:(t.d == null ? (f === 1 ? .15 : 150) : t.d)*f,
     tipo:t.tipo || 'caño'
   }));
   if(!tramos.length) throw new Error('No hay tramos válidos.');
 
+  if(raw.maquinas != null && !Array.isArray(raw.maquinas)) throw new Error('La lista de máquinas es inválida.');
+  (raw.maquinas || []).forEach(m => {
+    if(!m || (m.pos && (!Array.isArray(m.pos) || m.pos.length < 2 || !m.pos.slice(0,2).every(numeroValido))) || (m.alto != null && (!numeroValido(m.alto) || m.alto <= 0))) throw new Error('Una máquina tiene posición o altura inválida.');
+  });
   const maquinas = (raw.maquinas||[]).map(m => ({
     nombre:m.nombre||'',
     pos:new THREE.Vector3((m.pos?.[0]||0)*f, 0, (m.pos?.[1]||0)*f),
-    alto:(m.alto||1000)*f
+    alto:(m.alto || (f === 1 ? 1 : 1000))*f
   }));
 
   // centrado en planta: el origen queda en el centro de la nube de nodos
@@ -170,7 +208,7 @@ function parseTrazado(raw){
   maquinas.forEach(m => { m.pos.x -= c.x; m.pos.z -= c.z; });
 
   return {
-    obra: raw.obra || 'Trazado sin nombre',
+    obra: String(raw.obra || 'Trazado sin nombre'),
     nodos, tramos, maquinas,
     ventilador: raw.ventilador?.nodo || null,
     medidas: box.getSize(new THREE.Vector3())
@@ -317,7 +355,13 @@ function construirGrupo(tz){
    con cuerpo cónico y rama, pantalones y mangueras corrugadas.
    ------------------------------------------------------------ */
 function parsePaqueteMS(raw){
-  if(!raw.tramos || !raw.tramos.length) throw new Error('El paquete no tiene tramos.');
+  if(!Array.isArray(raw.tramos) || !raw.tramos.length) throw new Error('El paquete no tiene tramos.');
+  raw.tramos.forEach(t => {
+    if(!t || ![t.a,t.b].every(p => p && numeroValido(p.x) && numeroValido(p.y) && (p.z == null || numeroValido(p.z)))) throw new Error('Un tramo del paquete tiene coordenadas inválidas.');
+    if(t.d_mm != null && (!numeroValido(t.d_mm) || t.d_mm <= 0)) throw new Error('Un tramo del paquete tiene diámetro inválido.');
+  });
+  ['maquinas','accesorios'].forEach(k => { if(raw[k] != null && (!Array.isArray(raw[k]) || raw[k].some(v => !v || typeof v !== 'object'))) throw new Error('Lista inválida: ' + k); });
+  if(raw.galpon) ['ancho_m','largo_m','alto_m'].forEach(k => { if(raw.galpon[k] != null && (!numeroValido(raw.galpon[k]) || raw.galpon[k] <= 0)) throw new Error('Dimensión inválida del galpón: ' + k); });
   let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9,maxz=0;
   raw.tramos.forEach(t => [t.a,t.b].forEach(p => {
     if(!p) return;
@@ -331,7 +375,7 @@ function parsePaqueteMS(raw){
   return {
     esMS: true, paq: raw, cx: cx, cz: cz,
     marcador: (raw.ar && raw.ar.marcador) || null,   // reconocimiento del plano impreso
-    obra: (raw.proyecto && (raw.proyecto.cliente || raw.proyecto.ot)) || 'Paquete de red',
+    obra: String((raw.proyecto && (raw.proyecto.cliente || raw.proyecto.ot)) || 'Paquete de red'),
     medidas: new THREE.Vector3((g&&g.ancho_m)||maxx-minx, maxz||4, (g&&g.largo_m)||maxy-miny)
   };
 }
@@ -845,7 +889,7 @@ function parseSTL(buf){
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos,3));
       g.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
-      return g;
+      return validarGeometria(g);
     }
   }
   // ASCII
@@ -858,7 +902,7 @@ function parseSTL(buf){
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos),3));
   g.computeVertexNormals();
-  return g;
+  return validarGeometria(g);
 }
 
 // STL binario GIGANTE (galpones completos, millones de triángulos): se
@@ -878,12 +922,13 @@ async function parseSTLBinGrande(buf, n, avance){
     if(z<minz)minz=z; if(z>maxz)maxz=z;
   }
   const diag = Math.hypot(maxx-minx, maxy-miny, maxz-minz) || 1;
-  const celda = Math.min(Math.max(diag/1400, 4), 80);   // en unidades del archivo
+  const celda = diag/1400;   // en unidades del archivo
   const map = new Map(), vx=[], vy=[], vz=[];
   const tIdx = new Uint32Array(n*3);
   let nIdx = 0, tri = 0;
-  await new Promise(done => {
+  await new Promise((done, fail) => {
     function lote(){
+      try{
       const fin = Math.min(n, tri + 120000);
       for(; tri<fin; tri++){
         let off = 84 + tri*50 + 12;
@@ -891,7 +936,8 @@ async function parseSTLBinGrande(buf, n, avance){
         for(let v2=0; v2<3; v2++){
           const x=dv.getFloat32(off,true), y=dv.getFloat32(off+4,true), z=dv.getFloat32(off+8,true);
           off += 12;
-          const key = ((Math.round(x/celda)+16384)*32768 + (Math.round(y/celda)+16384))*32768 + (Math.round(z/celda)+16384);
+          if(![x,y,z].every(Number.isFinite)) throw new Error('STL contiene coordenadas inv?lidas.');
+          const key = Math.round((x-minx)/celda) + ',' + Math.round((y-miny)/celda) + ',' + Math.round((z-minz)/celda);
           let id = map.get(key);
           if(id === undefined){ id = vx.length; map.set(key, id); vx.push(x); vy.push(y); vz.push(z); }
           if(v2===0) i0=id; else if(v2===1) i1=id; else i2=id;
@@ -901,6 +947,7 @@ async function parseSTLBinGrande(buf, n, avance){
       }
       if(avance) avance(tri/n);
       if(tri < n) setTimeout(lote, 0); else done();
+      }catch(e){ fail(e); }
     }
     lote();
   });
@@ -910,7 +957,7 @@ async function parseSTLBinGrande(buf, n, avance){
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setIndex(new THREE.BufferAttribute(tIdx.slice(0, nIdx), 1));
   g.computeVertexNormals();
-  return g;
+  return validarGeometria(g);
 }
 
 // Color estable a partir del nombre de un material (Inventor exporta
@@ -925,7 +972,7 @@ function colorDeNombre(nom){
 
 // MTL de Inventor: "newmtl X" + "Kd r g b" (+ "d" opacidad). Devuelve { nombre: {kd:[r,g,b], d:1} }
 function parseMTL(txt){
-  const out = {}; let act = null;
+  const out = Object.create(null); let act = null;
   txt.split('\n').forEach(l => {
     l = l.trim();
     if(l.startsWith('newmtl ')){ act = l.slice(7).trim(); out[act] = { kd:[.8,.8,.8], d:1 }; }
@@ -942,8 +989,9 @@ function parseMTL(txt){
 //    si se cargó, si no un tono estable por nombre)
 //  · "o vidrio" / materiales con opacidad < .9 → grupo translúcido
 async function parseOBJ(txt, avance, mtl){
-  const vs = [], cols = [], tris = [], trisVid = [], triMat = [], triMatVid = [];
-  const matNombres = []; const matIdx = {};
+  let vs = [], cols = [];
+  const tris = [], trisVid = [], triMat = [], triMatVid = [];
+  const matNombres = []; const matIdx = Object.create(null);
   let hayColor = false, enVidrio = false, matAct = -1, hayMat = false, hojaEmb = null;
   const lineas = txt.split('\n'); txt = null;
   const N = lineas.length;
@@ -951,16 +999,18 @@ async function parseOBJ(txt, avance, mtl){
   for(let i0=0; i0<N; i0+=LOTE){
     const fin = Math.min(N, i0+LOTE);
     for(let i=i0;i<fin;i++){
-      const l = lineas[i];
+      const l = lineas[i].trimStart().replace(/\t/g, ' ');
       const c0 = l.charCodeAt(0), c1 = l.charCodeAt(1);
       if(c0===118 && c1===32){          // "v "
         const p = l.trim().split(/\s+/);
+        if(p.length < 4 || !p.slice(1,4).every(v => Number.isFinite(Number(v)))) throw new Error('OBJ: vértice inválido en línea ' + (i+1));
         vs.push(+p[1], +p[2], +p[3]);
-        if(p.length >= 7){ cols.push(+p[4], +p[5], +p[6]); hayColor = true; }
+        if(p.length >= 7){ if(!p.slice(4,7).every(v => Number.isFinite(Number(v)))) throw new Error('OBJ: color inválido en línea ' + (i+1)); cols.push(...p.slice(4,7).map(v => Math.max(0,Math.min(1,Number(v))))); hayColor = true; }
         else cols.push(1, 1, 1);
       }else if(c0===102 && c1===32){    // "f "
-        const p = l.trim().split(/\s+/).slice(1)
-          .map(t => { let k = parseInt(t,10); return k<0 ? vs.length/3 + k : k-1; });
+        const p = l.split('#')[0].trim().split(/\s+/).slice(1)
+          .map(t => { const token = t.split('/')[0]; const k = /^-?\d+$/.test(token) ? Number(token) : NaN; return k<0 ? vs.length/3 + k : k-1; });
+        if(p.length < 3 || p.some(k => !Number.isInteger(k) || k < 0 || k >= vs.length/3)) throw new Error('OBJ: cara con índice inválido en línea ' + (i+1));
         const vid = enVidrio || (matAct >= 0 && mtl && mtl[matNombres[matAct]] && mtl[matNombres[matAct]].d < .9);
         const dest = vid ? trisVid : tris, dm = vid ? triMatVid : triMat;
         for(let j=2;j<p.length;j++){ dest.push(p[0], p[j-1], p[j]); dm.push(matAct); }
@@ -995,7 +1045,7 @@ async function parseOBJ(txt, avance, mtl){
       const map = new Map(), remap = new Int32Array(vs.length/3);
       let nv = 0;
       for(let i=0;i<vs.length/3;i++){
-        const key = ((Math.round(vs[i*3]/celda)+16384)*32768 + (Math.round(vs[i*3+1]/celda)+16384))*32768 + (Math.round(vs[i*3+2]/celda)+16384);
+        const key = Math.round((vs[i*3]-minx)/celda) + ',' + Math.round((vs[i*3+1]-miny)/celda) + ',' + Math.round((vs[i*3+2]-minz)/celda);
         let id = map.get(key);
         if(id === undefined){ id = nv++; map.set(key, id); }
         remap[i] = id;
@@ -1016,7 +1066,7 @@ async function parseOBJ(txt, avance, mtl){
           vs2[id*3]=vs[i*3]; vs2[id*3+1]=vs[i*3+1]; vs2[id*3+2]=vs[i*3+2];
           cols2[id*3]=cols[i*3]; cols2[id*3+1]=cols[i*3+1]; cols2[id*3+2]=cols[i*3+2];
         }
-        vs.length = 0; vs.push(...vs2); cols.length = 0; cols.push(...cols2);
+        vs = vs2; cols = cols2;
         todos = t2; mats = m2; nOp = nOp2;
         break;
       }
@@ -1025,6 +1075,7 @@ async function parseOBJ(txt, avance, mtl){
       await new Promise(r => setTimeout(r, 0));
     }
   }
+  if(!todos.length) throw new Error('La simplificación eliminó todas las caras. Prepará un modelo con más detalle.');
   const pos = new Float32Array(todos.length*3);
   for(let i=0;i<todos.length;i++){
     const k = todos[i]*3;
@@ -1032,15 +1083,15 @@ async function parseOBJ(txt, avance, mtl){
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  if(trisVid.length){
+  if(todos.length > nOp){
     g.addGroup(0, nOp, 0);
-    g.addGroup(nOp, trisVid.length, 1);
+    g.addGroup(nOp, todos.length - nOp, 1);
     g.userData.hayVidrio = true;
   }
   g.computeVertexNormals();
   g.userData.matNombres = matNombres;
   g.userData.hoja = hojaEmb;
-  g.userData.triMat = (hayMat && matNombres.length > 1) ? Int16Array.from(mats) : null;
+  g.userData.triMat = (hayMat && matNombres.length) ? Int32Array.from(mats) : null;
   if(hayColor){
     // COLORES REALES del archivo (crudos): la luz fija se hornea con hornearReal()
     // una vez que el modelo está girado a Y-arriba (la luz es del mundo, no del CAD)
@@ -1055,7 +1106,7 @@ async function parseOBJ(txt, avance, mtl){
     // sin colores por vértice pero con materiales: un tono por material
     aplicarColoresMaterial(g, mtl || null);
   }
-  return g;
+  return validarGeometria(g);
 }
 
 // Hornea la luz fija sobre los colores crudos (userData.colCrudo) con las
@@ -1100,61 +1151,68 @@ function aplicarColoresMaterial(g, mtl){
 
 // Varios archivos de una vez (selección múltiple o Compartir con 2 archivos):
 // el .mtl se lee ANTES que el .obj para que el modelo abra ya con sus colores.
-function cargarArchivos(files){
+async function cargarArchivos(files){
   const lista = Array.from(files || []);
-  if(!lista.length) return;
+  if(!lista.length) return false;
   const ext = f => (f.name.split('.').pop() || '').toLowerCase();
   const mtls = lista.filter(f => ext(f) === 'mtl');
   const resto = lista.filter(f => ext(f) !== 'mtl');
-  const seguir = () => {
-    resto.forEach(f => {
-      if(ext(f) === 'json'){
-        const fr = new FileReader();
-        fr.onload = () => { try{ cargar(JSON.parse(fr.result)); }catch(e){ UI.estado('JSON inválido: ' + e.message, 'err'); } };
-        fr.readAsText(f);
-      }else cargarModelo3D(f);
-    });
-  };
-  if(mtls.length){
+  if(S._cargando || S._iniciando || S.session || SENS.activo || S.modo3D){ UI.estado('Volvé al inicio y esperá a que termine la operación actual para abrir otro modelo.', 'err'); return false; }
+  if(lista.length > 20 || lista.reduce((s,f) => s+f.size, 0) > (CFG.maxArchivoMB || 150)*1024*1024){ UI.estado('El conjunto de archivos supera el límite de carga (150 MB / 20 archivos).', 'err'); return false; }
+  if(lista.some(f => !['obj','stl','json','mtl'].includes(ext(f))) || resto.length > 1){ UI.estado('Abrí un solo modelo OBJ, STL o JSON por vez, junto con sus archivos MTL.', 'err'); return false; }
+  S._cargando = true;
+  try{
+    if(mtls.length){
+      const materiales = Object.create(null);
+      for(const f of mtls) Object.assign(materiales, parseMTL(await leerArchivo(f, false)));
+      S.mtl = materiales;
+      if(!resto.length) return aplicarMTLCargado(materiales);
+    }else S.mtl = null;
+    const f = resto[0];
+    if(ext(f) === 'json'){ cargar(JSON.parse(await leerArchivo(f, false))); return true; }
+    return await cargarModelo3D(f, true);
+  }catch(e){ UI.estado('No se pudo abrir el archivo: ' + e.message, 'err'); return false; }
+  finally{ S._cargando = false; }
+}
+
+function leerArchivo(file, binario){
+  return new Promise((resolve, reject) => {
     const fr = new FileReader();
-    fr.onload = () => { try{ S.mtl = parseMTL(fr.result); }catch(e){} seguir(); if(!resto.length) cargarMTL(mtls[0]); };
-    fr.readAsText(mtls[0]);
-  }else seguir();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error('No se pudo leer ' + file.name + '. Volvé a seleccionar el archivo.'));
+    fr.onabort = () => reject(new Error('Se canceló la lectura del archivo.'));
+    if(binario) fr.readAsArrayBuffer(file); else fr.readAsText(file);
+  });
+}
+
+function aplicarMTLCargado(mtl){
+  S.mtl = mtl;
+  const tz = S.trazado;
+  if(tz && tz.esModelo && tz.geo && tz.geo.userData.triMat){
+    aplicarColoresMaterial(tz.geo, mtl);
+    S.piel = 'real'; $('btnColor').textContent = 'Color: real';
+  }
+  UI.estado('Colores MTL leídos: ' + Object.keys(mtl).length + ' materiales.', 'ok');
+  return true;
 }
 
 // Cargar un .mtl DESPUÉS del .obj: recolorea el modelo ya abierto
-function cargarMTL(file){
-  const fr = new FileReader();
-  fr.onload = () => {
-    try{
-      const mtl = parseMTL(fr.result);
-      S.mtl = mtl;
-      const tz = S.trazado;
-      if(!tz || !tz.esModelo || !tz.geo || !tz.geo.userData.triMat){
-        UI.estado('Colores .mtl leídos (' + Object.keys(mtl).length + ' materiales). Abrí un OBJ con "usemtl" para aplicarlos.', 'ok');
-        return;
-      }
-      aplicarColoresMaterial(tz.geo, mtl);
-      S.piel = 'real'; $('btnColor').textContent = 'Color: real';
-      UI.estado('Colores aplicados desde el .mtl: ' + Object.keys(mtl).length + ' materiales.', 'ok');
-    }catch(e){ UI.estado('Error al leer el .mtl: ' + e.message, 'err'); }
-  };
-  fr.readAsText(file);
+async function cargarMTL(file){
+  return cargarArchivos([file]);
 }
 
-function cargarModelo3D(file){
+async function cargarModelo3D(file, interno){
+  if(!interno) return cargarArchivos([file]);
   const ext = (file.name.split('.').pop()||'').toLowerCase();
-  if(ext === 'mtl'){ cargarMTL(file); return; }
-  const fr = new FileReader();
   UI.estado('Leyendo ' + file.name + '…');
-  fr.onload = async () => {
+  let geo;
     try{
-      let geo, esPlanObra = false;
+      const fr = { result: await leerArchivo(file, ext !== 'obj') };
+      let textoOBJ = null;
       if(ext === 'obj'){
-        S._textoOBJ = (fr.result.length < 40e6) ? fr.result : null;   // para el _AR.obj de "Plano con QR"
+        textoOBJ = (fr.result.length < 40e6) ? fr.result : null;   // para el _AR.obj de "Plano con QR"
         geo = await parseOBJ(fr.result, f => { UI.estado('Leyendo OBJ… ' + Math.round(f*100) + '%'); }, S.mtl || null);
       }else{
-        S._textoOBJ = null;
         let nT = 0;
         if(fr.result.byteLength >= 84){
           const dv0 = new DataView(fr.result);
@@ -1170,6 +1228,7 @@ function cargarModelo3D(file){
           geo = parseSTL(fr.result);
         }
       }
+      validarGeometria(geo);
       // Unidades: lo que dice el selector (Inventor y PlanObra exportan en mm).
       // Inventor exporta Z-arriba; three usa Y-arriba.
       {
@@ -1217,6 +1276,8 @@ function cargarModelo3D(file){
         S.piel = 'real';
         const bC = $('btnColor'); if(bC) bC.textContent = 'Color: real';
       }
+      if(S.trazado && S.trazado.geo && S.trazado.geo !== geo) S.trazado.geo.dispose();
+      S._textoOBJ = textoOBJ;
       S.trazado = { esModelo:true, geo:geo, obra:file.name, tamano:file.size, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand),
                     refOrigen: new THREE.Vector3(-c.x, -minY0, -c.z), fUnid: ({ mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001) };
       // HOJA IMPRESA embebida (Plano_AR_desde_OBJ): el QR y las cruces en coordenadas del archivo
@@ -1242,11 +1303,13 @@ function cargarModelo3D(file){
       else if(_ext > 400) UI.estado('Mide ' + Math.round(_ext) + ' m de lado: si tendría que ser más chico, cambiá las unidades a "mm" y volvé a abrirlo.', 'err');
       else $('estadoAR').classList.remove('err');
       revisarSoporte();
+      window.dispatchEvent(new CustomEvent('ar:model-loaded', { detail: { obra: S.trazado.obra } }));
+      return true;
     }catch(e){
+      if(geo && (!S.trazado || S.trazado.geo !== geo)) geo.dispose();
       UI.estado('Error al leer el 3D: ' + e.message, 'err');
+      return false;
     }
-  };
-  if(ext==='obj') fr.readAsText(file); else fr.readAsArrayBuffer(file);
 }
 
 // La RED MS también se puede ubicar con 2 puntos (plano impreso / galpón):
@@ -1272,7 +1335,7 @@ function prepararReferenciasMS(tz){
     tz.bbox = bb;
     tz.tris = 0;
     prepararPlanoImagen(tz, gr);
-    gr.traverse(o => { if(o.geometry) o.geometry.dispose(); });
+    liberarObjeto(gr);
   }catch(e){ tz.planImg = null; }
 }
 
@@ -1280,15 +1343,17 @@ function prepararReferenciasMS(tz){
 // cargar. La vista en planta dibuja esta imagen (paredes y máquinas como un
 // plano de verdad) en lugar de una lluvia de puntos ilegible.
 function prepararPlanoImagen(tz, objeto){
+  let rnd, rt, esc, xrEra, targetEra, colorEra, alphaEra;
   try{
     const w = 1024;
     const bb = objeto ? tz.bbox : tz.geo.boundingBox;
     // OJO: un segundo WebGLRenderer (otro contexto GL) alrededor de las
     // sesiones ARCore colgaba Chrome en algunos equipos. Se usa el renderer
     // ÚNICO de la app y se dibuja a un render target fuera de pantalla.
-    const rnd = obtenerRenderer();
-    const rt = new THREE.WebGLRenderTarget(w, w, { depthBuffer: true, stencilBuffer: false });
-    const esc = new THREE.Scene();
+    rnd = obtenerRenderer();
+    xrEra = rnd.xr.enabled; targetEra = rnd.getRenderTarget(); colorEra = rnd.getClearColor(new THREE.Color()); alphaEra = rnd.getClearAlpha();
+    rt = new THREE.WebGLRenderTarget(w, w, { depthBuffer: true, stencilBuffer: false });
+    esc = new THREE.Scene();
     // look de PLANO CAD: la masa en gris oscuro (DoubleSide: lo seccionado
     // por el corte se ve relleno, como el rayado de un plano) y las ARISTAS
     // en blanco.
@@ -1307,7 +1372,7 @@ function prepararPlanoImagen(tz, objeto){
       }catch(e){}
     }
     const pcx = (bb.min.x + bb.max.x) / 2, pcz = (bb.min.z + bb.max.z) / 2;
-    const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2) * 1.04;
+    const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2, .001) * 1.04;
     // CORTE DE PLANO: en un edificio, mirar desde el techo muestra las chapas
     // y las cerchas — puré. Como en un plano de arquitectura, se corta a
     // 1,8 m: paredes seccionadas, máquinas y piso. Piezas bajas: vista entera.
@@ -1317,13 +1382,12 @@ function prepararPlanoImagen(tz, objeto){
     cam.position.set(pcx, corte, pcz);
     cam.up.set(0, 0, -1);
     cam.lookAt(pcx, bb.min.y, pcz);
-    const xrEra = rnd.xr.enabled; rnd.xr.enabled = false;
+    rnd.xr.enabled = false;
     rnd.setRenderTarget(rt);
     rnd.setClearColor(0x000000, 0); rnd.clear();
     rnd.render(esc, cam);
     const px = new Uint8Array(w * w * 4);
     rnd.readRenderTargetPixels(rt, 0, 0, w, w, px);
-    rnd.setRenderTarget(null); rnd.xr.enabled = xrEra; rt.dispose();
     // a un canvas 2D (WebGL entrega las filas de abajo hacia arriba → se invierte)
     const cvv = document.createElement('canvas'); cvv.width = w; cvv.height = w;
     const c2 = cvv.getContext('2d'); const idat = c2.createImageData(w, w);
@@ -1336,6 +1400,11 @@ function prepararPlanoImagen(tz, objeto){
     tz.planImg = img;
     tz.planMeta = { cx: pcx, cz: pcz, H: H, w: w };
   }catch(e){ tz.planImg = null; }
+  finally{
+    if(rnd && xrEra !== undefined){ rnd.setRenderTarget(targetEra); rnd.xr.enabled = xrEra; rnd.setClearColor(colorEra, alphaEra); }
+    if(rt) rt.dispose();
+    if(esc){ if(objeto) esc.remove(objeto); liberarObjeto(esc, tz.geo); }
+  }
 }
 
 function construirGrupoModelo(tz){
@@ -1755,7 +1824,11 @@ function pintarInfo(tz){
 
 function cargar(raw){
   try{
-    S.trazado = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
+    if(S.session || SENS.activo || S.modo3D || S._iniciando) throw new Error('Volvé al inicio antes de abrir otro modelo.');
+    const siguiente = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
+    if(S.trazado && S.trazado.geo) S.trazado.geo.dispose();
+    S.trazado = siguiente;
+    S._textoOBJ = null;
     if(S.trazado.esMS) prepararReferenciasMS(S.trazado);
     pintarInfo(S.trazado);
     // el JSON tiene que ser de la MISMA Calculadora que imprimió el plano: si el
@@ -1763,13 +1836,16 @@ function cargar(raw){
     if(S.trazado.esMS && S.trazado.marcador && !S.trazado.marcador.png){
       UI.estado('Este archivo del AR no trae el QR del plano (es de una Calculadora anterior). Para "Sobre plano impreso" volvé a exportarlo con el botón AR de la Calculadora nueva, y usá el mismo plano impreso.', 'err');
       registrar('JSON sin QR embebido (marcador ' + (S.trazado.marcador.patron || '?') + ')');
-      return;
+      return true;
     }
     $('estadoAR').classList.remove('err');
     revisarSoporte();
+    window.dispatchEvent(new CustomEvent('ar:model-loaded', { detail: { obra: S.trazado.obra } }));
+    return true;
   }catch(e){
     $('estadoAR').className = 'nota err';
     $('estadoAR').textContent = 'Error al leer el trazado: ' + e.message;
+    throw e;
   }
 }
 
@@ -1920,7 +1996,7 @@ async function revisarSoporte(){
       'Ese es un <b>origen opaco</b>: no tiene dominio, así que WebXR rechaza toda sesión ' +
       'aunque el equipo sea compatible. No es problema del archivo.<br><br>' +
       'Hay que servirlo desde una URL <b>https://</b> real ' +
-      '(GitHub Pages, o servidor_https.py en la LAN).';
+      '(por ejemplo, el sitio publicado de esta aplicación).';
     $('btnAR').disabled = true;
     return;
   }
@@ -1938,9 +2014,7 @@ async function revisarSoporte(){
   }
   if(!('xr' in navigator)){
     est.className='nota err';
-    est.innerHTML = 'Este navegador no expone WebXR.<br>' +
-      'Necesitás <b>Chrome en Android</b> con <b>Google Play Services for AR (ARCore)</b> instalado. ' +
-      'En iPhone no existe: usá "Ver en 3D".';
+    est.textContent = 'Este navegador no ofrece realidad aumentada WebXR. Podés explorar el mismo modelo con "Ver en 3D" o abrir el sitio en un navegador y dispositivo compatibles.';
     $('btnAR').disabled = true;
     return;
   }
@@ -1958,7 +2032,22 @@ async function revisarSoporte(){
 }
 
 async function iniciarAR(){
-  if(!S.trazado) return;
+  if(!S.trazado || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  if(!navigator.xr || !window.isSecureContext){ UI.estado('AR no está disponible en este navegador. Podés abrir Ver en 3D.', 'err'); return false; }
+  S._iniciando = 'xr';
+  const intento = S._inicioId = (S._inicioId || 0) + 1;
+  $('btnAR').disabled = true;
+  try{ return await iniciarARInterno(intento); }
+  catch(e){
+    const session = S.session;
+    cerrarAR(false);
+    if(session) { try{ await session.end(); }catch(ignorado){} }
+    UI.estado('No se pudo iniciar AR: ' + (e.message || e) + '. Podés continuar con Ver en 3D.', 'err');
+    return false;
+  }finally{ if(S._inicioId === intento) S._iniciando = null; $('btnAR').disabled = !S.trazado; }
+}
+
+async function iniciarARInterno(intento){
 
   const renderer = obtenerRenderer();
   const canvas = renderer.domElement;
@@ -2021,6 +2110,7 @@ async function iniciarAR(){
   S.imgCfg = null; S.imgTrack = false;
   if(S.modoPapel && S.trazado && S.trazado.marcador){
     const bmp = await bitmapMarcador(S.trazado.marcador);
+    if(S._inicioId !== intento) { if(bmp && bmp.close) bmp.close(); return false; }
     if(bmp){
       extras.push('image-tracking');
       const fImp = S.factorImpresion || 1;   // hoja impresa reducida/ampliada (A1→A2 = 0,71…)
@@ -2054,22 +2144,19 @@ async function iniciarAR(){
       break;
     }catch(e){
       errores.push(it.nom + ' → ' + (e.message || e.name));
+      if(e.name !== 'NotSupportedError') break;
     }
   }
 
   if(!session){
-    $('capaAR').classList.add('oculto');
-    $('capaUI').classList.remove('oculto');
-    $('estadoAR').className = 'nota err';
-    $('estadoAR').innerHTML = 'No se pudo iniciar AR. Probé estas configuraciones:<br>· ' +
-      errores.join('<br>· ') +
-      '<br><br>Si todas fallan, casi seguro falta <b>Google Play Services for AR</b> ' +
-      'o el equipo no está en la lista de dispositivos ARCore.';
-    canvas.remove();
-    return;
+    cerrarAR(false);
+    UI.estado('No se pudo iniciar AR. ' + errores.join(' · ') + '. Revisá los permisos del navegador o continuá con Ver en 3D.', 'err');
+    return false;
   }
 
+  if(S._inicioId !== intento){ try{ await session.end(); }catch(e){} return false; }
   S.session = session;
+  session.addEventListener('end', () => { if(S.session === session) cerrarAR(true); }, { once: true });
   S.overlayOK = !!(session.domOverlayState && session.domOverlayState.type);
   try{ S.imgTrack = !!(S.imgCfg && typeof session.getTrackedImageScores === 'function'); }catch(e){ S.imgTrack = false; }
   if(S.imgCfg) registrar('image-tracking ' + (S.imgTrack ? 'DISPONIBLE' : 'NO disponible (flag webxr-incubations)'));
@@ -2096,7 +2183,7 @@ async function iniciarAR(){
       usaFloor = false;
       await renderer.xr.setSession(session);
     }catch(e2){
-      try{ session.end(); }catch(e3){}
+      try{ await session.end(); }catch(e3){}
       cerrarAR();
       $('estadoAR').className = 'nota err';
       $('estadoAR').textContent = 'La sesión AR abrió pero no se pudo montar: ' + (e2.message || e2);
@@ -2104,6 +2191,7 @@ async function iniciarAR(){
     }
   }
   S.usaFloor = usaFloor;
+  if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
@@ -2235,12 +2323,13 @@ async function iniciarAR(){
   if(!S.overlayOK) session.addEventListener('select', ev => tapPantalla(ev));
 
 
-  session.addEventListener('end', () => cerrarAR(true));
+  if(S.session !== session) return false;
   // BOTÓN ATRÁS de Android: en vez de que Chrome mate la sesión de golpe, se
   // sale por el camino limpio (el mismo que el botón Salir)
-  try{ history.pushState({ ar: 1 }, ''); S._histAR = true; }catch(e){}
+  try{ if(history.state && (history.state.ar || history.state.v3d)) history.replaceState({ ar: 1 }, ''); else history.pushState({ ar: 1 }, ''); S._histAR = true; }catch(e){}
 
   renderer.setAnimationLoop((t, frame) => {
+    if(S.session !== session || !S.scene || !S.grupo) return;
     // retícula: antes de anclar, y también mientras se mide
     if(frame && (!S.anclado || !S.fijado || S.midiendo || S.escuadrando || S.esquinando || S.pivMode) && S.hitSource){
       const hits = frame.getHitTestResults(S.hitSource);
@@ -2492,6 +2581,7 @@ async function iniciarAR(){
     }
     renderer.render(S.scene, S.camera);
   });
+  return true;
 }
 
 /* ------------------------------------------------------------
@@ -2850,14 +2940,20 @@ async function bitmapMarcador(mk){
   // QR embebido por la Calculadora (ar.marcador.png): se rastrea ESA imagen
   if(mk && mk.png){
     try{
+      if(typeof mk.png !== 'string' || !/^data:image\/png;base64,/i.test(mk.png) || mk.png.length > 8*1024*1024) throw new Error('La imagen del marcador debe ser un PNG embebido de hasta 8 MB.');
       const img = new Image();
-      await new Promise((ok, err) => { img.onload = ok; img.onerror = err; img.src = mk.png; });
+      await new Promise((ok, err) => {
+        const timer = setTimeout(() => { img.onload = img.onerror = null; err(new Error('El marcador no se pudo leer.')); }, 5000);
+        img.onload = () => { clearTimeout(timer); ok(); };
+        img.onerror = () => { clearTimeout(timer); err(new Error('PNG del marcador inválido.')); };
+        img.src = mk.png;
+      });
       // el QR va sobre fondo blanco con su zona muda (así lo imprime la hoja)
       const W = 900, cv = document.createElement('canvas'); cv.width = cv.height = W;
       const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, W);
       g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, W, W);
       return await createImageBitmap(cv);
-    }catch(e){ /* cae al patrón */ }
+    }catch(e){ registrar('Marcador: ' + (e.message || e)); return null; }
   }
   const W = 900, cv = document.createElement('canvas'); cv.width = cv.height = W;
   const g = cv.getContext('2d');
@@ -2881,6 +2977,7 @@ async function bitmapMarcador(mk){
    nuevo" lo libera. Medir / escuadrar / 2 puntos tienen prioridad.
    ------------------------------------------------------------ */
 function tapPantalla(ev){
+  if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
   if(!S.session || !S.grupo) return;
   registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '') + (S.hitDesdeDepth ? ' (por profundidad)' : ' (hit ARCore)')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
   if(S.pivMode === 1){ elegirPuntoDel3D(); return; }
@@ -3003,7 +3100,8 @@ function mostrarListaPivote(){
     const b = document.createElement('button');
     b.style.cssText = 'display:block;width:100%;text-align:left;margin:6px 0;padding:13px 12px;pointer-events:auto;touch-action:manipulation;' +
       'background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;font:inherit';
-    b.innerHTML = txt + (sub ? '<br><small style="opacity:.7">' + sub + '</small>' : '');
+    b.textContent = txt;
+    if(sub){ const br = document.createElement('br'), small = document.createElement('small'); small.style.opacity = '.7'; small.textContent = sub; b.append(br, small); }
     const _ir = ev => { ev.preventDefault(); ev.stopPropagation(); if(b.dataset.usado) return; b.dataset.usado = '1'; fn(); };
     b.addEventListener('click', _ir);
     b.addEventListener('pointerup', _ir);
@@ -3440,7 +3538,7 @@ async function correrAutoAjuste(){
    7c. MEDICIÓN — 2 toques sobre el piso = distancia real
    ------------------------------------------------------------ */
 function limpiarMedicion(){
-  if(S.medGrp){ while(S.medGrp.children.length) S.medGrp.remove(S.medGrp.children[0]); }
+  if(S.medGrp){ liberarObjeto(S.medGrp); S.medGrp.clear(); }
   S.medPts = [];
 }
 function agregarPuntoMedicion(){
@@ -3800,13 +3898,27 @@ function refrescarHUD(){
    contextos alrededor de sesiones ARCore congelaba Chrome al Salir
    (mismo patrón ya probado en el escáner de ms-ar). */
 let _rendererUnico = null;
+let _renderEpoch = 0;
 function obtenerRenderer(){
+  if(S._contextLost) throw new Error('El dispositivo está recuperando el motor gráfico. Esperá unos segundos o recargá la página.');
+  _renderEpoch++;
   if(!_rendererUnico){
     const cv = document.createElement('canvas');
     _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, powerPreference: 'high-performance' });
     _rendererUnico.xr.enabled = true;
+    cv.addEventListener('webglcontextlost', ev => {
+      ev.preventDefault(); S._contextLost = true;
+      cerrar3D(); salirAR();
+      const mensaje = 'El dispositivo interrumpió el motor gráfico. Cerrá otras pestañas y esperá unos segundos; si no se recupera, recargá la página.';
+      UI.estado(mensaje, 'err'); registrar(mensaje);
+      window.dispatchEvent(new CustomEvent('ar:graphics-status', { detail: { lost: true, message: mensaje } }));
+    });
+    cv.addEventListener('webglcontextrestored', () => {
+      S._contextLost = false;
+      window.dispatchEvent(new CustomEvent('ar:graphics-status', { detail: { lost: false, message: 'Motor gráfico recuperado. Podés volver a abrir el modelo.' } }));
+    });
   }
-  _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio, 2.25));
+  _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   _rendererUnico.setSize(window.innerWidth, window.innerHeight);
   return _rendererUnico;
 }
@@ -3815,11 +3927,17 @@ function cerrarAR(desdeEvento){
   if(S._cerrando) return;            // guard de reentrada: 'end' + botón Salir
   registrar('cierre AR ' + (desdeEvento ? '(evento end / atras)' : '(boton Salir)'));
   S._cerrando = true;
-  setTimeout(() => { S._cerrando = false; }, 1500);
+  const epoch = _renderEpoch;
+  const escena = S.scene;
+  const geoModelo = S.trazado && S.trazado.geo;
+  const imagenes = S.imgCfg && S.imgCfg.trackedImages;
+  if(imagenes) imagenes.forEach(i => { try{ if(i.image.close) i.image.close(); }catch(e){} });
   const r = S.renderer;
   const hs = S.hitSource;
   if(hs){ try{ hs.cancel(); }catch(e){} }
   S.renderer = null; S.session = null; S.hitSource = null;
+  S.scene = null; S.camera = null; S.reticula = null; S.refSpaceLocal = null;
+  GES.punteros.clear(); GES.angPrev = null; GES.cyPrev = null;
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.anchor2 = null; S.anc2Listo = false;
@@ -3827,8 +3945,7 @@ function cerrarAR(desdeEvento){
   S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0; S._anchoMedido = 0; S._facPlano = 0; S._facPlanoN = 0; S._facLista = []; S._avisoFac = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
-  const _oclTex = S.ocl && S.ocl.tex;
-  if(_oclTex) setTimeout(() => { try{ _oclTex.dispose(); }catch(e){} }, 1200);
+  if(escena) setTimeout(() => { try{ liberarObjeto(escena, geoModelo); escena.clear(); }catch(e){} }, desdeEvento ? 1200 : 100);
   S.ocl = null; S.oclDisponible = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
@@ -3840,7 +3957,7 @@ function cerrarAR(desdeEvento){
     if(desdeEvento){
       // la sesión la terminó Android (atrás / otra app): no tocar el canvas en ese instante
       try{ r.domElement.style.visibility = 'hidden'; }catch(e){}
-      setTimeout(() => { try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, 900);
+      setTimeout(() => { if(epoch !== _renderEpoch) return; try{ r.domElement.remove(); r.domElement.style.visibility = ''; }catch(e){} }, 900);
     }else{
       // botón Salir: sacar el canvas YA y pedir session.end() aparte — es el patrón
       // que venía funcionando; esconderlo primero y sacarlo después bloqueaba la app
@@ -3849,12 +3966,15 @@ function cerrarAR(desdeEvento){
     // el renderer NO se destruye: se reusa en la próxima sesión (destruirlo
     // durante el desarme de ARCore congelaba la app al Salir)
   }
+  S._cerrando = false;
 }
 
 // Salir de la sesión AR por el camino seguro: devolver la pantalla YA y pedir
 // el cierre de la sesión aparte (llamar end() desde adentro de un evento de la
 // capa AR deadlockeaba Chrome con cuadros XR en vuelo).
 function salirAR(){
+  S._inicioId = (S._inicioId || 0) + 1;
+  S._iniciando = null;
   if(SENS.activo){ cerrarARSensor(); return; }
   const s = S.session;
   if(!s){ if(S.renderer) cerrarAR(false); return; }
@@ -4302,6 +4422,15 @@ function colocarAlFrente(){
 }
 
 async function iniciarARSensor(){
+  if(S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  S._iniciando = 'sensor';
+  const intento = S._inicioId = (S._inicioId || 0) + 1;
+  try{ return await iniciarARSensorInterno(intento); }
+  catch(e){ cerrarARSensor(); UI.estado('No se pudo iniciar la cámara: ' + (e.message || e) + '. Podés abrir Ver en 3D.', 'err'); return false; }
+  finally{ if(S._inicioId === intento) S._iniciando = null; }
+}
+
+async function iniciarARSensorInterno(intento){
   if(!S.trazado){
     $('estadoAR').className='nota err';
     $('estadoAR').textContent='Primero cargá un modelo (o tocá "Trazado demo").';
@@ -4338,21 +4467,24 @@ async function iniciarARSensor(){
     });
   }catch(e){
     $('estadoAR').className='nota err';
-    $('estadoAR').innerHTML = 'No se pudo abrir la cámara: <b>' + (e.name||'') + ' ' + (e.message||'') + '</b>.<br>' +
+    $('estadoAR').textContent = 'No se pudo abrir la cámara: ' + (e.name||'') + ' ' + (e.message||'') + '. ' +
       'Si dice NotAllowedError, revisá el permiso de cámara de Chrome. ' +
       'Si dice NotSupportedError, este origen no permite cámara y hay que servirlo por https.';
     return;
   }
 
+  if(S._inicioId !== intento){ stream.getTracks().forEach(t => t.stop()); return false; }
   SENS.stream = stream;
   const vid = $('videoCam');
   vid.srcObject = stream;
   vid.classList.remove('oculto');
-  try{ await vid.play(); }catch(e){}
+  await vid.play();
+  if(S._inicioId !== intento){ cerrarARSensor(); return false; }
 
   // 3. escena encima del video
   const renderer = obtenerRenderer();
   const canvas = renderer.domElement;
+  canvas.style.visibility = '';
   canvas.style.position='fixed'; canvas.style.top='0'; canvas.style.left='0';
   canvas.style.zIndex='42';
   document.body.appendChild(canvas);
@@ -4383,7 +4515,7 @@ async function iniciarARSensor(){
   // recién ahí caemos al absoluto.
   SENS.recibio = false;
   SENS.orient = ev => {
-    if(ev.alpha === null) return;
+    if(![ev.alpha, ev.beta, ev.gamma].every(numeroValido)) return;
     SENS.recibio = true;
     const g = Math.PI/180;
     SENS.screenAng = (screen.orientation && screen.orientation.angle || window.orientation || 0) * g;
@@ -4401,7 +4533,8 @@ async function iniciarARSensor(){
   }, 2000);
 
   // 5. tocar para colocar
-  canvas.addEventListener('pointerdown', () => { colocarAlFrente(); refrescarHUD(); });
+  SENS.tap = () => { colocarAlFrente(); refrescarHUD(); };
+  canvas.addEventListener('pointerdown', SENS.tap);
 
   SENS.activo = true;
 
@@ -4424,6 +4557,7 @@ async function iniciarARSensor(){
   })();
 
   window.addEventListener('resize', ajustarSensor);
+  return true;
 }
 
 function ajustarSensor(){
@@ -4436,6 +4570,10 @@ function ajustarSensor(){
 function cerrarARSensor(){
   SENS.activo = false;
   if(SENS.rafId) cancelAnimationFrame(SENS.rafId);
+  SENS.rafId = null;
+  window.removeEventListener('resize', ajustarSensor);
+  if(S.renderer && SENS.tap) S.renderer.domElement.removeEventListener('pointerdown', SENS.tap);
+  SENS.tap = null;
   if(SENS.fallbackTimer){ clearTimeout(SENS.fallbackTimer); SENS.fallbackTimer = null; }
   if(SENS.orient){
     window.removeEventListener('deviceorientationabsolute', SENS.orient, true);
@@ -4444,9 +4582,13 @@ function cerrarARSensor(){
   }
   if(SENS.stream){ SENS.stream.getTracks().forEach(t => t.stop()); SENS.stream = null; }
   const vid = $('videoCam');
+  if(vid.pause) vid.pause();
   vid.srcObject = null; vid.classList.add('oculto');
   if(S.renderer){ const r = S.renderer; S.renderer = null; try{ r.setAnimationLoop(null); }catch(e){} try{ r.domElement.remove(); }catch(e){} }  // el renderer se reusa, no se destruye
+  liberarObjeto(S.scene, S.trazado && S.trazado.geo);
+  S.scene = null; S.camera = null; S.reticula = null;
   S.grupo = null; S.anclado = false;
+  GES.punteros.clear();
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
 }
@@ -4455,24 +4597,66 @@ function cerrarARSensor(){
    8. VISOR 3D (fallback sin AR — para PC y para mostrar en escritorio)
    ------------------------------------------------------------ */
 function iniciar3D(){
-  if(!S.trazado) return;
+  if(!S.trazado || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  try{ return iniciar3DInterno(); }
+  catch(e){ cerrar3D(); $('visor3D').classList.add('oculto'); $('capaUI').classList.remove('oculto'); UI.estado('No se pudo abrir el visor 3D: ' + (e.message || e), 'err'); return false; }
+}
+
+function cerrar3D(){ if(S._cerrar3D) S._cerrar3D(); }
+
+function iniciar3DInterno(){
   const cont = $('visor3D');
   cont.classList.remove('oculto');
   $('capaUI').classList.add('oculto');
 
   const renderer = obtenerRenderer();
+  S.modo3D = true;
+  renderer.setAnimationLoop(null);
   renderer.domElement.style.visibility = '';
+  renderer.domElement.style.position = 'absolute';
+  renderer.domElement.style.zIndex = '0';
+  renderer.domElement.style.touchAction = 'none';
   cont.appendChild(renderer.domElement);
-  try{ history.pushState({ v3d: 1 }, ''); S._hist3D = true; }catch(e){}
+  try{ if(history.state && (history.state.ar || history.state.v3d)) history.replaceState({ v3d: 1 }, ''); else history.pushState({ v3d: 1 }, ''); S._hist3D = true; }catch(e){}
 
   const scene = nuevaEscena();
-  const cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, .05, 500);
+  const conservada = S.trazado.geo;
+  const callbacks = [];
+  const escuchar = (dest, evento, fn, opts) => { dest.addEventListener(evento, fn, opts); callbacks.push(() => dest.removeEventListener(evento, fn, opts)); };
+  S._cerrar3D = () => {
+    S.modo3D = false;
+    if(S.raf3D != null) cancelAnimationFrame(S.raf3D);
+    S.raf3D = null;
+    callbacks.forEach(fn => fn());
+    renderer.domElement.remove();
+    liberarObjeto(scene, conservada); scene.clear();
+    cont.classList.add('oculto'); $('capaUI').classList.remove('oculto');
+    $('btnSalir3D').onclick = null; S._cerrar3D = null;
+  };
+  $('btnSalir3D').onclick = cerrar3D;
+  const cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, .01, Math.max(500, S.trazado.medidas.length()*12));
   const grupo = construirGrupo(S.trazado);
   scene.add(grupo);
 
-  const R = Math.max(Math.max(S.trazado.medidas.x, S.trazado.medidas.z, S.trazado.medidas.y) * 1.6, 0.8);
+  // Encuadrar la geometría real: la grilla y las etiquetas no agrandan el modelo.
+  grupo.updateMatrixWorld(true);
+  const limites = new THREE.Box3(), parte = new THREE.Box3();
+  grupo.traverse(obj => {
+    if(!obj.isMesh || !obj.geometry || obj.userData.esEtiqueta) return;
+    if(!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+    parte.copy(obj.geometry.boundingBox).applyMatrix4(obj.matrixWorld);
+    if(!parte.isEmpty()) limites.union(parte);
+  });
+  if(limites.isEmpty()) limites.setFromCenterAndSize(new THREE.Vector3(0, S.trazado.medidas.y*.5, 0), S.trazado.medidas);
+  const centro = limites.getCenter(new THREE.Vector3());
+  const radioModelo = Math.max(limites.getSize(new THREE.Vector3()).length()*.5, .1);
+  const distanciaAjustada = () => {
+    const vertical = THREE.MathUtils.degToRad(cam.fov)*.5;
+    const horizontal = Math.atan(Math.tan(vertical)*Math.max(.1, cam.aspect));
+    return radioModelo / Math.sin(Math.min(vertical, horizontal)) * 1.12;
+  };
+  let R = distanciaAjustada();
   let ang = Math.PI*0.25, alt = Math.PI*0.28, dist = R;
-  const centro = new THREE.Vector3(0, S.trazado.medidas.y*0.4, 0);
 
   function ubicarCam(){
     cam.position.set(
@@ -4487,46 +4671,47 @@ function iniciar3D(){
   let px=0, py=0, arr=false, dPrev=0;
   const el = renderer.domElement;
   const dist2 = e => Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-  el.addEventListener('pointerdown', e => { arr=true; px=e.clientX; py=e.clientY; });
-  el.addEventListener('pointerup',   () => arr=false);
-  el.addEventListener('pointercancel', () => arr=false);
-  el.addEventListener('pointermove', e => {
+  escuchar(el, 'pointerdown', e => { arr=true; px=e.clientX; py=e.clientY; try{ el.setPointerCapture(e.pointerId); }catch(ignorado){} });
+  escuchar(el, 'pointerup',   () => arr=false);
+  escuchar(el, 'pointercancel', () => arr=false);
+  escuchar(el, 'pointermove', e => {
     if(!arr) return;
     ang -= (e.clientX-px)*.006;
     alt = Math.min(Math.PI/2-.05, Math.max(.05, alt + (e.clientY-py)*.005));
     px=e.clientX; py=e.clientY; ubicarCam();
   });
-  el.addEventListener('wheel', e => { dist = Math.min(R*3, Math.max(R*.15, dist + e.deltaY*.01*R*.1)); ubicarCam(); }, {passive:true});
-  el.addEventListener('touchstart', e => { if(e.touches.length===2){ arr=false; dPrev=dist2(e); } }, {passive:true});
-  el.addEventListener('touchmove',  e => {
+  escuchar(el, 'wheel', e => { dist = Math.min(R*3, Math.max(R*.15, dist + e.deltaY*.01*R*.1)); ubicarCam(); }, {passive:true});
+  escuchar(el, 'touchstart', e => { if(e.touches.length===2){ arr=false; dPrev=dist2(e); } }, {passive:true});
+  escuchar(el, 'touchmove',  e => {
     if(e.touches.length===2){
       const d = dist2(e);
+      if(d <= 0 || dPrev <= 0) { dPrev = d; return; }
       dist = Math.min(R*3, Math.max(R*.15, dist * (dPrev/d)));
       dPrev = d; ubicarCam();
     }
   }, {passive:true});
 
   function loop(){
-    grupo.userData.grpEtiq.visible = S.verEtiquetas;
+    if(!S.modo3D) return;
+    if(grupo.userData.grpEtiq) grupo.userData.grpEtiq.visible = S.verEtiquetas;
+    if(grupo.userData.grpMaq) grupo.userData.grpMaq.visible = S.verMaquinas;
     if(grupo.userData.grpPiso) grupo.userData.grpPiso.visible = S.verPiso;
     renderer.render(scene, cam);
     S.raf3D = requestAnimationFrame(loop);
   }
   loop();
 
-  window.addEventListener('resize', () => {
+  escuchar(window, 'resize', () => {
+    const zoomRelativo = dist / R;
     cam.aspect = window.innerWidth/window.innerHeight;
+    R = distanciaAjustada(); dist = R * zoomRelativo;
+    cam.far = Math.max(500, R*5);
     cam.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    ubicarCam();
   });
 
-  $('btnSalir3D').onclick = () => {
-    cancelAnimationFrame(S.raf3D);
-    el.remove();                    // el renderer se reusa, no se destruye
-    cont.classList.add('oculto');
-    $('capaUI').classList.remove('oculto');
-    $('btnSalir3D').onclick = null;
-  };
+  return true;
 }
 
 /* ------------------------------------------------------------
@@ -4593,17 +4778,8 @@ $('inp3D').addEventListener('change', ev => {
 });
 $('btnArchivo').addEventListener('click', () => $('inpArchivo').click());
 $('inpArchivo').addEventListener('change', ev => {
-  const f = ev.target.files?.[0];
-  if(!f) return;
-  const fr = new FileReader();
-  fr.onload = () => {
-    try{ cargar(JSON.parse(fr.result)); }
-    catch(e){
-      $('estadoAR').className='nota err';
-      $('estadoAR').textContent='JSON inválido: ' + e.message;
-    }
-  };
-  fr.readAsText(f);
+  cargarArchivos(ev.target.files);
+  ev.target.value = '';
 });
 
 const _selImp = document.getElementById('selImpreso');
@@ -4653,32 +4829,42 @@ revisarSoporte();
 
 // ARCHIVO COMPARTIDO desde otra app (WhatsApp / Archivos → Compartir → 3DDUT AR):
 // el service worker lo dejó guardado y nos mandó acá con #compartido.
-if(location.hash === '#compartido'){
+if(/^#compartido(?:=[a-z0-9-]+)?$/i.test(location.hash)){
   (async () => {
     try{
       const cache = await caches.open(CFG.cacheCompartido);
       const claves = await cache.keys();
       const files = [];
+      const recibidos = [];
+      const scope = new URL('./', location.href).pathname;
+      const lote = location.hash.includes('=') ? location.hash.slice(location.hash.indexOf('=')+1) : null;
       for(const req of claves){
-        if(!/_compartido/.test(req.url)) continue;
+        const url = new URL(req.url);
+        if(url.origin !== location.origin || !url.pathname.startsWith(scope)) continue;
+        const nombreClave = url.pathname.slice(scope.length);
+        if(!nombreClave.startsWith(lote ? '_compartido_' + lote + '_' : '_compartido') || nombreClave.includes('/')) continue;
         const r = await cache.match(req);
         if(!r) continue;
         const nombre = decodeURIComponent(r.headers.get('X-Nombre') || 'modelo.obj');
         files.push(new File([await r.blob()], nombre));
-        await cache.delete(req);
+        recibidos.push(req);
       }
       if(files.length){
-        cargarArchivos(files);
-        UI.estado('Recibido: ' + files.map(f => f.name).join(' + ') + ' — tocá Iniciar AR.', 'ok');
+        const ok = await cargarArchivos(files);
+        if(!ok) return;
+        for(const req of recibidos) await cache.delete(req);
+        UI.estado('Recibido: ' + files.map(f => f.name).join(' + ') + '. Listo para visualizar.', 'ok');
       }
       history.replaceState(null, '', location.pathname);
     }catch(e){ mostrarError('Archivo compartido: ' + (e.message || e)); }
   })();
 }
+if(location.hash === '#compartido-error') UI.estado('No se pudo guardar el archivo compartido. Abrilo con Seleccionar archivo; el modelo anterior sigue disponible.', 'err');
 
 
 
 /* ── API para las interfaces (index.html de cada marca) ── */
 window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
+              cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION,
               construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };

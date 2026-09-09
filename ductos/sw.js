@@ -1,5 +1,6 @@
-/* la app vieja (ductos) se desinstala sola: MS AR vive en la raíz */
-self.addEventListener('install', e => { self.skipWaiting(); });
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).then(() => self.registration.unregister()));
+/* Retira solamente el registro de la antigua app de conductos.
+   CacheStorage pertenece al origen completo: nunca borrar otras apps ni modelos. */
+self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate', event => {
+  event.waitUntil(self.registration.unregister());
 });

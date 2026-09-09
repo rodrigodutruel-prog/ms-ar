@@ -1,6 +1,19 @@
 <!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=../">
 <title>MS AR</title></head><body style="font-family:sans-serif;background:#0a0d16;color:#fff;padding:24px">
 AR Conductería ahora es <b>MS AR</b>: <a style="color:#0095b8" href="../">abrir MS AR</a>. Instalala de nuevo desde ahí (menú ⋮ → Instalar aplicación) y borrá esta.
-<script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}
-if(window.caches){caches.keys().then(ks=>ks.forEach(k=>caches.delete(k)));}
-location.replace('../');</script></body></html>
+<script>
+(function () {
+  var legacyScope = new URL('./', location.href).href;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function (registrations) {
+      return Promise.all(registrations.filter(function (registration) {
+        return registration.scope === legacyScope;
+      }).map(function (registration) { return registration.unregister(); }));
+    }).catch(function () {});
+  }
+  var target = new URL('../', location.href);
+  target.search = location.search;
+  target.hash = location.hash;
+  location.replace(target.href);
+})();
+</script></body></html>
