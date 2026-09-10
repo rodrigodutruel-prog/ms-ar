@@ -9,7 +9,7 @@
    tiene alguno, $() devuelve un elemento fantasma y no pasa nada.
    ============================================================ */
 const CFG = Object.assign({
-  marca: 'AR', version: 'v4.0.0-expo',
+  marca: 'AR', version: 'v4.0.1',
   restaurarAncla: false,        // NUNCA volver solo a un anclaje de otra sesión: el modelo aparecía en cualquier lado
   pielDefault: 'altura',        // piel de los OBJ sin color
   cacheCompartido: 'ar-compartido',
@@ -1166,11 +1166,12 @@ async function cargarArchivos(files){
       const materiales = Object.create(null);
       for(const f of mtls) Object.assign(materiales, parseMTL(await leerArchivo(f, false)));
       S.mtl = materiales;
-      if(!resto.length) return aplicarMTLCargado(materiales);
+      if(!resto.length){ const ok = aplicarMTLCargado(materiales); if(ok) window.dispatchEvent(new CustomEvent('ar:files-loaded', {detail:{files:lista,units:$('selUnid').value}})); return ok; }
     }else S.mtl = null;
     const f = resto[0];
-    if(ext(f) === 'json'){ cargar(JSON.parse(await leerArchivo(f, false))); return true; }
-    return await cargarModelo3D(f, true);
+    const ok = ext(f) === 'json' ? cargar(JSON.parse(await leerArchivo(f, false))) : await cargarModelo3D(f, true);
+    if(ok) window.dispatchEvent(new CustomEvent('ar:files-loaded', {detail:{files:lista,units:$('selUnid').value}}));
+    return ok;
   }catch(e){ UI.estado('No se pudo abrir el archivo: ' + e.message, 'err'); return false; }
   finally{ S._cargando = false; }
 }
@@ -1831,6 +1832,7 @@ function cargar(raw){
     S._textoOBJ = null;
     if(S.trazado.esMS) prepararReferenciasMS(S.trazado);
     pintarInfo(S.trazado);
+    window.dispatchEvent(new CustomEvent('ar:model-loaded', { detail: { obra: S.trazado.obra, raw } }));
     // el JSON tiene que ser de la MISMA Calculadora que imprimió el plano: si el
     // marcador no trae el QR embebido, la app buscaría otra imagen y nunca lo vería
     if(S.trazado.esMS && S.trazado.marcador && !S.trazado.marcador.png){
@@ -1840,7 +1842,6 @@ function cargar(raw){
     }
     $('estadoAR').classList.remove('err');
     revisarSoporte();
-    window.dispatchEvent(new CustomEvent('ar:model-loaded', { detail: { obra: S.trazado.obra } }));
     return true;
   }catch(e){
     $('estadoAR').className = 'nota err';
