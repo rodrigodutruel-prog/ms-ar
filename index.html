@@ -152,6 +152,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 #visor3D canvas{ display:block; }
 @media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
 </style>
+<link rel="stylesheet" href="ms-paper.css">
 </head>
 <body>
 
@@ -209,17 +210,22 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
       </div>
       <div class="lbl">Hoja impresa (solo "Sobre plano impreso")</div>
       <select id="selImpreso" class="mini" style="width:100%">
-        <option value="0" selected>Medir el QR con la cámara (automático)</option>
-        <option value="1">Impresa al 100 % (como se generó)</option>
+        <option value="1" selected>Impresa al 100 % (como se generó)</option>
         <option value="0.7071">Reducida una hoja (A1 en A2, A3 en A4): 71 %</option>
         <option value="0.5">Reducida dos hojas (A1 en A3): 50 %</option>
         <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
         <option value="2">Ampliada dos hojas: 200 %</option>
       </select>
-      <div class="lbl">¿Cuánto mide el QR impreso? (medilo con una regla)</div>
+      <div class="lbl">¿Cuánto mide el marco negro completo? (mm)</div>
       <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
              placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
-      <div class="nota"><b>Sobre plano impreso</b>: imprimí el plano con el botón "Plano AR" de la Calculadora (o con Plano_AR_desde_OBJ para cualquier 3D), apoyalo en la mesa y apuntá al QR de la hoja: el 3D se monta solo encima, a la escala del papel. Si el teléfono no tiene el reconocimiento de imagen (Chrome: chrome://flags/#webxr-incubations), tocás la cruz 1 y la cruz 2. Con <b>un toque</b> el modelo se apoya donde está el aro rojo: tocás otro lugar y se mueve, 2 dedos lo giran, y "Fijar" lo deja clavado. Con <b>2 puntos</b> marcás dos esquinas del plano en el lugar real y el edificio queda orientado exacto.</div>
+      <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
+      <select id="msModoPapel" class="mini" style="width:100%">
+        <option value="camara">QR con cámara · recomendado</option>
+        <option value="manual">Dos cruces · ubicación manual</option>
+        <option value="nativo">Reconocimiento del teléfono · si está disponible</option>
+      </select>
+      <div class="nota"><b>Sobre plano impreso:</b> abrí el JSON de la Calculadora y usá el plano de la misma exportación. Con <b>QR con cámara</b>, la app lee el código y ubica el modelo; no requiere activar opciones experimentales. Mantené el QR completo visible y bien iluminado. Si lo perdés de vista, el modelo se oculta hasta recuperarlo. Medí el <b>marco negro completo</b> si la impresión cambió de tamaño. En obra, esperá el <b>aro verde</b> y tocá: el modelo queda fijado; para moverlo, usá <b>Apoyar de nuevo</b>.</div>
     </section>
 
     <section class="card">
@@ -344,7 +350,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v4.0.1',
+  marca: 'MS', version: 'v4.1.0', mejorasMS: true,
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
@@ -359,11 +365,18 @@ window.AR_CONFIG = {
 </script>
 <script src="three.min.js"></script>
 <script src="qrcode.js"></script>
+<script src="ms-tracking.js"></script>
 <script src="ar-core.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="vendor/svd.js"></script>
+<script src="vendor/posit1.js"></script>
+<script src="ms-paper.js"></script>
+<script src="ms-stability.js"></script>
 <script>
 /* ── cableado propio de la interfaz MS ── */
 (function(){
   const $ = id => document.getElementById(id);
+  $('msModoPapel').addEventListener('change',()=>AR.revisarSoporte());
   // .mtl aparte (colores de Inventor)
   $('btnMTL').addEventListener('click', () => $('inpMTL').click());
   $('inpMTL').addEventListener('change', ev => { const f = ev.target.files && ev.target.files[0]; if(f) AR.cargarMTL(f); ev.target.value = ''; });

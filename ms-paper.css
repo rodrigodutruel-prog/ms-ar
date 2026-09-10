@@ -1,0 +1,19 @@
+#papelCamara{position:fixed;inset:0;z-index:90;background:#080d18;color:#fff;overflow:hidden;touch-action:none;font-family:inherit}
+#papelStage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);overflow:hidden}
+#papelStage canvas{position:absolute;inset:0;width:100%;height:100%}
+#papelCamara .papel-cabecera{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;display:flex;gap:10px;align-items:start;justify-content:space-between}
+#papelEstado{margin:0;max-width:70%;padding:10px 12px;border-left:4px solid #f6be36;background:#101827eb;border-radius:8px;font-size:14px;line-height:1.4}
+#papelEstado[data-state="ok"]{border-color:#36dc9a}
+#papelEstado[data-state="error"]{border-color:#ff6572}
+#papelCamara button,#papelCamara summary{font:inherit;color:#fff;background:#18233feb;border:1px solid #7892bc;border-radius:9px;padding:11px 14px;min-height:44px;cursor:pointer}
+#papelCamara button:disabled{opacity:.5;cursor:default}
+#papelCamara button:focus-visible{outline:3px solid #00c9f2;outline-offset:2px}
+#papelCamara .papel-controles{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:12px;right:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;align-items:end}
+#papelCamara details{background:#101827f5;border-radius:9px;max-width:300px}
+#papelCamara details p,#papelCamara details label{display:block;font-size:13px;line-height:1.4;margin:10px 12px}
+#papelCamara input[type="range"]{display:block;width:100%;margin-top:9px;accent-color:#00c9f2}
+#papelCamara .papel-guia{position:absolute;left:50%;top:50%;width:min(38vw,230px);aspect-ratio:1;transform:translate(-50%,-50%);border:2px dashed #ffffffa0;border-radius:12px;pointer-events:none}
+#papelCamara[data-found="true"] .papel-guia{display:none}
+#papelCamara[hidden]{display:none}
+.ms-vista-controles{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:2}
+.ms-vista-controles button{font:inherit;padding:11px;border-radius:10px;background:#172038e8;color:white;border:1px solid #607395}

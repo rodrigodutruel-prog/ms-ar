@@ -1,0 +1,22 @@
+[
+  {
+    "file": "jsQR.js",
+    "source": "https://raw.githubusercontent.com/cozmo/jsQR/8e6a036beafa7053dd44b1b76ac578d22b1b3311/dist/jsQR.js",
+    "sha256": "3325b0888fa4745c4e6940897d8c4f426fbaae76901fcbfe1871a04e90a51655"
+  },
+  {
+    "file": "jsQR-LICENSE.txt",
+    "source": "https://raw.githubusercontent.com/cozmo/jsQR/8e6a036beafa7053dd44b1b76ac578d22b1b3311/LICENSE",
+    "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+  },
+  {
+    "file": "posit1.js",
+    "source": "https://raw.githubusercontent.com/jcmellado/js-aruco/2203d4b5efb601c39054a341bf04702409699383/src/posit1.js",
+    "sha256": "af14a4004a90dbf5fb0cd0830bd0cf496b57c60f89682b9f0507d5ccf41bf353"
+  },
+  {
+    "file": "svd.js",
+    "source": "https://raw.githubusercontent.com/jcmellado/js-aruco/2203d4b5efb601c39054a341bf04702409699383/src/svd.js",
+    "sha256": "c065ce595074cde122a0e2a98f0ff7516c484b859696daee41d2537c96d540d5"
+  }
+]

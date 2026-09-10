@@ -127,6 +127,7 @@ const UI = {
 function numeroValido(v){ return typeof v === 'number' && Number.isFinite(v); }
 function liberarObjeto(objeto, conservar){
   if(!objeto) return;
+  objeto.traverse(o => { o.userData.liberado = true; });
   const geometrias = new Set(), materiales = new Set(), texturas = new Set();
   objeto.traverse(o => {
     if(o.geometry && o.geometry !== conservar) geometrias.add(o.geometry);
@@ -402,13 +403,13 @@ function construirGrupoMS(tz){
     const col = colorPorDiametro(d/1000, dMinMS/1000, dMaxMS/1000)
       .lerp(new THREE.Color(0xc9ced4), 0.35);        // tinte + un toque de chapa
     const _op = (typeof S.opacidad === 'number') ? S.opacidad : 1;
-    _matsD[k] = new THREE.MeshStandardMaterial({ color:col, metalness:.75, roughness:.4,
+    _matsD[k] = new THREE.MeshStandardMaterial({ color:col, metalness:CFG.mejorasMS ? .35 : .75, roughness:CFG.mejorasMS ? .48 : .4,
       emissive: col, emissiveIntensity:.18,
       transparent:_op < .99, opacity:_op, side:THREE.DoubleSide, depthWrite:_op >= .99 });
     return _matsD[k];
   }
   const _op0 = (typeof S.opacidad === 'number') ? S.opacidad : 1;
-  const matBrida = new THREE.MeshStandardMaterial({ color:0x878e97, metalness:.9, roughness:.3,
+  const matBrida = new THREE.MeshStandardMaterial({ color:0x878e97, metalness:CFG.mejorasMS ? .45 : .9, roughness:CFG.mejorasMS ? .4 : .3,
     transparent:_op0 < .99, opacity:_op0, depthWrite:_op0 >= .99 });
   const matAguj  = new THREE.MeshBasicMaterial({ color:0x0c0f14, transparent:true, opacity:.95 });
   const matHose  = new THREE.MeshStandardMaterial({ color:0x2f343b, metalness:.15, roughness:.85,
@@ -468,7 +469,7 @@ function construirGrupoMS(tz){
   function tubo(A, B, d, seg){
     const dir = new THREE.Vector3().subVectors(B, A), L = dir.length();
     if(L < 0.004) return null;
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(d/2000, d/2000, L, seg||22, 1, true), matD(d));
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(d/2000, d/2000, L, seg||(CFG.mejorasMS ? 32 : 22), 1, true), matD(d));
     m.position.copy(A).addScaledVector(dir, .5);
     m.quaternion.copy(quatDir(dir));
     m.userData.esTubo = true;
@@ -1157,7 +1158,7 @@ async function cargarArchivos(files){
   const ext = f => (f.name.split('.').pop() || '').toLowerCase();
   const mtls = lista.filter(f => ext(f) === 'mtl');
   const resto = lista.filter(f => ext(f) !== 'mtl');
-  if(S._cargando || S._iniciando || S.session || SENS.activo || S.modo3D){ UI.estado('Volvé al inicio y esperá a que termine la operación actual para abrir otro modelo.', 'err'); return false; }
+  if(S._cargando || S._iniciando || S.papelCamera || S.session || SENS.activo || S.modo3D){ UI.estado('Volvé al inicio y esperá a que termine la operación actual para abrir otro modelo.', 'err'); return false; }
   if(lista.length > 20 || lista.reduce((s,f) => s+f.size, 0) > (CFG.maxArchivoMB || 150)*1024*1024){ UI.estado('El conjunto de archivos supera el límite de carga (150 MB / 20 archivos).', 'err'); return false; }
   if(lista.some(f => !['obj','stl','json','mtl'].includes(ext(f))) || resto.length > 1){ UI.estado('Abrí un solo modelo OBJ, STL o JSON por vez, junto con sus archivos MTL.', 'err'); return false; }
   S._cargando = true;
@@ -1367,6 +1368,7 @@ function prepararPlanoImagen(tz, objeto){
     }
     if(!objeto && tz.tris < 60000){   // en modelos grandes las aristas del plano costaban segundos: va la masa sola
       try{
+        if(g.userData.liberado || tz.geo.userData.liberado) return;
         const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
           new THREE.LineBasicMaterial({ color: 0xffffff }));
         esc.add(bordes);
@@ -1825,7 +1827,7 @@ function pintarInfo(tz){
 
 function cargar(raw){
   try{
-    if(S.session || SENS.activo || S.modo3D || S._iniciando) throw new Error('Volvé al inicio antes de abrir otro modelo.');
+    if(S.session || S.papelCamera || SENS.activo || S.modo3D || S._iniciando) throw new Error('Volvé al inicio antes de abrir otro modelo.');
     const siguiente = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
     if(S.trazado && S.trazado.geo) S.trazado.geo.dispose();
     S.trazado = siguiente;
@@ -1894,6 +1896,10 @@ function nuevaEscena(){
   const dir = new THREE.DirectionalLight(0xffffff, 1.1);
   dir.position.set(2,6,3);
   scene.add(dir);
+  if(CFG.mejorasMS){
+    const fill=new THREE.DirectionalLight(0xc6ddff,.8);fill.position.set(-4,3,-2);scene.add(fill);
+    const rim=new THREE.DirectionalLight(0xffffff,.7);rim.position.set(0,2,-5);scene.add(rim);
+  }
   return scene;
 }
 
@@ -2013,6 +2019,9 @@ async function revisarSoporte(){
     $('btnAR').disabled = true;
     return;
   }
+  if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value === 'camara' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    est.className='nota ok'; est.textContent=hayTrazado ? 'Cámara lista para reconocer el QR del plano.' : 'Abrí el JSON de la Calculadora o un modelo con su plano AR.'; $('btnAR').disabled=!hayTrazado; return;
+  }
   if(!('xr' in navigator)){
     est.className='nota err';
     est.textContent = 'Este navegador no ofrece realidad aumentada WebXR. Podés explorar el mismo modelo con "Ver en 3D" o abrir el sitio en un navegador y dispositivo compatibles.';
@@ -2033,7 +2042,9 @@ async function revisarSoporte(){
 }
 
 async function iniciarAR(){
-  if(!S.trazado || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  if(S.papelCamera) return false;
+  if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value !== 'manual' && $('msModoPapel').value !== 'nativo' && window.MSPaper) return window.MSPaper.start();
+  if(!S.trazado || S.papelCamera || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
   if(!navigator.xr || !window.isSecureContext){ UI.estado('AR no está disponible en este navegador. Podés abrir Ver en 3D.', 'err'); return false; }
   S._iniciando = 'xr';
   const intento = S._inicioId = (S._inicioId || 0) + 1;
@@ -2109,7 +2120,7 @@ async function iniciarARInterno(intento){
   // "Sobre plano impreso", se pide image-tracking (Chrome lo tiene detrás de
   // chrome://flags/#webxr-incubations; si no está, se cae al flujo de 2 cruces)
   S.imgCfg = null; S.imgTrack = false;
-  if(S.modoPapel && S.trazado && S.trazado.marcador){
+  if(S.modoPapel && S.trazado && S.trazado.marcador && !(CFG.mejorasMS && $('msModoPapel').value === 'manual')){
     const bmp = await bitmapMarcador(S.trazado.marcador);
     if(S._inicioId !== intento) { if(bmp && bmp.close) bmp.close(); return false; }
     if(bmp){
@@ -2159,7 +2170,10 @@ async function iniciarARInterno(intento){
   S.session = session;
   session.addEventListener('end', () => { if(S.session === session) cerrarAR(true); }, { once: true });
   S.overlayOK = !!(session.domOverlayState && session.domOverlayState.type);
-  try{ S.imgTrack = !!(S.imgCfg && typeof session.getTrackedImageScores === 'function'); }catch(e){ S.imgTrack = false; }
+  try{ S.imgTrack = !!(S.imgCfg && typeof session.getTrackedImageScores === 'function');
+    if(CFG.mejorasMS && S.imgTrack){ const scores = await session.getTrackedImageScores(); S.imgTrack = scores[0] === 'trackable'; }
+  }catch(e){ S.imgTrack = false; }
+  if(S.session !== session) return false;
   if(S.imgCfg) registrar('image-tracking ' + (S.imgTrack ? 'DISPONIBLE' : 'NO disponible (flag webxr-incubations)'));
   if(S.imgCfg && !S.imgTrack){
     // Sin esto el QR no ubica NADA y el modelo queda donde uno lo apoye: hay que
@@ -2194,6 +2208,7 @@ async function iniciarARInterno(intento){
   S.usaFloor = usaFloor;
   if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
+  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(); S._hitReady=false; S._trackPerdido=false; window.MSStability?.reset(); }
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
   S.lightProbe = null; S._luzK = 1;
@@ -2211,7 +2226,7 @@ async function iniciarARInterno(intento){
       // 'plane' + 'point': engancha el PISO y también las PAREDES — marcar
       // la esquina contra la pared proyecta al piso con más precisión
       try{
-        S.hitSource = await session.requestHitTestSource({ space: refViewer, entityTypes: ['plane', 'point'] });
+        S.hitSource = await session.requestHitTestSource({ space: refViewer, entityTypes: CFG.mejorasMS ? ['plane'] : ['plane', 'point'] });
       }catch(e2){
         S.hitSource = await session.requestHitTestSource({ space: refViewer });
       }
@@ -2343,7 +2358,7 @@ async function iniciarARInterno(intento){
         const ps = hits[hi].getPose(S.refSpaceLocal); if(!ps) continue;
         if(S.esquinando || S.midiendo || S.escuadrando || S.pivMode || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
       }
-      if(!hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
+      if(!CFG.mejorasMS && !hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
       // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
       // mesa lisa no da puntos): o no devuelve NADA, o el hit atraviesa hasta
       // el piso. La cámara de PROFUNDIDAD ve la superficie real donde apunta
@@ -2381,6 +2396,14 @@ async function iniciarARInterno(intento){
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
+      }
+      if(CFG.mejorasMS && S._hitFilter){
+        if(S.reticula.visible && !S.hitEsPared && !S.hitDesdeDepth){
+          const sm=S._hitFilter.update(S.reticula.position,t);
+          S._hitReady=S._hitFilter.ready;
+          if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
+          S.reticula.material.color.setHex(S._hitReady ? 0x30d69b : PAL.aviso);
+        }else{ S._hitFilter.reset(); S._hitReady=false; }
       }
       if(S.esqGuia){
         const mostrar = S.esquinando === 1 && S.reticula.visible;
@@ -2443,7 +2466,7 @@ async function iniciarARInterno(intento){
         const res = frame.getImageTrackingResults();
         let visto = false;
         for(const r of res){
-          if(r.trackingState !== 'tracked') continue;
+          if(r.trackingState !== 'tracked' || r.index !== 0) continue;
           const pose = frame.getPose(r.imageSpace, S.refSpaceLocal); if(!pose) continue;
           const tr = pose.transform;
           const q = new THREE.Quaternion(tr.orientation.x, tr.orientation.y, tr.orientation.z, tr.orientation.w);
@@ -2451,6 +2474,7 @@ async function iniciarARInterno(intento){
           visto = true;
           break;
         }
+        if(CFG.mejorasMS && !visto && window.MSStability) window.MSStability.lost();
         if(!visto && S.anclado && !S.anchor && !S._pedirAncla && S._marcadorPerdidoTick === undefined){ S._marcadorPerdidoTick = 0; }
       }catch(e){}
     }
@@ -2486,7 +2510,7 @@ async function iniciarARInterno(intento){
           const dy = Math.abs(m2[13] - S.grupo.position.y), dxz = Math.hypot(m2[12] - S.grupo.position.x, m2[14] - S.grupo.position.z);
           if(dy < 0.06 && dxz < 0.6 && typeof hs2[k].createAnchor === 'function'){
             S._mejorarAncla = false;
-            hs2[k].createAnchor().then(a => { olvidarAncla(S.session); instalarAncla(a, S.session); registrar('ancla pasada al plano de la mesa'); }).catch(() => { S._mejorarAncla = true; });
+            const hit=hs2[k]; olvidarAncla(S.session); pedirAncla(()=>hit.createAnchor());
             break;
           }
         }
@@ -2498,8 +2522,7 @@ async function iniciarARInterno(intento){
       try{
         const gp = S.grupo.position;
         const gq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
-        frame.createAnchor(new XRRigidTransform({x:gp.x, y:gp.y, z:gp.z, w:1}, {x:gq.x, y:gq.y, z:gq.z, w:gq.w}), S.refSpaceLocal)
-          .then(a => instalarAncla(a, S.session)).catch(() => {});
+        pedirAncla(()=>frame.createAnchor(new XRRigidTransform({x:gp.x, y:gp.y, z:gp.z, w:1}, {x:gq.x, y:gq.y, z:gq.z, w:gq.w}), S.refSpaceLocal));
       }catch(e){}
     }
 
@@ -2527,7 +2550,7 @@ async function iniciarARInterno(intento){
     // La ORIENTACIÓN también se corrige en cada cuadro (antes solo se tomaba
     // al instalar el ancla → al caminar el edificio quedaba girado): con dos
     // anclas manda el rumbo entre ellas, con una el yaw vivo del ancla.
-    if(frame && S.anchor && S.grupo && !S.papelSinAncla){
+    if(frame && S.anchor && S.grupo && !S.papelSinAncla && !(CFG.mejorasMS && S._trackPerdido)){
       let pose = null;
       try{ pose = frame.getPose(S.anchor.anchorSpace, S.refSpaceLocal); }catch(e){}
       if(pose){
@@ -2580,6 +2603,7 @@ async function iniciarARInterno(intento){
       S.grupo.userData.grpMaq.visible  = S.verMaquinas;
       if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
+    if(CFG.mejorasMS && S._trackPerdido){S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();}
     renderer.render(S.scene, S.camera);
   });
   return true;
@@ -2600,7 +2624,7 @@ const SERIE_ESC = [0.2,0.25,0.3,0.4,0.5,0.6,0.75,1,1.25,1.5,2,2.5,3,4,5,6,7.5,10
 function qrCanvas(texto, pxModulo){
   if(typeof qrcode !== 'function') throw new Error('falta qrcode.js');
   const qr = qrcode(0, 'M'); qr.addData(texto); qr.make();
-  const n = qr.getModuleCount(), b = 2, m = pxModulo || 12;
+  const n = qr.getModuleCount(), b = 4, m = pxModulo || 12;
   const cv = document.createElement('canvas'); cv.width = cv.height = (n + 2*b) * m;
   const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#000';
   for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(qr.isDark(r, c)) g.fillRect((c+b)*m, (r+b)*m, m, m);
@@ -2790,7 +2814,16 @@ function patronMarcador(){
    pos  = posición del centro del marcador en el espacio local
    quat = orientación de la imagen · medido = measuredWidthInMeters
    ------------------------------------------------------------ */
+function centroMarcador(tz,mk){
+  if(mk.x_file_mm != null && tz.refOrigen){
+    const F=tz.fUnid || .001,O=tz.refOrigen;
+    return new THREE.Vector3(O.x+mk.x_file_mm*F,0,O.z-mk.y_file_mm*F);
+  }
+  if(!tz.refEsquina)throw new Error('El archivo no define la referencia de la hoja.');
+  return new THREE.Vector3(tz.refEsquina.x+(mk.dx_m||0),0,tz.refEsquina.z+(mk.dy_m||0));
+}
 function pasoMarcador(pos, quat, medido){
+  if(CFG.mejorasMS && window.MSStability) return window.MSStability.marker(pos,quat,medido);
   if(!S.grupo || !S.trazado || !S.trazado.marcador) return;
   const q = quat;
                 // el +X de la imagen = el +X del plano; el papel está apoyado (su normal mira arriba)
@@ -2978,6 +3011,10 @@ async function bitmapMarcador(mk){
    nuevo" lo libera. Medir / escuadrar / 2 puntos tienen prioridad.
    ------------------------------------------------------------ */
 function tapPantalla(ev){
+  if(CFG.mejorasMS && S.modoPapel && S.imgTrack){UI.msg('En este modo la ubicación la determina el QR. Mantenelo visible.');return;}
+  if(CFG.mejorasMS && S.session && !S.fijado && !S.pivMode && !S.esquinando && !S.midiendo && !S.escuadrando && !S._hitReady){
+    UI.msg('Buscando una superficie estable. Mové despacio la cámara por la mesa o el piso y tocá cuando el aro esté verde.');return;
+  }
   if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
   if(!S.session || !S.grupo) return;
   registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '') + (S.hitDesdeDepth ? ' (por profundidad)' : ' (hit ARCore)')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
@@ -3028,7 +3065,7 @@ function apoyarEnReticula(){
   // mesa se movía cuando ARCore re-estimaba ese plano y el modelo "se iba solo").
   olvidarAncla(S.session);
   if(S.escala === 1 && S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
-    S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
+    const hit=S.ultimoHit; pedirAncla(()=>hit.createAnchor());
   }else{
     S._pedirAncla = true;
   }
@@ -3042,6 +3079,7 @@ function apoyarEnReticula(){
       ? 'Red apoyada con la orientación guardada. Tocá otro lugar para re-apoyarla · 2 dedos giran · Escuadrar afina.'
       : 'Red apoyada. Tocá otro lugar para re-apoyarla · 1 dedo mueve · 2 dedos giran · Escuadrar / Auto-ajuste afinan.');
   }
+  if(CFG.mejorasMS) fijarModelo(true);
   UI.paso('', '');
 }
 
@@ -3154,7 +3192,7 @@ function marcarPivoteReal(){
   // ancla física en la marca: si el tracking se corrige, la boca vuelve sola a su lugar
   olvidarAncla(S.session);
   if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
-    S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
+    const hit=S.ultimoHit; pedirAncla(()=>hit.createAnchor());
   }else{
     S._pedirAncla = true;
   }
@@ -3246,8 +3284,18 @@ function sincronizarAncla(){
   guardarAncla();
 }
 
+function pedirAncla(crear, segunda){
+  const session=S.session, generation=S._anchorGeneration||0;
+  if(!session)return;
+  try{ Promise.resolve(crear()).then(a=>{
+    if(S.session!==session || generation!==(S._anchorGeneration||0) || !S.grupo){try{a.delete();}catch(e){}return;}
+    if(segunda){S.anchor2=a;S.anc2Listo=false;}
+    else instalarAncla(a,session);
+  }).catch(()=>{if(S.session===session && generation===(S._anchorGeneration||0))S._pedirAncla=!segunda;}); }catch(e){}
+}
 async function instalarAncla(anchor, session){
-  if(!anchor || !S.grupo) return;
+  if(!anchor) return;
+  if(!S.grupo || !session || S.session !== session){try{anchor.delete();}catch(e){} return;}
   registrar('ancla instalada');
   S.anchor = anchor; S.ancListo = false;
   S._fijarDelta = true;   // en la primera pose, el offset se calcula desde el trazado
@@ -3264,6 +3312,7 @@ async function instalarAncla(anchor, session){
 }
 
 function olvidarAncla(session){
+  S._anchorGeneration=(S._anchorGeneration||0)+1;
   try{ if(S.anchor2 && S.anchor2.delete) S.anchor2.delete(); }catch(e){}
   S.anchor2 = null; S.anc2Listo = false;
   if(S.anchor){
@@ -3690,7 +3739,7 @@ function puntoEsquina(){
     // re-localiza (te fuiste a otra oficina), el modelo vuelve solo a su lugar
     olvidarAncla(S.session);
     if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
-      S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
+      const hit=S.ultimoHit; pedirAncla(()=>hit.createAnchor());
     }else{
       S._pedirAncla = true;
     }
@@ -3749,7 +3798,7 @@ function puntoEsquina(){
     try{ if(S.anchor2 && S.anchor2.delete) S.anchor2.delete(); }catch(e){}
     S.anchor2 = null; S.anc2Listo = false;
     if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
-      S.ultimoHit.createAnchor().then(a => { S.anchor2 = a; S.anc2Listo = false; }).catch(() => {});
+      const hit=S.ultimoHit; pedirAncla(()=>hit.createAnchor(),true);
     }
     S.fijado = true; $('btnFijar').textContent = 'Fijado ✓';
     sincronizarAncla(); guardarCalib();
@@ -3907,6 +3956,11 @@ function obtenerRenderer(){
     const cv = document.createElement('canvas');
     _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, powerPreference: 'high-performance' });
     _rendererUnico.xr.enabled = true;
+    if(CFG.mejorasMS){
+      _rendererUnico.outputColorSpace=THREE.SRGBColorSpace;
+      _rendererUnico.toneMapping=THREE.ACESFilmicToneMapping;
+      _rendererUnico.toneMappingExposure=1.15;
+    }
     cv.addEventListener('webglcontextlost', ev => {
       ev.preventDefault(); S._contextLost = true;
       cerrar3D(); salirAR();
@@ -3976,6 +4030,7 @@ function cerrarAR(desdeEvento){
 function salirAR(){
   S._inicioId = (S._inicioId || 0) + 1;
   S._iniciando = null;
+  if(S.papelCamera && window.MSPaper){ window.MSPaper.stop(); return; }
   if(SENS.activo){ cerrarARSensor(); return; }
   const s = S.session;
   if(!s){ if(S.renderer) cerrarAR(false); return; }
@@ -3991,7 +4046,7 @@ function salirAR(){
 // El botón ATRÁS: cierra lo que esté abierto (AR, sensores o visor 3D) en vez
 // de dejar que el navegador lo mate a su manera.
 window.addEventListener('popstate', () => {
-  if(S.session || SENS.activo){ S._histAR = false; salirAR(); return; }
+  if(S.session || SENS.activo || S.papelCamera){ S._histAR = false; salirAR(); return; }
   if(!$('visor3D').classList.contains('oculto')){ S._hist3D = false; const b = $('btnSalir3D'); if(b.onclick) b.onclick(); return; }
   S._histAR = false; S._hist3D = false;
 });
@@ -4423,7 +4478,7 @@ function colocarAlFrente(){
 }
 
 async function iniciarARSensor(){
-  if(S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  if(S._iniciando || S._cargando || S.papelCamera || S.session || SENS.activo || S.modo3D) return false;
   S._iniciando = 'sensor';
   const intento = S._inicioId = (S._inicioId || 0) + 1;
   try{ return await iniciarARSensorInterno(intento); }
@@ -4598,7 +4653,7 @@ function cerrarARSensor(){
    8. VISOR 3D (fallback sin AR — para PC y para mostrar en escritorio)
    ------------------------------------------------------------ */
 function iniciar3D(){
-  if(!S.trazado || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
+  if(!S.trazado || S.papelCamera || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
   try{ return iniciar3DInterno(); }
   catch(e){ cerrar3D(); $('visor3D').classList.add('oculto'); $('capaUI').classList.remove('oculto'); UI.estado('No se pudo abrir el visor 3D: ' + (e.message || e), 'err'); return false; }
 }
@@ -4669,28 +4724,57 @@ function iniciar3DInterno(){
   }
   ubicarCam();
 
-  let px=0, py=0, arr=false, dPrev=0;
   const el = renderer.domElement;
-  const dist2 = e => Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
-  escuchar(el, 'pointerdown', e => { arr=true; px=e.clientX; py=e.clientY; try{ el.setPointerCapture(e.pointerId); }catch(ignorado){} });
-  escuchar(el, 'pointerup',   () => arr=false);
-  escuchar(el, 'pointercancel', () => arr=false);
-  escuchar(el, 'pointermove', e => {
-    if(!arr) return;
-    ang -= (e.clientX-px)*.006;
-    alt = Math.min(Math.PI/2-.05, Math.max(.05, alt + (e.clientY-py)*.005));
-    px=e.clientX; py=e.clientY; ubicarCam();
+  const pointers=new Map();
+  let previous=null;
+  const gesture=()=>{
+    const ps=[...pointers.values()];
+    if(ps.length<2)return null;
+    return {distance:Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y),x:(ps[0].x+ps[1].x)/2,y:(ps[0].y+ps[1].y)/2};
+  };
+  escuchar(el,'pointerdown',e=>{
+    if(e.button && e.pointerType==='mouse')return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});previous=gesture();
+    try{el.setPointerCapture(e.pointerId);}catch(_){}
   });
-  escuchar(el, 'wheel', e => { dist = Math.min(R*3, Math.max(R*.15, dist + e.deltaY*.01*R*.1)); ubicarCam(); }, {passive:true});
-  escuchar(el, 'touchstart', e => { if(e.touches.length===2){ arr=false; dPrev=dist2(e); } }, {passive:true});
-  escuchar(el, 'touchmove',  e => {
-    if(e.touches.length===2){
-      const d = dist2(e);
-      if(d <= 0 || dPrev <= 0) { dPrev = d; return; }
-      dist = Math.min(R*3, Math.max(R*.15, dist * (dPrev/d)));
-      dPrev = d; ubicarCam();
+  const endPointer=e=>{pointers.delete(e.pointerId);previous=gesture();};
+  escuchar(el,'pointerup',endPointer);escuchar(el,'pointercancel',endPointer);escuchar(el,'lostpointercapture',endPointer);
+  escuchar(window,'blur',()=>{pointers.clear();previous=null;});
+  escuchar(el,'pointermove',e=>{
+    const before=pointers.get(e.pointerId);if(!before)return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size===1){
+      ang-=(e.clientX-before.x)*.006;
+      alt=Math.min(Math.PI/2-.01,Math.max(-Math.PI/2+.01,alt+(e.clientY-before.y)*.005));
+    }else if(pointers.size===2){
+      const next=gesture();
+      if(previous && previous.distance>5 && next.distance>5){
+        dist=Math.min(R*4,Math.max(R*.06,dist*previous.distance/next.distance));
+        const unit=2*dist*Math.tan(THREE.MathUtils.degToRad(cam.fov)/2)/Math.max(1,window.innerHeight);
+        const right=new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion);
+        const up=new THREE.Vector3(0,1,0).applyQuaternion(cam.quaternion);
+        centro.addScaledVector(right,-(next.x-previous.x)*unit).addScaledVector(up,(next.y-previous.y)*unit);
+      }
+      previous=next;
     }
-  }, {passive:true});
+    ubicarCam();
+  });
+  escuchar(el,'wheel',e=>{e.preventDefault();dist=Math.min(R*4,Math.max(R*.06,dist*Math.exp(e.deltaY*.001)));ubicarCam();},{passive:false});
+  if(CFG.mejorasMS){
+    const controls=document.createElement('div');controls.className='ms-vista-controles';
+    const originalCenter=centro.clone();
+    [['msCentrar','Centrar'],['msPlanta','Planta'],['msIso','Isométrica']].forEach(([id,label])=>{
+      const button=document.createElement('button');button.id=id;button.textContent=label;button.type='button';controls.appendChild(button);
+      escuchar(button,'click',()=>{
+        centro.copy(originalCenter);dist=R;
+        if(id==='msPlanta'){alt=Math.PI/2-.001;ang=-Math.PI/2;}
+        else if(id==='msIso'){alt=Math.PI*.28;ang=Math.PI*.25;}
+        ubicarCam();
+      });
+    });
+    cont.appendChild(controls);callbacks.push(()=>controls.remove());
+    escuchar(window,'keydown',e=>{if(e.key==='Escape')cerrar3D();});
+  }
 
   function loop(){
     if(!S.modo3D) return;
@@ -4811,6 +4895,7 @@ document.querySelectorAll('input[name="modo"]').forEach(r => {
     }
     aplicarEscala();
     refrescarHUD();
+    revisarSoporte();
   });
 });
 
@@ -4865,7 +4950,7 @@ if(location.hash === '#compartido-error') UI.estado('No se pudo guardar el archi
 
 
 /* ── API para las interfaces (index.html de cada marca) ── */
-window.AR = { S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
+window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bitmapMarcador,centroMarcador}, S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION,
               construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };

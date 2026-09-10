@@ -3,3 +3,5 @@
 *.mtl -text
 *.stl -text
 *.json -text
+# Preserve third-party source and license bytes; their original whitespace is intentional.
+vendor/** -text -whitespace
