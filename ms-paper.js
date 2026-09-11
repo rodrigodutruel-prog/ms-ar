@@ -51,14 +51,15 @@
   }
   function buildOverlay(r) {
     const overlay=document.createElement('section'); overlay.id='papelCamara'; overlay.setAttribute('aria-label','Modelo sobre plano impreso');
-    overlay.innerHTML='<div id="papelStage"></div><div class="papel-guia"></div><div class="papel-cabecera"><p id="papelEstado" role="status" aria-live="polite">Preparando cámara…</p><button id="papelSalir" type="button">Salir</button></div><div class="papel-controles"><button id="papelReleer" type="button">Volver a leer QR</button><button id="papelPausa" type="button" disabled>Pausar imagen</button><details><summary>Ajustar vista</summary><p>Usá el mismo JSON y plano. Mantené visible el QR completo, con luz uniforme.</p><label>Perspectiva de cámara <input id="papelFov" type="range" min="45" max="85" step="1" value="65"></label><p>Si la altura se ve deformada, ajustá la perspectiva. La escala sobre la hoja usa la medida del marco impreso.</p><label>Ver a través del modelo <input id="papelOpacidad" type="range" min="25" max="100" step="5" value="100"></label></details></div>';
+    overlay.innerHTML='<div id="papelStage"></div><div class="papel-guia"></div><div class="papel-cabecera"><p id="papelEstado" role="status" aria-live="polite">Preparando cámara…</p><button id="papelSalir" type="button">Salir</button></div><div class="papel-controles"><button id="papelReleer" type="button">Volver a leer QR</button><button id="papelLibre" type="button">Ver 3D sin cámara</button><button id="papelPausa" type="button" disabled>Pausar imagen</button><details><summary>Ajustar vista</summary><p>Usá el mismo JSON y plano. Mantené visible el QR completo, con luz uniforme.</p><label>Perspectiva de cámara <input id="papelFov" type="range" min="45" max="85" step="1" value="65"></label><p>Si la altura se ve deformada, ajustá la perspectiva. La escala sobre la hoja usa la medida del marco impreso.</p><label>Ver a través del modelo <input id="papelOpacidad" type="range" min="25" max="100" step="5" value="100"></label></details></div>';
     document.body.append(overlay); r.overlay=overlay; r.stage=$('papelStage');
     r.background=document.createElement('canvas'); r.stage.append(r.background);
     r.backgroundContext=r.background.getContext('2d',{alpha:false});
     $('capaUI').classList.add('oculto');
     listen(r,$('papelSalir'),'click',()=>stop());
+    listen(r,$('papelLibre'),'click',()=>{stop();AR.iniciar3D();});
     listen(r,$('papelReleer'),'click',()=>{
-      r.filter.reset(); r.acquisition.reset(); r.lastRotation=null; r.group.visible=false; r.paused=false;
+      r.resetFlow=true; r.lastGood=0; r.filter.reset(); r.acquisition.reset(); r.lastRotation=null; r.group.visible=false; r.paused=false;
       $('papelPausa').textContent='Pausar imagen'; $('papelPausa').disabled=true;
       overlay.dataset.found='false'; status('Apuntá al QR completo del plano.');
     });
@@ -66,7 +67,7 @@
       r.paused=!r.paused;
       $('papelPausa').textContent=r.paused ? 'Seguir con cámara' : 'Pausar imagen';
       if(r.paused) status('Imagen pausada. Tocá Seguir con cámara para volver al seguimiento.');
-      else { r.filter.reset(); r.acquisition.reset(); r.group.visible=false; status('Buscando nuevamente el QR…'); }
+      else { r.resetFlow=true;r.lastGood=0;r.filter.reset(); r.acquisition.reset(); r.group.visible=false; status('Buscando nuevamente el QR…'); }
     });
     listen(r,$('papelFov'),'input',()=>{r.fov=Number($('papelFov').value);r.filter.reset();r.lastRotation=null;});
     listen(r,$('papelOpacidad'),'input',()=>r.group?.traverse(o=>{
@@ -106,7 +107,6 @@
     const pending=r.pending; r.pending=null;
     if(r.paused) {pending.bitmap.close();schedule(r);return;}
     const now=performance.now(); r.lastFrame=now;
-    showFrame(r,pending);
     let pose=null, message='Mantené visible el QR completo del plano, sin reflejos.', mismatch=false;
     const code=event.data.code;
     if(code) {
@@ -121,12 +121,20 @@
       }
     }
     if(pose) {
-      place(r,pose);
+      showFrame(r,pending);
+      place(r,pose);r.lastGood=now;
       r.group.visible=r.acquisition.accept(now);
       r.overlay.dataset.found=String(r.group.visible);
+      r.overlay.dataset.tracking=code.tracked?'flow':'qr';
       status(r.group.visible ? 'QR reconocido · modelo vinculado a la hoja · escala 1:'+r.scale.toFixed(1) : 'QR reconocido. Comprobando la posición…',r.group.visible?'ok':'search');
     } else {
-      // Never leave a stale camera-relative pose over a newer video frame.
+      // A short failed read holds BOTH the last image and its model. Never draw
+      // an old pose over a new camera frame. Good optical flow renders normally.
+      if(!mismatch && r.group.visible && now-r.lastGood<600){
+        pending.bitmap.close();r.overlay.dataset.tracking='recovering';
+        status('Recuperando referencia · imagen retenida un instante');schedule(r);return;
+      }
+      showFrame(r,pending);r.overlay.dataset.tracking='lost';
       r.group.visible=false; r.acquisition.miss(now); r.overlay.dataset.found='false';
       if(mismatch) {r.acquisition.reset();r.filter.reset();r.lastRotation=null;}
       status(message,mismatch?'error':'search');
@@ -151,14 +159,15 @@
       r.capture.width=w;r.capture.height=h;r.captureContext.drawImage(bitmap,0,0,w,h);
       const pixels=r.captureContext.getImageData(0,0,w,h);
       const id=++r.frameId;r.pending={id,bitmap};
-      r.worker.postMessage({id,buffer:pixels.data.buffer,width:w,height:h},[pixels.data.buffer]);
+      r.worker.postMessage({id,buffer:pixels.data.buffer,width:w,height:h,expected:r.marker.text,reset:!!r.resetFlow},[pixels.data.buffer]);
+      r.resetFlow=false;
       r.workerTimer=setTimeout(()=>{if(alive(r))stop('El lector QR dejó de responder. Volvé a iniciar la cámara.');},4000);
     } catch(e) {bitmap?.close();if(alive(r))stop(cameraError(e));}
   }
   async function start() {
     if(run || S._iniciando || S._cargando || S.session || S.modo3D || !S.trazado) return false;
     if(!isSecureContext || !navigator.mediaDevices?.getUserMedia) {UI.estado('La cámara requiere abrir MS AR con HTTPS y permitir el acceso a la cámara.','err');return false;}
-    const r={id:++serial,closed:false,cleanups:[],fov:65,frameId:0,filter:new math.CornerFilter(),acquisition:new math.Acquisition(),geometry:S.trazado.geo};
+    const r={id:++serial,closed:false,cleanups:[],fov:65,frameId:0,lastGood:0,filter:new math.CornerFilter(),acquisition:new math.Acquisition(),geometry:S.trazado.geo};
     run=r; S._iniciando='paper'; S.papelCamera=true;
     buildOverlay(r);
     try {

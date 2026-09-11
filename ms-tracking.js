@@ -116,12 +116,12 @@
     constructor() { this.reset(); }
     reset() { this.since=null; this.last=null; this.count=0; this.ready=false; }
     accept(now) {
-      if(this.last===null || now-this.last>250) { this.since=now; this.count=0; this.ready=false; }
+      if(this.last===null || now-this.last>900) { this.since=now; this.count=0; this.ready=false; }
       this.last=now; this.count++;
-      this.ready=this.count>=4 && now-this.since>=180;
+      this.ready=this.ready || (this.count>=2 && now-this.since>=100);
       return this.ready;
     }
-    miss(now) { if(this.last===null || now-this.last>180) this.reset(); return false; }
+    miss(now) { if(this.last===null || now-this.last>600) this.reset(); return false; }
   }
   class SurfaceFilter {
     constructor(){this.reset();}

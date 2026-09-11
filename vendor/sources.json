@@ -18,5 +18,14 @@
     "file": "svd.js",
     "source": "https://raw.githubusercontent.com/jcmellado/js-aruco/2203d4b5efb601c39054a341bf04702409699383/src/svd.js",
     "sha256": "c065ce595074cde122a0e2a98f0ff7516c484b859696daee41d2537c96d540d5"
+  },
+  {
+    "project": "jsfeat",
+    "commit": "4c7b336bbeeb26e6cd4cdf3c7d414abe273846f3",
+    "license": "MIT",
+    "files": {
+      "jsfeat.js": "2c5a39cb5eb3baea9052dc17d1dfb377ae38008707a90ffcf9c9e376154d138b",
+      "jsfeat-LICENSE.txt": "20c20cb25e05181e3b6c7d68814a3484858422d6fb3745a3a75787256d30cc72"
+    }
   }
 ]

@@ -153,6 +153,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 @media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
 </style>
 <link rel="stylesheet" href="ms-paper.css">
+<link rel="stylesheet" href="ms-library.css">
 </head>
 <body>
 
@@ -225,7 +226,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
         <option value="manual">Dos cruces · ubicación manual</option>
         <option value="nativo">Reconocimiento del teléfono · si está disponible</option>
       </select>
-      <div class="nota"><b>Sobre plano impreso:</b> abrí el JSON de la Calculadora y usá el plano de la misma exportación. Con <b>QR con cámara</b>, la app lee el código y ubica el modelo; no requiere activar opciones experimentales. Mantené el QR completo visible y bien iluminado. Si lo perdés de vista, el modelo se oculta hasta recuperarlo. Medí el <b>marco negro completo</b> si la impresión cambió de tamaño. En obra, esperá el <b>aro verde</b> y tocá: el modelo queda fijado; para moverlo, usá <b>Apoyar de nuevo</b>.</div>
+      <div class="nota"><b>Sobre plano impreso:</b> abrí el JSON de la Calculadora y usá el plano de la misma exportación. Con <b>QR con cámara</b>, la app lee el código y ubica el modelo; no requiere activar opciones experimentales. Después de leer el QR, la app sigue los detalles de la hoja entre lecturas. Los cortes breves retienen la imagen y el modelo juntos; si pierde la referencia, te pide volver a enfocarla. Para explorar sin enfocar la hoja, usá Ver 3D sin cámara. Medí el <b>marco negro completo</b> si la impresión cambió de tamaño. En obra, esperá el <b>aro verde</b> y tocá: el modelo queda fijado; para moverlo, usá <b>Apoyar de nuevo</b>.</div>
     </section>
 
     <section class="card">
@@ -244,7 +245,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
       <h2>Cómo se usa</h2>
       <ol class="pasos">
         <li>Desde la Calculadora: botón <b>AR</b> → el archivo llega por WhatsApp → abrilo con <b>Red de conductería</b>. Desde Inventor o PlanObra: exportá <b>OBJ</b> (con <b>Preparar OBJ para AR</b> en la PC quedan los colores adentro).</li>
-        <li><b>Iniciar AR</b>, apuntá al piso hasta ver el aro rojo y tocá: el modelo se apoya ahí. Tocá otro lugar para moverlo, 2 dedos lo giran.</li>
+        <li><b>Iniciar AR</b>, apuntá al piso hasta ver el aro rojo y tocá: el modelo se apoya ahí. El modelo queda fijado al colocarlo; usá Apoyar de nuevo para cambiarlo de lugar.</li>
         <li>Si lo perdés de vista: <b>Traer acá</b>. Cuando esté bien: <b>Fijar</b>.</li>
         <li>Galpones y casas: la app pide <b>2 puntos</b> — elegís una esquina en el plano, la marcás en el lugar real, y lo mismo con una segunda esquina lejana.</li>
       </ol>
@@ -350,7 +351,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v4.1.0', mejorasMS: true,
+  marca: 'MS', version: 'v4.2.0', mejorasMS: true,
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
@@ -403,6 +404,7 @@ window.AR_CONFIG = {
 })();
 </script>
 <script src="ar-app.js"></script>
+<script src="ms-library.js"></script>
 <noscript><p>Activá JavaScript en el navegador para explorar los modelos 3D.</p></noscript>
 </body>
 </html>
