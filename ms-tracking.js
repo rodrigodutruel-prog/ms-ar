@@ -124,18 +124,18 @@
     miss(now) { if(this.last===null || now-this.last>600) this.reset(); return false; }
   }
   class SurfaceFilter {
-    constructor(){this.reset();}
+    constructor(options={}){this.maxSpread=options.maxSpread??.018;this.jump=options.jump??.08;this.reset();}
     reset(){this.samples=[];this.last=null;this.ready=false;}
     update(p,time){
       if(!p || ![p.x,p.y,p.z].every(Number.isFinite)){this.reset();return null;}
       if(this.last!==null && time-this.last>150)this.reset();
-      if(this.samples.length && Math.hypot(p.x-this.samples.at(-1).x,p.y-this.samples.at(-1).y,p.z-this.samples.at(-1).z)>.08)this.reset();
+      if(this.samples.length && Math.hypot(p.x-this.samples.at(-1).x,p.y-this.samples.at(-1).y,p.z-this.samples.at(-1).z)>this.jump)this.reset();
       this.last=time;this.samples.push({...p,time});
       this.samples=this.samples.filter(s=>time-s.time<=450);
       const mean={x:0,y:0,z:0};
       this.samples.forEach(s=>{mean.x+=s.x/this.samples.length;mean.y+=s.y/this.samples.length;mean.z+=s.z/this.samples.length;});
       const spread=Math.max(...this.samples.map(s=>Math.hypot(s.x-mean.x,s.y-mean.y,s.z-mean.z)));
-      this.ready=this.samples.length>=5 && time-this.samples[0].time>=250 && spread<.018;
+      this.ready=this.samples.length>=5 && time-this.samples[0].time>=250 && spread<this.maxSpread;
       return mean;
     }
   }

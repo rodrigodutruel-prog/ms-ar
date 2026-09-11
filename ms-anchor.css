@@ -1,0 +1,14 @@
+#papelAnclado{position:fixed;inset:0;z-index:120;color:#fff;pointer-events:none;font-family:inherit}
+#papelAnclado[hidden]{display:none}
+#papelAnclado .anclado-arriba{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;display:flex;gap:10px;align-items:start}
+#ancladoEstado{margin:0;padding:12px;background:#101827ed;border-left:4px solid #30d69b;border-radius:10px;flex:1;line-height:1.4;font-size:15px}
+#papelAnclado[data-tracking="lost"] #ancladoEstado{border-color:#ffc458}
+#papelAnclado button{pointer-events:auto;min-height:48px;border:1px solid #7892bc;border-radius:10px;padding:12px 16px;background:#18233fed;color:white;font:inherit;font-weight:600;cursor:pointer}
+#papelAnclado button:disabled{opacity:.55;cursor:default}
+#papelAnclado button[hidden]{display:none}
+#papelAnclado .anclado-centro{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:28px monospace;text-shadow:0 0 2px #000,0 0 5px #000}
+#papelAnclado[data-step="placed"] .anclado-centro{display:none}
+#papelAnclado .anclado-abajo{position:absolute;bottom:max(16px,env(safe-area-inset-bottom));left:12px;right:12px;text-align:center}
+#ancladoAyuda{padding:10px;background:#101827e8;border-radius:10px;font-size:14px;line-height:1.4}
+#ancladoMarcar{background:#087446!important}
+#capaAR.papel-fijo #panelAR,#capaAR.papel-fijo #rapidos,#capaAR.papel-fijo #hud,#capaAR.papel-fijo #miniPlanta,#capaAR.papel-fijo #btnSalirAR{display:none!important}

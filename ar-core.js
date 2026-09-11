@@ -1988,7 +1988,9 @@ async function diagnostico(){
 }
 $('btnDiag').addEventListener('click', diagnostico);
 
+let _supportGeneration=0;
 async function revisarSoporte(){
+  const requestId=++_supportGeneration;
   const est = $('estadoAR');
   const hayTrazado = !!S.trazado;
 
@@ -2030,6 +2032,8 @@ async function revisarSoporte(){
   }
   let ok = false;
   try{ ok = await navigator.xr.isSessionSupported('immersive-ar'); }catch(e){}
+  // An earlier spatial-capability response must not disable a newly selected QR mode.
+  if(requestId!==_supportGeneration)return;
   if(!ok){
     est.className='nota err';
     est.textContent='WebXR AR no disponible en este dispositivo. En PC usá "Ver en 3D".';
@@ -2043,7 +2047,7 @@ async function revisarSoporte(){
 
 async function iniciarAR(){
   if(S.papelCamera) return false;
-  if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value !== 'manual' && $('msModoPapel').value !== 'nativo' && window.MSPaper) return window.MSPaper.start();
+  if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value !== 'manual' && $('msModoPapel').value !== 'nativo' && $('msModoPapel').value !== 'anclado' && window.MSPaper) return window.MSPaper.start();
   if(!S.trazado || S.papelCamera || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
   if(!navigator.xr || !window.isSecureContext){ UI.estado('AR no está disponible en este navegador. Podés abrir Ver en 3D.', 'err'); return false; }
   S._iniciando = 'xr';
@@ -2061,6 +2065,7 @@ async function iniciarAR(){
 
 async function iniciarARInterno(intento){
 
+  S.paperFixed=!!(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value==='anclado');
   const renderer = obtenerRenderer();
   const canvas = renderer.domElement;
   canvas.style.visibility = '';
@@ -2103,7 +2108,7 @@ async function iniciarARInterno(intento){
   S.scene.add(S.grupo);
   S.anclado = false;
   S.rotY = 0; S.offsetY = 0;
-  const habiaCalib = aplicarCalibGuardada();   // restaura rot/alt/opacidad de esta obra
+  const habiaCalib = S.paperFixed ? false : aplicarCalibGuardada();   // restaura rot/alt/opacidad de esta obra
 
   // IMPORTANTE: el root del dom-overlay tiene que estar VISIBLE antes de pedir
   // la sesión. Con display:none Chrome rechaza toda la configuración.
@@ -2115,12 +2120,12 @@ async function iniciarARInterno(intento){
   // Reintentos degradados: si una feature no está soportada, probamos sin ella
   // anchors y depth-sensing van como OPCIONALES: si el equipo no los tiene,
   // la sesión arranca igual y la app degrada sola (sin persistencia / sin oclusión)
-  const extras = ['anchors','depth-sensing','light-estimation'];
+  const extras = S.paperFixed ? ['anchors','light-estimation'] : ['anchors','depth-sensing','light-estimation'];
   // RECONOCIMIENTO DEL PLANO IMPRESO: si el paquete trae marcador y el modo es
   // "Sobre plano impreso", se pide image-tracking (Chrome lo tiene detrás de
   // chrome://flags/#webxr-incubations; si no está, se cae al flujo de 2 cruces)
   S.imgCfg = null; S.imgTrack = false;
-  if(S.modoPapel && S.trazado && S.trazado.marcador && !(CFG.mejorasMS && $('msModoPapel').value === 'manual')){
+  if(S.modoPapel && S.trazado && S.trazado.marcador && !(CFG.mejorasMS && ['manual','anclado'].includes($('msModoPapel').value))){
     const bmp = await bitmapMarcador(S.trazado.marcador);
     if(S._inicioId !== intento) { if(bmp && bmp.close) bmp.close(); return false; }
     if(bmp){
@@ -2149,6 +2154,12 @@ async function iniciarARInterno(intento){
 
   let session = null, usado = '', errores = [], usaFloor = false;
   for(const it of intentos){
+    // Fixed paper requires real surface detection and visible placement controls.
+    if(S.paperFixed){
+      if(!it.cfg.requiredFeatures?.includes('hit-test') || !it.cfg.domOverlay)continue;
+      it.cfg.requiredFeatures=it.cfg.requiredFeatures.concat('dom-overlay');
+      it.cfg.optionalFeatures=it.cfg.optionalFeatures.filter(f=>f!=='dom-overlay');
+    }
     try{
       session = await navigator.xr.requestSession('immersive-ar', it.cfg);
       usado = it.nom; registrar('sesion AR: ' + it.nom);
@@ -2208,7 +2219,7 @@ async function iniciarARInterno(intento){
   S.usaFloor = usaFloor;
   if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
-  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(); S._hitReady=false; S._trackPerdido=false; window.MSStability?.reset(); }
+  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; window.MSStability?.reset(); }
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
   S.lightProbe = null; S._luzK = 1;
@@ -2232,6 +2243,8 @@ async function iniciarARInterno(intento){
       }
     }catch(e){ S.hitSource = null; }
   }
+
+  if(S.paperFixed && !S.hitSource)throw new Error('No se pudo detectar la superficie. Cerrá y volvé a iniciar; no se colocará el modelo a una distancia inventada.');
 
   // ── v0.8: anclaje persistente ─────────────────────────────────
   S.ancPersist = ('persistentAnchors' in session) && (typeof session.restorePersistentAnchor === 'function');
@@ -2290,7 +2303,10 @@ async function iniciarARInterno(intento){
   const _tieneRef = S.trazado && S.trazado.refEsquina && S.trazado.planImg;
   const _grande = S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= CFG.umbral2Puntos;
   const _por2 = _tieneRef && ((S.modoPapel) || (S.escala === 1 && (S.modoUbic === '2puntos' || (S.modoUbic !== 'toque' && _grande && S.trazado.esModelo))));
-  if(S.modoPapel && S.imgTrack){
+  if(S.paperFixed){
+    reiniciarPlanoFijo();
+  }
+  else if(S.modoPapel && S.imgTrack){
     // SOBRE PLANO IMPRESO con RECONOCIMIENTO: apuntar al marcador y listo
     S.esquinando = 0; S.marcadorBuscando = true;
     UI.msg('Apuntá la cámara al QR del plano (junto a la cruz 1), a 30-50 cm, con la hoja bien iluminada. El 3D se monta solo sobre la hoja.');
@@ -2356,7 +2372,7 @@ async function iniciarARInterno(intento){
       let hit = null, pose = null;
       for(let hi = 0; hi < hits.length; hi++){
         const ps = hits[hi].getPose(S.refSpaceLocal); if(!ps) continue;
-        if(S.esquinando || S.midiendo || S.escuadrando || S.pivMode || ps.transform.matrix[5] > 0.6){ hit = hits[hi]; pose = ps; break; }
+        if((!S.paperFixed && (S.esquinando || S.midiendo || S.escuadrando || S.pivMode)) || ps.transform.matrix[5] > (S.paperFixed ? .94 : .6)){ hit = hits[hi]; pose = ps; break; }
       }
       if(!CFG.mejorasMS && !hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
       // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
@@ -2364,7 +2380,7 @@ async function iniciarARInterno(intento){
       // el piso. La cámara de PROFUNDIDAD ve la superficie real donde apunta
       // el aro: si está más cerca que el hit (o no hay hit), manda ella.
       let pd = null;
-      if((!S.esquinando || S.modoPapel) && !S.midiendo && !S.escuadrando){ try{ pd = puntoDeProfundidadCentro(frame); }catch(e){ pd = null; } }
+      if(!S.paperFixed && (!S.esquinando || S.modoPapel) && !S.midiendo && !S.escuadrando){ try{ pd = puntoDeProfundidadCentro(frame); }catch(e){ pd = null; } }
       let usarDepth = false;
       if(pd){
         if(!hit) usarDepth = true;
@@ -2406,7 +2422,7 @@ async function iniciarARInterno(intento){
         }else{ S._hitFilter.reset(); S._hitReady=false; }
       }
       if(S.esqGuia){
-        const mostrar = S.esquinando === 1 && S.reticula.visible;
+        const mostrar = !S.paperFixed && S.esquinando === 1 && S.reticula.visible;
         S.esqGuia.visible = mostrar;
         if(mostrar){
           S.esqGuia.position.copy(S.reticula.position);
@@ -2418,7 +2434,7 @@ async function iniciarARInterno(intento){
     }
     // el aro se achica y atenúa cuando el modelo ya está apoyado (solo sugiere "tocá para re-apoyar")
     if(S.reticula.visible){
-      const k = (S.anclado && !S.esquinando && !S.midiendo && !S.escuadrando) ? .55 : 1;
+      const k = S.paperFixed ? .08 : (S.anclado && !S.esquinando && !S.midiendo && !S.escuadrando) ? .55 : 1;
       S.reticula.scale.setScalar(k);
       S.reticula.material.opacity = k < 1 ? .55 : .9;
     }
@@ -2604,6 +2620,13 @@ async function iniciarARInterno(intento){
       if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
     if(CFG.mejorasMS && S._trackPerdido){S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();}
+    if(S.paperFixed){
+      if(S.esquinando===5 && S.esqP1 && S.anchor && S.ancListo){
+        S.esqP1.copy(S.trazado.refEsquina).multiplyScalar(S.grupo.scale.x).applyQuaternion(S.grupo.quaternion).add(S.grupo.position);
+      }
+      S.grupo.visible=!!(S.fijado && S.anclado && !S._trackPerdido);
+      window.MSAnchorUI?.update();
+    }
     renderer.render(S.scene, S.camera);
   });
   return true;
@@ -3011,6 +3034,7 @@ async function bitmapMarcador(mk){
    nuevo" lo libera. Medir / escuadrar / 2 puntos tienen prioridad.
    ------------------------------------------------------------ */
 function tapPantalla(ev){
+  if(S.paperFixed && (S.esquinando===1 || S.esquinando===5) && (!S._hitReady || S._trackPerdido || !S.reticula?.visible)){UI.msg('Esperá a que el aro esté verde sobre la hoja apoyada en una mesa.');return;}
   if(CFG.mejorasMS && S.modoPapel && S.imgTrack){UI.msg('En este modo la ubicación la determina el QR. Mantenelo visible.');return;}
   if(CFG.mejorasMS && S.session && !S.fijado && !S.pivMode && !S.esquinando && !S.midiendo && !S.escuadrando && !S._hitReady){
     UI.msg('Buscando una superficie estable. Mové despacio la cámara por la mesa o el piso y tocá cuando el aro esté verde.');return;
@@ -3227,7 +3251,7 @@ function fijarModelo(si){
     if(!S.anchor) S._pedirAncla = true;
     S.marcadorBuscando = false;
     if(S.imgTrack && S.modoPapel && S.grupo) S._mkLock = { pos: S.grupo.position.clone(), rotY: S.rotY };   // fijado a mano sobre el papel: si movés la hoja, la sigue igual
-    sincronizarAncla(); guardarCalib();
+    S.grupo.visible=true; sincronizarAncla(); guardarCalib();
     UI.msg('Fijado ✓. Los toques ya no lo mueven. Ajuste fino con los botones o "Apoyar de nuevo" para cambiarlo de lugar.');
   }else{
     S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S.papelSinAncla = false; S._escFija = 0;
@@ -3714,7 +3738,22 @@ function cambiarPiel(){
    referencia → el modelo gira alrededor de la esquina hasta que
    su pared acompaña la real. Galpones enteros, ubicados en serio.
    ------------------------------------------------------------ */
+
+// Two predefined crosses on a stationary horizontal sheet. No image-tracking dependency.
+function reiniciarPlanoFijo(){
+  const tz=S.trazado,a=tz?.refEsquina,b=tz?.refP2Sugerido;
+  if(!S.session || !S.grupo || !a || !b || ![a.x,a.z,b.x,b.z].every(Number.isFinite) || Math.hypot(b.x-a.x,b.z-a.z)<.01)throw new Error('El archivo no contiene las dos cruces del plano. Exportá su JSON AR o generá un plano desde el OBJ.');
+  olvidarAncla(S.session);S._pedirAncla=false;S.paperFixed=true;S.papelSinAncla=false;
+  S.esquinando=1;S.esqP1=null;S.refP2={x:b.x,z:b.z};S.fijado=false;S.anclado=false;
+  S.grupo.visible=false;S.rotY=0;S.offsetY=0;S.planoModo='off';S.oclusion=false;
+  S._hitReady=false;S._hitFilter?.reset();S.esqGuia.visible=false;
+  $('miniPlanta').classList.add('oculto');
+  UI.msg('Apoyá la hoja en una mesa. Apuntá el aro al centro de la cruz 1 y marcala cuando esté verde.');
+  UI.paso('1','Fijar a la hoja · dos cruces');window.MSAnchorUI?.start();
+}
+
 function puntoEsquina(){
+  if(S.paperFixed && (!S._hitReady || S._trackPerdido || !S.reticula?.visible))return;
   if(S.esquinando === 3 || S.esquinando === 4) return;   // en el plano se elige tocando el plano
   if(S._gesMovio){ S._gesMovio = false; return; }
   if(!S.reticula || !S.reticula.visible || !S.grupo || !S.trazado || !S.trazado.refEsquina){
@@ -3743,6 +3782,11 @@ function puntoEsquina(){
     }else{
       S._pedirAncla = true;
     }
+    if(S.paperFixed){
+      S.grupo.visible=false;S.esquinando=5;S._hitFilter?.reset();S._hitReady=false;
+      UI.msg('Cruz 1 marcada. Apuntá el aro verde a la cruz 2 y tocá Marcar cruz 2.');
+      window.MSAnchorUI?.update();return;
+    }
     // → a elegir el SEGUNDO punto sobre el plano
     S.esquinando = 4;
     S.planoModo = 'grande';
@@ -3762,13 +3806,15 @@ function puntoEsquina(){
     if(!S.refP2){ S.esquinando = 4; return; }
     const uR = { x: p.x - S.esqP1.x, z: p.z - S.esqP1.z };
     const dReal = Math.hypot(uR.x, uR.z);
-    const dMin = S.modoPapel ? 0.08 : 1.5;
+    const dMin = S.modoPapel ? 0.06 : 1.5;
+    if(S.paperFixed && Math.abs(p.y-S.esqP1.y)>.02){UI.msg('Las dos cruces deben estar en la misma hoja plana sobre la mesa. Volvé a apuntar a la cruz 2.');return;}
     if(dReal < dMin){
       UI.msg('Muy cerca del punto 1 (' + (dReal*100).toFixed(0) + ' cm): cuanto más lejos, más precisa la orientación. Marcá el punto 2 en su lugar.');
       return;
     }
     const uL = { x: S.refP2.x - ref.x, z: S.refP2.z - ref.z };
     const dPlano = Math.hypot(uL.x, uL.z);
+    if(S.paperFixed && (!Number.isFinite(dPlano/dReal) || dPlano/dReal<.05 || dPlano/dReal>10000)){UI.msg('Las referencias no dan una escala válida. Volvé a marcar las dos cruces.');return;}
     // rotación exacta: el vector del plano gira hasta calzar con el medido.
     // LA ESCALA NO SE TOCA NUNCA: siempre 1:1.
     S.rotY = Math.atan2(-uR.z, uR.x) - Math.atan2(-uL.z, uL.x);
@@ -3776,7 +3822,7 @@ function puntoEsquina(){
     S.grupo.rotation.y = S.rotY;
     if(S.modoPapel && dPlano > 0.01){
       // SOBRE PLANO IMPRESO: la ESCALA la dan las dos cruces (dPlano real ↔ dReal en el papel)
-      S.escala = Math.min(1000, Math.max(0.05, dPlano / dReal));
+      S.escala = S.paperFixed ? dPlano/dReal : Math.min(1000, Math.max(0.05, dPlano / dReal));
       S.escalaEf = Math.round(S.escala * 10) / 10;
       S.grupo.scale.setScalar(1 / S.escala);
       if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = true;
@@ -3809,6 +3855,7 @@ function puntoEsquina(){
     UI.msg((S.modoPapel ? '✓ 3D parado sobre el plano impreso y FIJADO. ' : '✓ Modelo ubicado con 2 puntos y FIJADO. ') + ctrl);
     UI.paso('', '');
     refrescarHUD();
+    if(S.paperFixed){UI.msg('Modelo fijado a la hoja. Ya podés mover el teléfono y dejar el QR fuera de vista. Mantené la hoja en su lugar.');window.MSAnchorUI?.update();}
     return;
   }
 }
@@ -3983,6 +4030,7 @@ function cerrarAR(desdeEvento){
   registrar('cierre AR ' + (desdeEvento ? '(evento end / atras)' : '(boton Salir)'));
   S._cerrando = true;
   const epoch = _renderEpoch;
+  window.MSAnchorUI?.stop(); S.paperFixed=false;
   const escena = S.scene;
   const geoModelo = S.trazado && S.trazado.geo;
   const imagenes = S.imgCfg && S.imgCfg.trackedImages;
@@ -4952,5 +5000,5 @@ if(location.hash === '#compartido-error') UI.estado('No se pudo guardar el archi
 /* ── API para las interfaces (index.html de cada marca) ── */
 window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bitmapMarcador,centroMarcador}, S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               cerrar3D, salirAR,
-              revisarSoporte, traerAca, fijarModelo, tapPantalla, refrescarHUD, DEMO, VERSION,
+              revisarSoporte, traerAca, fijarModelo, tapPantalla, reiniciarPlanoFijo, refrescarHUD, DEMO, VERSION,
               construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };

@@ -51,13 +51,16 @@
   }
   function buildOverlay(r) {
     const overlay=document.createElement('section'); overlay.id='papelCamara'; overlay.setAttribute('aria-label','Modelo sobre plano impreso');
-    overlay.innerHTML='<div id="papelStage"></div><div class="papel-guia"></div><div class="papel-cabecera"><p id="papelEstado" role="status" aria-live="polite">Preparando cámara…</p><button id="papelSalir" type="button">Salir</button></div><div class="papel-controles"><button id="papelReleer" type="button">Volver a leer QR</button><button id="papelLibre" type="button">Ver 3D sin cámara</button><button id="papelPausa" type="button" disabled>Pausar imagen</button><details><summary>Ajustar vista</summary><p>Usá el mismo JSON y plano. Mantené visible el QR completo, con luz uniforme.</p><label>Perspectiva de cámara <input id="papelFov" type="range" min="45" max="85" step="1" value="65"></label><p>Si la altura se ve deformada, ajustá la perspectiva. La escala sobre la hoja usa la medida del marco impreso.</p><label>Ver a través del modelo <input id="papelOpacidad" type="range" min="25" max="100" step="5" value="100"></label></details></div>';
+    overlay.innerHTML='<div id="papelStage"></div><div class="papel-guia"></div><div class="papel-cabecera"><p id="papelEstado" role="status" aria-live="polite">Preparando cámara…</p><button id="papelSalir" type="button">Salir</button></div><div class="papel-controles"><button id="papelReleer" type="button">Volver a leer QR</button><button id="papelAnclar" type="button">Fijar en la hoja y moverme</button><button id="papelLibre" type="button">Ver 3D sin cámara</button><button id="papelPausa" type="button" disabled>Pausar imagen</button><details><summary>Ajustar vista</summary><p>Usá el mismo JSON y plano. Mantené visible el QR completo, con luz uniforme.</p><label>Perspectiva de cámara <input id="papelFov" type="range" min="45" max="85" step="1" value="65"></label><p>Si la altura se ve deformada, ajustá la perspectiva. La escala sobre la hoja usa la medida del marco impreso.</p><label>Ver a través del modelo <input id="papelOpacidad" type="range" min="25" max="100" step="5" value="100"></label></details></div>';
     document.body.append(overlay); r.overlay=overlay; r.stage=$('papelStage');
     r.background=document.createElement('canvas'); r.stage.append(r.background);
     r.backgroundContext=r.background.getContext('2d',{alpha:false});
     $('capaUI').classList.add('oculto');
     listen(r,$('papelSalir'),'click',()=>stop());
     listen(r,$('papelLibre'),'click',()=>{stop();AR.iniciar3D();});
+    listen(r,$('papelAnclar'),'click',()=>{
+      $('msModoPapel').value='anclado';stop();AR.iniciarAR();
+    });
     listen(r,$('papelReleer'),'click',()=>{
       r.resetFlow=true; r.lastGood=0; r.filter.reset(); r.acquisition.reset(); r.lastRotation=null; r.group.visible=false; r.paused=false;
       $('papelPausa').textContent='Pausar imagen'; $('papelPausa').disabled=true;
@@ -84,9 +87,16 @@
   }
   function layout(r) {
     const w=r.width,h=r.height,k=Math.min(innerWidth/w,innerHeight/h);
-    r.stage.style.width=Math.round(w*k)+'px';r.stage.style.height=Math.round(h*k)+'px';
-    r.renderer.setSize(Math.round(w*k),Math.round(h*k));
-    r.camera.aspect=w/h; r.camera.fov=2*Math.atan(h/(2*r.focal))*180/Math.PI; r.camera.updateProjectionMatrix();
+    const width=Math.round(w*k),height=Math.round(h*k),fov=2*Math.atan(h/(2*r.focal))*180/Math.PI;
+    // setSize writes canvas.width/height and clears WebGL, even for equal sizes.
+    // Keep the completed 3D frame visible while the worker processes the next one.
+    if(r.displayWidth!==width || r.displayHeight!==height){
+      r.stage.style.width=width+'px';r.stage.style.height=height+'px';
+      r.renderer.setSize(width,height);r.displayWidth=width;r.displayHeight=height;
+    }
+    if(r.camera.aspect!==w/h || r.camera.fov!==fov){
+      r.camera.aspect=w/h;r.camera.fov=fov;r.camera.updateProjectionMatrix();
+    }
   }
   function place(r,pose) {
     const a=pose.rotation,p=pose.translation;
@@ -107,7 +117,7 @@
     const pending=r.pending; r.pending=null;
     if(r.paused) {pending.bitmap.close();schedule(r);return;}
     const now=performance.now(); r.lastFrame=now;
-    let pose=null, message='Mantené visible el QR completo del plano, sin reflejos.', mismatch=false;
+    let pose=null, message='El seguimiento QR perdió la referencia. Para recorrer el modelo, tocá Fijar en la hoja y moverme.', mismatch=false;
     const code=event.data.code;
     if(code) {
       if(code.data!==r.marker.text) {message='Este QR no corresponde al archivo abierto. Usá el plano y el JSON de la misma exportación.';mismatch=true;}
@@ -156,7 +166,8 @@
       const w=Math.round(bitmap.width*k),h=Math.round(bitmap.height*k);
       r.width=w;r.height=h;r.focal=Math.max(w,h)/(2*Math.tan(r.fov*Math.PI/360));
       layout(r);
-      r.capture.width=w;r.capture.height=h;r.captureContext.drawImage(bitmap,0,0,w,h);
+      if(r.capture.width!==w || r.capture.height!==h){r.capture.width=w;r.capture.height=h;}
+      r.captureContext.drawImage(bitmap,0,0,w,h);
       const pixels=r.captureContext.getImageData(0,0,w,h);
       const id=++r.frameId;r.pending={id,bitmap};
       r.worker.postMessage({id,buffer:pixels.data.buffer,width:w,height:h,expected:r.marker.text,reset:!!r.resetFlow},[pixels.data.buffer]);
