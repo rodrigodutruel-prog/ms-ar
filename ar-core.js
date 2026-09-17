@@ -1007,6 +1007,7 @@ function parseMTL(txt){
 //  · "o vidrio" / materiales con opacidad < .9 → grupo translúcido
 async function parseOBJ(txt, avance, mtl){
   let vs = [], cols = [];
+  const aristas = [];                 // pares de indices de las lineas 'l' (aristas ya calculadas)
   const tris = [], trisVid = [], triMat = [], triMatVid = [];
   const matNombres = []; const matIdx = Object.create(null);
   let hayColor = false, enVidrio = false, matAct = -1, hayMat = false, hojaEmb = null;
@@ -1031,6 +1032,14 @@ async function parseOBJ(txt, avance, mtl){
         const vid = enVidrio || (matAct >= 0 && mtl && mtl[matNombres[matAct]] && mtl[matNombres[matAct]].d < .9);
         const dest = vid ? trisVid : tris, dm = vid ? triMatVid : triMat;
         for(let j=2;j<p.length;j++){ dest.push(p[0], p[j-1], p[j]); dm.push(matAct); }
+      }else if(c0===108 && c1===32){    // "l " — aristas ya calculadas por el preparador
+        const p = l.trim().split(/\s+/);
+        const nv = vs.length/3;
+        for(let k=1;k+1<p.length;k++){
+          const ia = parseInt(p[k],10), ib = parseInt(p[k+1],10);
+          if(!ia || !ib) continue;
+          aristas.push(ia<0 ? nv+ia : ia-1, ib<0 ? nv+ib : ib-1);
+        }
       }else if(c0===111 && c1===32){    // "o "
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
       }else if(c0===35 && l.startsWith('# MSAR_HOJA ')){   // la hoja impresa (Plano_AR_desde_OBJ)
@@ -1051,8 +1060,10 @@ async function parseOBJ(txt, avance, mtl){
   // MODELO GIGANTE (galpón entero de Inventor): un celular no mueve millones de
   // caras. Se simplifica acá mismo con una rejilla de agrupamiento de vértices
   // (lo mismo que hace Preparar_OBJ_para_AR en la PC) — no hace falta prepararlo.
-  const MAX_CARAS = AR_TOPE_CARAS;   // atado al tope de las aristas
+  const MAX_CARAS = AR_TOPE_CARAS;
+  let _seSimplifico = false;
   if(todos.length/3 > MAX_CARAS){
+    _seSimplifico = true;
     let minx=1e18,miny=1e18,minz=1e18,maxx=-1e18,maxy=-1e18,maxz=-1e18;
     for(let i=0;i<vs.length;i+=3){ const x=vs[i],y=vs[i+1],z=vs[i+2]; if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; if(z<minz)minz=z; if(z>maxz)maxz=z; }
     const diag = Math.hypot(maxx-minx, maxy-miny, maxz-minz) || 1;
@@ -1106,6 +1117,20 @@ async function parseOBJ(txt, avance, mtl){
     g.userData.hayVidrio = true;
   }
   g.computeVertexNormals();
+  // ARISTAS del archivo: si el modelo se simplifico aca dentro, los indices ya
+  // no corresponden y se descartan (se recae en el calculo del visor).
+  if(aristas.length && !_seSimplifico){
+    try{
+      const ap = new Float32Array(aristas.length*3);
+      for(let i=0;i<aristas.length;i++){
+        const b = aristas[i]*3;
+        ap[i*3] = vs[b]; ap[i*3+1] = vs[b+1]; ap[i*3+2] = vs[b+2];
+      }
+      const ga = new THREE.BufferGeometry();
+      ga.setAttribute('position', new THREE.BufferAttribute(ap,3));
+      g.userData.aristasGeo = ga;
+    }catch(e){}
+  }
   g.userData.matNombres = matNombres;
   g.userData.hoja = hojaEmb;
   g.userData.triMat = (hayMat && matNombres.length) ? Int32Array.from(mats) : null;
@@ -1253,6 +1278,8 @@ async function cargarModelo3D(file, interno){
         const f = { mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001;
         geo.scale(f,f,f);
         geo.rotateX(-Math.PI/2);
+        // las aristas del archivo viajan con el modelo: mismas transformaciones
+        if(geo.userData.aristasGeo){ geo.userData.aristasGeo.scale(f,f,f); geo.userData.aristasGeo.rotateX(-Math.PI/2); }
         if(geo.userData.colCrudo) hornearReal(geo);   // la luz horneada, ya con Y arriba
       }
       // centrar en planta y apoyar en el piso
@@ -1260,6 +1287,7 @@ async function cargarModelo3D(file, interno){
       const bb = geo.boundingBox, c = bb.getCenter(new THREE.Vector3());
       const minY0 = bb.min.y;             // el min ANTES de trasladar (bb se recalcula después)
       geo.translate(-c.x, -bb.min.y, -c.z);
+      if(geo.userData.aristasGeo) geo.userData.aristasGeo.translate(-c.x, -bb.min.y, -c.z);
       geo.computeBoundingBox();
       const med = geo.boundingBox.getSize(new THREE.Vector3());
       const nTris = (geo.index ? geo.index.count : geo.getAttribute('position').count)/3;
@@ -1501,7 +1529,17 @@ function construirGrupoModelo(tz){
   // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
   // (EdgesGeometry de 80k caras = varios segundos de cuelgue en el celu: solo
   // modelos chicos, y recién 1,5 s después de arrancar, con el AR ya andando)
-  if(tz.tris <= AR_TOPE_ARISTAS){
+  // ARISTAS. Si el archivo las trae ya calculadas (preparado en la PC) se
+  // dibujan al instante y a cualquier tamano: el telefono no calcula nada.
+  // Si no, se calculan aca, pero solo por debajo del tope prudente porque
+  // EdgesGeometry bloquea la pantalla mientras dura.
+  const _aristasArchivo = tz.geo.userData && tz.geo.userData.aristasGeo;
+  if(_aristasArchivo){
+    try{
+      g.add(new THREE.LineSegments(_aristasArchivo,
+        new THREE.LineBasicMaterial({ color:AR_COLOR_ARISTAS, transparent:true, opacity:.9 })));
+    }catch(e){}
+  }else if(tz.tris <= AR_TOPE_ARISTAS){
     setTimeout(() => {
       try{
         const bordes = new THREE.LineSegments(
