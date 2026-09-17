@@ -2261,6 +2261,7 @@ async function iniciarARInterno(intento){
   S.ancPos = new THREE.Vector3(); S.ancQuat = new THREE.Quaternion();
   S.anchor2 = null; S.anc2Listo = false; S.anc2Pos = new THREE.Vector3(); S.anc2Yaw0 = 0; S.anc2Bear0 = 0;
   S.ancDelta = new THREE.Vector3(); S.ancRotLocal = 0;
+  S.baseFijada = null; S._derivaRef = null; S._derivaMax = null;
   let restaurando = false;
   // Restaurar un ancla de otra sesión hacía que el modelo apareciera "en
   // cualquier lado" (otra oficina, otro día) y el toque no lo movía. Apagado.
@@ -2596,7 +2597,20 @@ async function iniciarARInterno(intento){
         const yA = yawAncla();
         const qE = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yA);
         S.grupo.position.copy(S.ancDelta).applyQuaternion(qE).add(S.ancPos);
-        S.rotY = S.ancRotLocal + yA;
+        // DERIVA DEL ANCLA desde que se fijo: para poder medirla, no para corregir
+        if(S.fijado){
+          if(!S._derivaRef){ S._derivaRef = { p: S.ancPos.clone(), y: yA, t: Date.now() }; S._derivaMax = { d:0, a:0 }; }
+          const _dd = S.ancPos.distanceTo(S._derivaRef.p);
+          const _da = Math.abs(angNorm(yA - S._derivaRef.y));
+          if(_dd > S._derivaMax.d) S._derivaMax.d = _dd;
+          if(_da > S._derivaMax.a) S._derivaMax.a = _da;
+        }
+        // BASE SETEADA: fijado, la altura no la mueve mas el ancla
+        if(S.fijado && typeof S.baseFijada === 'number') S.grupo.position.y = S.baseFijada;
+        // GIRO: crudo mientras se coloca; amortiguado una vez fijado, asi el yaw
+        // del ancla (lo menos firme de ARCore) no hace girar el modelo despacio.
+        const _objY = S.ancRotLocal + yA;
+        S.rotY = S.fijado ? (S.rotY + angNorm(_objY - S.rotY) * 0.04) : _objY;
         S.grupo.rotation.y = S.rotY;
         S.grupo.visible = true;
       }
@@ -3050,6 +3064,9 @@ function tapPantalla(ev){
   }
   if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
   if(!S.session || !S.grupo) return;
+  if(S._derivaMax) registrar('deriva del ancla desde que se fijo: ' +
+    Math.round(S._derivaMax.d*1000) + ' mm / ' + (S._derivaMax.a*180/Math.PI).toFixed(2) + ' grados' +
+    (S._derivaRef ? (' en ' + Math.round((Date.now()-S._derivaRef.t)/1000) + ' s') : ''));
   registrar('toque - aro ' + (S.reticula && S.reticula.visible ? ('a ' + S.reticula.position.y.toFixed(2) + ' m de alto' + (S.hitEsPared ? ' (pared)' : '') + (S.hitDesdeDepth ? ' (por profundidad)' : ' (hit ARCore)')) : 'NO visible') + ' - anclado ' + S.anclado + ' - fijado ' + S.fijado + ' - modo ' + (S.esquinando ? 'esquina' + S.esquinando : (S.midiendo ? 'medir' : 'apoyar')));
   if(S.pivMode === 1){ elegirPuntoDel3D(); return; }
   if(S.pivMode === 2){ marcarPivoteReal(); return; }
@@ -3314,6 +3331,11 @@ function sincronizarAncla(){
   const inv = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), -yA);
   S.ancDelta.copy(S.grupo.position).sub(S.ancPos).applyQuaternion(inv);
   S.ancRotLocal = S.rotY - yA;
+  // BASE SETEADA: la altura a la que quedo el modelo. Con el modelo fijado, la
+  // Y deja de salir del ancla (ARCore reestima el piso y lo hacia subir o
+  // bajar). X y Z se siguen corrigiendo, que es lo que ARCore hace bien.
+  S.baseFijada = S.grupo.position.y;
+  S._derivaRef = null;                  // se vuelve a medir desde esta colocacion
   guardarAncla();
 }
 
