@@ -22,6 +22,13 @@ const VERSION = CFG.version;
 // entraba simplificado a 400.000 y se veia sin una sola arista. Si se vuelven
 // a separar, vuelve el problema.
 const AR_TOPE_CARAS = CFG.maxCaras || 110000;
+// TOPE DE LAS ARISTAS, aparte del de la malla. Son dos cosas distintas y
+// mezclarlas fue un error: EdgesGeometry se calcula EN EL TELEFONO y BLOQUEA el
+// hilo principal mientras lo hace — a 80.000 caras son varios segundos. En la
+// 4.4.0 este tope se subio a 110.000 junto con el de la malla y la app se
+// tildaba al colocar un modelo de 91.000 caras. La malla puede ser grande; las
+// aristas no. (La solucion de fondo es traerlas ya calculadas en el archivo.)
+const AR_TOPE_ARISTAS = CFG.maxAristas || 45000;
 // Aristas negras, como el sombreado con aristas de Inventor. Iban blancas
 // porque el visor de MS tenia fondo oscuro; ahora el fondo es claro.
 const AR_COLOR_ARISTAS = (CFG.colorAristas !== undefined) ? CFG.colorAristas : 0x1a2432;
@@ -1494,7 +1501,7 @@ function construirGrupoModelo(tz){
   // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
   // (EdgesGeometry de 80k caras = varios segundos de cuelgue en el celu: solo
   // modelos chicos, y recién 1,5 s después de arrancar, con el AR ya andando)
-  if(tz.tris <= AR_TOPE_CARAS){
+  if(tz.tris <= AR_TOPE_ARISTAS){
     setTimeout(() => {
       try{
         const bordes = new THREE.LineSegments(
