@@ -16,6 +16,15 @@ const CFG = Object.assign({
   umbral2Puntos: 8              // modelos de más de 8 m se ubican por 2 puntos (galpón / casa)
 }, window.AR_CONFIG || {});
 const VERSION = CFG.version;
+// TOPE DE CARAS. Es el mismo numero para dos cosas que antes iban separadas:
+// hasta aca simplifica parseOBJ los ensambles grandes, y hasta aca dibuja el
+// visor las aristas. Estaban en 400.000 y 25.000: un ensamble de Inventor
+// entraba simplificado a 400.000 y se veia sin una sola arista. Si se vuelven
+// a separar, vuelve el problema.
+const AR_TOPE_CARAS = CFG.maxCaras || 110000;
+// Aristas negras, como el sombreado con aristas de Inventor. Iban blancas
+// porque el visor de MS tenia fondo oscuro; ahora el fondo es claro.
+const AR_COLOR_ARISTAS = (CFG.colorAristas !== undefined) ? CFG.colorAristas : 0x1a2432;
 // PALETA del 3D (retícula, banderas, etiquetas…): cada marca pone la suya
 const PAL = Object.assign({
   acento: 0xe31e24, acento2: 0x00aeef, aviso: 0xffc400,
@@ -1035,7 +1044,7 @@ async function parseOBJ(txt, avance, mtl){
   // MODELO GIGANTE (galpón entero de Inventor): un celular no mueve millones de
   // caras. Se simplifica acá mismo con una rejilla de agrupamiento de vértices
   // (lo mismo que hace Preparar_OBJ_para_AR en la PC) — no hace falta prepararlo.
-  const MAX_CARAS = CFG.maxCaras || 400000;
+  const MAX_CARAS = AR_TOPE_CARAS;   // atado al tope de las aristas
   if(todos.length/3 > MAX_CARAS){
     let minx=1e18,miny=1e18,minz=1e18,maxx=-1e18,maxy=-1e18,maxz=-1e18;
     for(let i=0;i<vs.length;i+=3){ const x=vs[i],y=vs[i+1],z=vs[i+2]; if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; if(z<minz)minz=z; if(z>maxz)maxz=z; }
@@ -1485,12 +1494,12 @@ function construirGrupoModelo(tz){
   // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
   // (EdgesGeometry de 80k caras = varios segundos de cuelgue en el celu: solo
   // modelos chicos, y recién 1,5 s después de arrancar, con el AR ya andando)
-  if(tz.tris < 25000){
+  if(tz.tris <= AR_TOPE_CARAS){
     setTimeout(() => {
       try{
         const bordes = new THREE.LineSegments(
           new THREE.EdgesGeometry(tz.geo, 24),
-          new THREE.LineBasicMaterial({ color:0xf2f7fa, transparent:true, opacity:.9 })
+          new THREE.LineBasicMaterial({ color:AR_COLOR_ARISTAS, transparent:true, opacity:.9 })
         );
         g.add(bordes);
       }catch(e){}

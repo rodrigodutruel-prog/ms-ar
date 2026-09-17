@@ -148,7 +148,11 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 .bctrl.destacado{ background:var(--azul) !important; border-color:var(--azul) !important; color:#04121a !important; font-weight:700; box-shadow:0 0 14px rgba(0,149,184,.65); }
 .bctrl.flotante{ position:fixed; z-index:60; top:calc(12px + env(safe-area-inset-top)); right:12px; width:auto; padding:0 16px; }
 .ayuda{ font-size:.7rem; color:var(--txt2); padding:0 2px; }
-#visor3D{ position:fixed; inset:0; z-index:40; background:#0a0d16; }
+/* Fondo del visor como el viewport de Inventor: degrade azul grisado que
+   aclara hacia abajo. Colores medidos de una captura real de Inventor.
+   Sobre este fondo las aristas negras se leen; sobre el navy no. */
+#visor3D{ position:fixed; inset:0; z-index:40;
+  background:linear-gradient(160deg, #98a8bb 0%, #aebccf 45%, #c7d3e5 100%); }
 #visor3D canvas{ display:block; }
 @media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
 </style>
@@ -352,7 +356,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v4.3.0', mejorasMS: true,
+  marca: 'MS', version: 'v4.4.0', mejorasMS: true,
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
