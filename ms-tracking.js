@@ -125,7 +125,7 @@
   }
   class SurfaceFilter {
     constructor(options={}){this.maxSpread=options.maxSpread??.018;this.jump=options.jump??.08;this.reset();}
-    reset(){this.samples=[];this.last=null;this.ready=false;}
+    reset(){this.samples=[];this.last=null;this.ready=false;this.spread=0;}
     update(p,time){
       if(!p || ![p.x,p.y,p.z].every(Number.isFinite)){this.reset();return null;}
       if(this.last!==null && time-this.last>150)this.reset();
@@ -135,6 +135,7 @@
       const mean={x:0,y:0,z:0};
       this.samples.forEach(s=>{mean.x+=s.x/this.samples.length;mean.y+=s.y/this.samples.length;mean.z+=s.z/this.samples.length;});
       const spread=Math.max(...this.samples.map(s=>Math.hypot(s.x-mean.x,s.y-mean.y,s.z-mean.z)));
+      this.spread=spread;            // medida, para que el diagnostico pueda decir POR QUE no valida
       this.ready=this.samples.length>=5 && time-this.samples[0].time>=250 && spread<this.maxSpread;
       return mean;
     }

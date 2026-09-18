@@ -2548,7 +2548,17 @@ async function iniciarARInterno(intento){
             S._hitFilter.reset(); S._hitReady = false; S._hitUltima = null; S._hitUltimaT = 0;
             S.reticula.material.color.setHex(PAL.aviso);
           }
-        }else if(S.reticula.visible && !S.hitEsPared && !S.hitDesdeDepth){
+        }else if(S.reticula.visible && !S.hitEsPared){
+          // LA PROFUNDIDAD TAMBIEN ES UNA LECTURA DE LA SUPERFICIE. Antes solo
+          // alimentaban el filtro los impactos de ARCore, y el registro del
+          // taller (18-sep, v4.9.1) mostro por que eso no alcanzaba: en ese
+          // telefono la profundidad resuelve la enorme mayoria de los cuadros
+          // (ventanas de 387 cuadros de profundidad contra 16 de impacto), asi
+          // que el filtro casi nunca juntaba muestras y el aro casi nunca podia
+          // llegar a verde. El punto de profundidad es una medicion real de la
+          // superficie a la que apunta el aro; el guardia de salto de 8 cm del
+          // propio filtro impide que se mezclen dos superficies distintas.
+          _ajustarTolerancia();
           const sm=S._hitFilter.update(S.reticula.position,t);
           S._hitReady=S._hitFilter.ready;
           if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
@@ -2661,8 +2671,12 @@ async function iniciarARInterno(intento){
       const rep = 'hit ' + (S._cntHit||0) + '/prof ' + (S._cntProf||0) +
                   '/sost ' + (S._cntSost||0) + '/nada ' + (S._cntNada||0);
       const mu = (S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-';
+      // dispersion medida contra tolerancia exigida: con 5+ muestras y aro ambar,
+      // esto dice si lo que falta es quietud o son pocas muestras.
+      const dt = S._hitFilter ? (Math.round((S._hitFilter.spread||0)*1000) + '/' + Math.round((S._hitFilter.maxSpread||0)*1000) + ' mm') : '-';
       registrar('buscando: hits ' + nh + ' - profundidad ' + pdd + ' m - aro ' + est +
-                ' - cuadros ' + rep + ' - muestras ' + mu + ' - parpadeos ' + (S._cntFlips||0));
+                ' - cuadros ' + rep + ' - muestras ' + mu + ' - quietud ' + dt +
+                ' - parpadeos ' + (S._cntFlips||0));
       S._cntHit = 0; S._cntProf = 0; S._cntSost = 0; S._cntNada = 0; S._cntFlips = 0;
     }
     // ¿el modelo quedó lejos? (medido cada medio segundo): el HUD avisa y ofrece "Traer acá"
@@ -3693,6 +3707,26 @@ function agregarPuntoEscuadra(){
    {p: punto en el mundo, dist: distancia a la cámara, cam: pos cámara}
    ------------------------------------------------------------ */
 const _pdInvP = new THREE.Matrix4(), _pdM = new THREE.Matrix4();
+// LA TOLERANCIA NO PUEDE SER FIJA. El filtro exigia 18 mm de dispersion a
+// cualquier distancia. A 3 m —trabajando a escala 1:1 en el taller— el propio
+// pulso de la mano mueve el rayo mucho mas que eso: el registro del 18-sep
+// mostro 13 muestras seguidas de impacto que igual no validaban. Se pide
+// quietud PROPORCIONAL a la distancia, que es la precision que hay disponible
+// ahi: 18 mm hasta 1,5 m, 36 mm a 3 m. Sobre la hoja impresa no se toca (esa
+// exige 6 mm y se mide a 30 cm).
+const _tmpCamPos = new THREE.Vector3();
+function _ajustarTolerancia(){
+  if(!S._hitFilter || S.paperFixed) return;
+  let d = 1;
+  try{
+    const camX = (S.renderer && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
+    camX.getWorldPosition(_tmpCamPos);
+    d = _tmpCamPos.distanceTo(S.reticula.position);
+  }catch(e){ d = 1; }
+  if(!(d > 0) || !isFinite(d)) d = 1;
+  S._hitFilter.maxSpread = Math.max(.018, Math.min(d, 6) * .012);
+}
+
 // Ultima posicion buena del aro, venga de un impacto o de la profundidad. Es lo
 // que permite sostenerlo en los huecos en vez de que parpadee.
 function _recordarAro(t){
