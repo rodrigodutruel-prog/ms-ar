@@ -2293,7 +2293,7 @@ async function iniciarARInterno(intento){
   S.usaFloor = usaFloor;
   if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
-  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; S._hitUltima=null; S._hitUltimaT=0; S._aroUltima=null; S._aroDesde=0; S.aroSostenido=false; window.MSStability?.reset(); }
+  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; S._hitUltima=null; S._hitUltimaT=0; S._aroUltima=null; S._aroDesde=0; S.aroSostenido=false; S._verde1=0; S._verdePrev=false; S._cntHit=0; S._cntProf=0; S._cntSost=0; S._cntNada=0; S._cntFlips=0; window.MSStability?.reset(); }
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
   S.lightProbe = null; S._luzK = 1;
@@ -2474,6 +2474,7 @@ async function iniciarARInterno(intento){
         S.ultimoHit = null;                        // ancla libre (no hay trackable ahí)
         S.reticula.material.color.setHex(PAL.aviso);
         S.aroSostenido = false;
+        S._cntProf = (S._cntProf||0) + 1;
         _recordarAro(t);
       }else if(hit && pose){
         S.reticula.visible = true;
@@ -2487,6 +2488,7 @@ async function iniciarARInterno(intento){
         S.hitDesdeDepth = false;
         S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : PAL.acento);
         S.aroSostenido = false;
+        S._cntHit = (S._cntHit||0) + 1;
         _recordarAro(t);
       }else if(CFG.mejorasMS && S._aroUltima && ((t || 0) - S._aroDesde) < 700
                && !S.midiendo && !S.escuadrando && !S.esquinando && !S.pivMode && !S.paperFixed){
@@ -2503,10 +2505,11 @@ async function iniciarARInterno(intento){
         S.reticula.position.copy(S._aroUltima);
         S.ultimoHit = null;                        // el impacto viejo ya no vale
         S.aroSostenido = true;                     // NO es una lectura: el filtro lo saltea
+        S._cntSost = (S._cntSost||0) + 1;
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
-        if(CFG.mejorasMS){ S._aroUltima = null; S.aroSostenido = false; }
+        if(CFG.mejorasMS){ S._aroUltima = null; S.aroSostenido = false; S._cntNada = (S._cntNada||0) + 1; }
       }
       if(CFG.mejorasMS && S._hitFilter){
         if(S.aroSostenido){
@@ -2584,6 +2587,17 @@ async function iniciarARInterno(intento){
           // sin _hitReady no se toca el filtro: que siga juntando muestras.
         }
       }
+      // DIAGNOSTICO: cuantas veces el verde se prende y se apaga. Es exactamente
+      // lo que el usuario ve como "titila mucho", y hasta ahora el registro no
+      // lo mostraba: decia de que fuente venia el aro, no en que estado estaba.
+      if(CFG.mejorasMS){
+        const verde = !!S._hitReady;
+        if(verde !== !!S._verdePrev){
+          S._verdePrev = verde;
+          S._cntFlips = (S._cntFlips||0) + 1;
+          if(verde && !S._verde1){ S._verde1 = 1; registrar('aro VERDE por primera vez (superficie validada)'); }
+        }
+      }
       if(S.esqGuia){
         const mostrar = !S.paperFixed && S.esquinando === 1 && S.reticula.visible;
         S.esqGuia.visible = mostrar;
@@ -2632,10 +2646,24 @@ async function iniciarARInterno(intento){
     }
     // mientras no está apoyado: registrar cada 2 s qué ve (para el Diagnóstico)
     S._regTick = (S._regTick||0) + 1;
-    if(frame && !S.anclado && S._regTick % 120 === 0){
+    if(frame && (!S.anclado || !S.fijado) && S._regTick % 120 === 0){
       let nh = -1; try{ nh = S.hitSource ? frame.getHitTestResults(S.hitSource).length : -1; }catch(e){}
       let pdd = null; try{ const q = puntoDeProfundidadCentro(frame); pdd = q ? q.dist.toFixed(2) : 'no'; }catch(e){ pdd = 'err'; }
-      registrar('buscando: hits ' + nh + ' - profundidad ' + pdd + ' m - aro ' + (S.reticula.visible ? (S.hitDesdeDepth ? 'amarillo' : 'rojo') : 'NO'));
+      // ESTADO del aro, no fuente. Antes decia "rojo"/"amarillo", que era de
+      // donde venia el punto; nunca decia si estaba VERDE, que es lo unico que
+      // habilita el toque. Con eso no se podia saber si el arreglo funcionaba.
+      const est = !S.reticula.visible ? 'APAGADO'
+                : (S._hitReady ? 'VERDE' : 'ambar') +
+                  (S.aroSostenido ? ' (sostenido)' : (S.hitDesdeDepth ? ' (profundidad)' : ' (hit)'));
+      // Y el reparto de cuadros desde el informe anterior: es LA proporcion que
+      // decide si el filtro puede validar. El filtro solo se alimenta con los
+      // cuadros "hit"; necesita 5 seguidos sin huecos de mas de 150 ms.
+      const rep = 'hit ' + (S._cntHit||0) + '/prof ' + (S._cntProf||0) +
+                  '/sost ' + (S._cntSost||0) + '/nada ' + (S._cntNada||0);
+      const mu = (S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-';
+      registrar('buscando: hits ' + nh + ' - profundidad ' + pdd + ' m - aro ' + est +
+                ' - cuadros ' + rep + ' - muestras ' + mu + ' - parpadeos ' + (S._cntFlips||0));
+      S._cntHit = 0; S._cntProf = 0; S._cntSost = 0; S._cntNada = 0; S._cntFlips = 0;
     }
     // ¿el modelo quedó lejos? (medido cada medio segundo): el HUD avisa y ofrece "Traer acá"
     S._distTick = (S._distTick||0) + 1;
@@ -3224,6 +3252,13 @@ function tapPantalla(ev){
   if(S.paperFixed && (S.esquinando===1 || S.esquinando===5) && (!S._hitReady || S._trackPerdido || !S.reticula?.visible)){UI.msg('Esperá a que el aro esté verde sobre la hoja apoyada en una mesa.');return;}
   if(CFG.mejorasMS && S.modoPapel && S.imgTrack){UI.msg('En este modo la ubicación la determina el QR. Mantenelo visible.');return;}
   if(CFG.mejorasMS && S.session && !S.fijado && !S.pivMode && !S.esquinando && !S.midiendo && !S.escuadrando && !S._hitReady){
+    // ESTE RECHAZO NO DEJABA RASTRO: salia antes del registrar() de mas abajo,
+    // asi que un registro sin lineas de toque no distinguia "no toco" de "toco
+    // y se lo rechazo". Es el sintoma que el usuario reporta como "aprieto y no
+    // se coloca", y era justo el que no se podia ver.
+    registrar('toque RECHAZADO: sin superficie validada - aro ' +
+      (S.reticula && S.reticula.visible ? (S.aroSostenido ? 'sostenido' : (S.hitDesdeDepth ? 'por profundidad' : 'por hit')) : 'apagado') +
+      ' - muestras ' + ((S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-'));
     UI.msg('Buscando una superficie estable. Mové despacio la cámara por la mesa o el piso y tocá cuando el aro esté verde.');return;
   }
   if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
