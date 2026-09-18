@@ -2251,7 +2251,19 @@ async function iniciarARInterno(intento){
     // decirlo con todas las letras, no dejarlo escondido en el Diagnóstico.
     UI.msg('⚠ Este teléfono NO tiene el reconocimiento de imágenes de WebXR: el QR no puede ubicar el 3D. Activalo en chrome://flags/#webxr-incubations (Enabled) y reiniciá Chrome. Mientras tanto, usá "2 puntos" tocando la cruz 1 y la cruz 2 del plano.');
   }
-  registrar('overlay ' + (S.overlayOK ? 'OK' : 'NO') + ' - escala 1:' + S.escala + ' - ' + (S.trazado && S.trazado.esModelo ? 'modelo ' + Math.round(S.trazado.tris) + ' caras' : 'red'));
+  // Se anota si el archivo TRAE ARISTAS: sin este dato, un modelo preparado
+  // antes de que existieran y uno nuevo se ven igual en el registro (mismas
+  // caras) y no hay forma de saber de que lado esta el problema.
+  {
+    let _ar = '';
+    try{
+      const _g = S.trazado && S.trazado.geo && S.trazado.geo.userData && S.trazado.geo.userData.aristasGeo;
+      const _n = _g && _g.getAttribute('position') ? _g.getAttribute('position').count / 2 : 0;
+      _ar = _n ? (', ' + Math.round(_n) + ' aristas del archivo') : ', SIN aristas en el archivo';
+    }catch(e){ _ar = ''; }
+    registrar('overlay ' + (S.overlayOK ? 'OK' : 'NO') + ' - escala 1:' + S.escala + ' - ' +
+      (S.trazado && S.trazado.esModelo ? 'modelo ' + Math.round(S.trazado.tris) + ' caras' + _ar : 'red'));
+  }
   // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
   // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
   // y la pantalla queda "en la cámara" sin dibujar nada.
