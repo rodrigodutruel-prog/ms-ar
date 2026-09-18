@@ -2412,7 +2412,7 @@ async function iniciarARInterno(intento){
     UI.paso('1', 'Paso 1 de 4 · elegí el punto 1 en el plano');
   }
   else if(S.trazado && S.trazado.esModelo){
-    UI.msg('Apuntá al piso hasta ver el aro y tocá para apoyar el modelo. Tocá otro lugar para moverlo · 2 dedos giran.');
+    UI.msg('Tocá donde va: con el aro verde lo apoya ahí, y si no lo apoya sobre el piso. Tocá otro lugar para moverlo · 2 dedos giran.');
     UI.paso('1', 'Apoyar el modelo');
   }
   else{
@@ -3317,17 +3317,17 @@ async function bitmapMarcador(mk){
 function tapPantalla(ev){
   if(S.paperFixed && (S.esquinando===1 || S.esquinando===5) && (!S._hitReady || S._trackPerdido || !S.reticula?.visible)){UI.msg('Esperá a que el aro esté verde sobre la hoja apoyada en una mesa.');return;}
   if(CFG.mejorasMS && S.modoPapel && S.imgTrack){UI.msg('En este modo la ubicación la determina el QR. Mantenelo visible.');return;}
-  if(CFG.mejorasMS && S.session && !S.fijado && !S.pivMode && !S.esquinando && !S.midiendo && !S.escuadrando && !S._hitReady){
-    // ESTE RECHAZO NO DEJABA RASTRO: salia antes del registrar() de mas abajo,
-    // asi que un registro sin lineas de toque no distinguia "no toco" de "toco
-    // y se lo rechazo". Es el sintoma que el usuario reporta como "aprieto y no
-    // se coloca", y era justo el que no se podia ver.
-    registrar('toque RECHAZADO: sin superficie validada - aro ' +
-      (S.reticula && S.reticula.visible ? (S.aroSostenido ? 'sostenido' : (S.hitDesdeDepth ? 'por profundidad' : 'por hit')) : 'apagado') +
-      ' - muestras ' + ((S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-') +
-      ' - track ' + (S._trackPerdido ? 'PERDIDO' : 'ok') + ' - anclado ' + S.anclado + '/' + S.fijado);
-    UI.msg('Buscando una superficie estable. Mové despacio la cámara por la mesa o el piso y tocá cuando el aro esté verde.');return;
-  }
+  // EL TOQUE NO SE RECHAZA MAS. Durante cinco versiones se exigio una superficie
+  // validada ANTES de dejar colocar nada, y en el taller esa validacion no llega:
+  // el hit-test salta de plano, la profundidad y el impacto discrepan 10-25 cm y
+  // el aro se prende y se apaga. El usuario quedaba sin poder trabajar.
+  //
+  // Pero el piso NO hace falta buscarlo: la sesion se pide con 'local-floor', asi
+  // que ARCore YA entrega el plano del piso al abrir (S.usaFloor) y lo mantiene
+  // estable, mucho mas que cualquier hit-test cuadro a cuadro. Si el aro esta
+  // validado se apoya ahi, que es mas preciso; si no, se apoya sobre el piso de
+  // la sesion, donde el rayo de la mira lo cruza. Siempre coloca algo, y el
+  // ajuste fino ya existe (1 dedo mueve, 2 dedos giran, − + acercan y alejan).
   if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
   if(!S.session || !S.grupo) return;
   if(S._derivaMax) registrar('deriva del ancla desde que se fijo: ' +
@@ -3344,7 +3344,8 @@ function tapPantalla(ev){
     UI.msg('El modelo está FIJADO en su lugar. Para apoyarlo en otro lado: "Apoyar de nuevo".');
     return;
   }
-  if(S.reticula && S.reticula.visible){ apoyarEnReticula(); }
+  if(S.reticula && S.reticula.visible && (!CFG.mejorasMS || S._hitReady)){ apoyarEnReticula(); }
+  else if(CFG.mejorasMS && S.escala === 1 && S.session){ apoyarEnElPiso(); }
   else if(S.escala > 1){
     // MAQUETA sin aro: igual se apoya — al frente, a 80 cm, a la altura de la
     // mano — y se acomoda con el dedo (1 dedo mueve, 2 dedos suben/bajan/giran)
@@ -3363,6 +3364,46 @@ function tapPantalla(ev){
     UI.msg('Colocado al frente (no se detectó el piso). 1 dedo mueve · 2 dedos giran · − cerca / + lejos.');
   }
   refrescarHUD();
+}
+
+// APOYAR SOBRE EL PISO DE LA SESION. No usa hit-test ni profundidad: usa el
+// plano que ARCore fija al abrir la sesion ('local-floor', y = 0). Es la
+// referencia mas estable que hay en el aparato y esta disponible SIEMPRE, sin
+// esperar a que nada se estabilice. El punto es donde el rayo de la mira cruza
+// ese plano; si no estas mirando hacia abajo, a 2 m al frente.
+function apoyarEnElPiso(){
+  if(!S.grupo) return;
+  const cam = (S.renderer && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
+  if(!cam) return;
+  const cp = new THREE.Vector3(), dir = new THREE.Vector3();
+  cam.getWorldPosition(cp); cam.getWorldDirection(dir);
+  const pisoY = S.usaFloor ? 0 : (cp.y - 1.4);
+  const p = new THREE.Vector3();
+  if(dir.y < -0.05){
+    let d = (pisoY - cp.y) / dir.y;                       // donde la mira cruza el piso
+    d = Math.max(0.5, Math.min(d, 8));                    // ni encima del pie ni en el infinito
+    p.copy(cp).addScaledVector(dir, d);
+  }else{
+    const fw = dir.clone(); fw.y = 0;
+    if(fw.lengthSq() < 1e-6) fw.set(0, 0, -1);
+    p.copy(cp).addScaledVector(fw.normalize(), 2);        // mirando al frente: 2 m adelante
+  }
+  p.y = pisoY;
+  S.grupo.position.copy(p);
+  S.grupo.position.y += S.offsetY;
+  S.grupo.rotation.y = S.rotY;
+  S.grupo.visible = true;
+  S.anclado = true;
+  S.hitEsPared = false; S.hitDesdeDepth = false; S.ultimoHit = null;
+  S._mejorarAncla = false;
+  olvidarAncla(S.session);
+  S._pedirAncla = true;                                   // ancla libre en ese punto
+  const dm = cp.distanceTo(p);
+  registrar('apoyado EN EL PISO DE LA SESION en (' + p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ', ' +
+            p.z.toFixed(2) + ') a ' + dm.toFixed(1) + ' m' + (S.usaFloor ? ' [local-floor]' : ' [piso estimado]'));
+  UI.msg('Apoyado sobre el piso, a ' + dm.toFixed(1) + ' m. 1 dedo lo mueve · 2 dedos lo giran · − + lo acercan y alejan · "Apoyar de nuevo" para cambiarlo de lugar.');
+  if(CFG.mejorasMS) fijarModelo(true);
+  UI.paso('', '');
 }
 
 function apoyarEnReticula(){
