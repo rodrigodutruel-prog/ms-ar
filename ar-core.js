@@ -2558,15 +2558,44 @@ async function iniciarARInterno(intento){
           // llegar a verde. El punto de profundidad es una medicion real de la
           // superficie a la que apunta el aro; el guardia de salto de 8 cm del
           // propio filtro impide que se mezclen dos superficies distintas.
+          // EL TITILEO ERA ESTO: `S._hitReady = S._hitFilter.ready` rehacia la
+          // decision DE CERO en cada cuadro. `ready` es un umbral duro
+          // (dispersion < tolerancia) sobre un promedio movil de 450 ms: cuando
+          // la dispersion queda rondando el limite —que es lo normal con el
+          // pulso de la mano— devuelve true, false, true, false... a 30 por
+          // segundo. El aro obedecia eso al pie de la letra y se ponia "amarillo
+          // y verde continuamente", y para cuando el dedo llegaba a la pantalla
+          // ya estaba en amarillo y el toque se rechazaba. La retencion de
+          // 700 ms no ayudaba: solo corria cuando NO habia lecturas.
+          //
+          // Ahora la validacion se ENGANCHA. El filtro sigue decidiendo la
+          // PRIMERA vez; despues, mientras las lecturas sigan llegando cerca del
+          // punto ya validado, se sostiene —es la misma superficie— y el aro no
+          // se mueve ni cambia de color. Se suelta solo por un motivo real: que
+          // la lectura se vaya lejos (esta apuntando a otro lado) o que deje de
+          // haber lecturas.
+          _lecturaCruda.copy(S.reticula.position);     // ANTES de tocar nada
           _ajustarTolerancia();
-          const sm=S._hitFilter.update(S.reticula.position,t);
-          S._hitReady=S._hitFilter.ready;
-          if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
-          if(S._hitReady){
+          // El filtro come SIEMPRE la lectura cruda. Si se lo alimentara con la
+          // posicion enganchada, veria un punto inmovil, la dispersion daria
+          // CERO y validaria cualquier cosa: un aro verde que miente.
+          const sm=S._hitFilter.update(_lecturaCruda,t);
+          const enganchado = S._hitReady && S._hitUltima &&
+                             _lecturaCruda.distanceTo(S._hitUltima) < _radioEnganche();
+          if(S._hitFilter.ready){
+            S._hitReady = true;
             if(!S._hitUltima) S._hitUltima = new THREE.Vector3();
-            S._hitUltima.copy(S.reticula.position);
-            S._hitUltimaT = t || 0;      // CUANDO se valido: los presupuestos se miden desde aca
+            S._hitUltima.set(sm ? sm.x : _lecturaCruda.x, sm ? sm.y : _lecturaCruda.y, sm ? sm.z : _lecturaCruda.z);
+            S._hitUltimaT = t || 0;
+          }else if(enganchado){
+            S._hitUltimaT = t || 0;      // cada lectura cercana RECONFIRMA el enganche
+          }else{
+            S._hitReady = false; S._hitUltima = null; S._hitUltimaT = 0;
           }
+          // enganchado el aro se queda QUIETO en el punto validado; suelto sigue
+          // a la lectura suavizada
+          if(S._hitReady && S._hitUltima) S.reticula.position.copy(S._hitUltima);
+          else if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
           S.reticula.material.color.setHex(S._hitReady ? 0x30d69b : PAL.aviso);
         }else{
           // HUECO DE LECTURA. En un piso de oficina (liso, sin textura, luz
@@ -3714,7 +3743,7 @@ const _pdInvP = new THREE.Matrix4(), _pdM = new THREE.Matrix4();
 // quietud PROPORCIONAL a la distancia, que es la precision que hay disponible
 // ahi: 18 mm hasta 1,5 m, 36 mm a 3 m. Sobre la hoja impresa no se toca (esa
 // exige 6 mm y se mide a 30 cm).
-const _tmpCamPos = new THREE.Vector3();
+const _tmpCamPos = new THREE.Vector3(), _lecturaCruda = new THREE.Vector3();
 function _ajustarTolerancia(){
   if(!S._hitFilter || S.paperFixed) return;
   let d = 1;
@@ -3725,6 +3754,15 @@ function _ajustarTolerancia(){
   }catch(e){ d = 1; }
   if(!(d > 0) || !isFinite(d)) d = 1;
   S._hitFilter.maxSpread = Math.max(.018, Math.min(d, 6) * .012);
+}
+
+// Cuanto se puede mover la lectura sin soltar el enganche. Tiene que ser mas
+// ancho que el temblor que se acepta como quietud (si no, el enganche se
+// soltaria por el mismo ruido que lo mantiene) y mas angosto que un cambio de
+// puntería de verdad: 5 cm de cerca, 6 cm a 3 m.
+function _radioEnganche(){
+  const tol = (S._hitFilter && S._hitFilter.maxSpread) || .018;
+  return Math.max(.05, tol * 1.8);
 }
 
 // Ultima posicion buena del aro, venga de un impacto o de la profundidad. Es lo
