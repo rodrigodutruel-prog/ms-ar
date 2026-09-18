@@ -124,12 +124,14 @@
     miss(now) { if(this.last===null || now-this.last>600) this.reset(); return false; }
   }
   class SurfaceFilter {
-    constructor(options={}){this.maxSpread=options.maxSpread??.018;this.jump=options.jump??.08;this.reset();}
+    constructor(options={}){this.maxSpread=options.maxSpread??.018;this.jump=options.jump??.08;this.cortesSalto=0;this.cortesHueco=0;this.reset();}
     reset(){this.samples=[];this.last=null;this.ready=false;this.spread=0;}
     update(p,time){
       if(!p || ![p.x,p.y,p.z].every(Number.isFinite)){this.reset();return null;}
-      if(this.last!==null && time-this.last>150)this.reset();
-      if(this.samples.length && Math.hypot(p.x-this.samples.at(-1).x,p.y-this.samples.at(-1).y,p.z-this.samples.at(-1).z)>this.jump)this.reset();
+      // se cuentan los cortes (no se borran en reset): son el dato que dice si lo
+      // que rompe la validacion es que la lectura SALTA o que se CORTA
+      if(this.last!==null && time-this.last>150){this.cortesHueco++;this.reset();}
+      if(this.samples.length && Math.hypot(p.x-this.samples.at(-1).x,p.y-this.samples.at(-1).y,p.z-this.samples.at(-1).z)>this.jump){this.cortesSalto++;this.reset();}
       this.last=time;this.samples.push({...p,time});
       this.samples=this.samples.filter(s=>time-s.time<=450);
       const mean={x:0,y:0,z:0};

@@ -2444,10 +2444,23 @@ async function iniciarARInterno(intento){
       // (mesa, banco, piso). Los puntos sueltos SÍ cuentan: en una mesa chica
       // ARCore tarda en armar el plano y, sin ellos, el aro caía al piso de abajo.
       // En el replanteo por 2 puntos vale cualquiera (marcar contra la pared).
-      let hit = null, pose = null;
+      // EL ARO SALTABA ENTRE IMPACTOS. Se tomaba SIEMPRE el primero aceptable de
+      // la lista, y ARCore la ordena por distancia: cuando hay dos planos
+      // candidatos (el piso y un banco, o el mismo plano re-estimado), el primero
+      // cambia de un cuadro a otro y el aro se va 10-25 cm de golpe. El registro
+      // del taller lo midio: dispersiones de 102, 114, 173 y 243 mm con impactos
+      // continuos. Un salto asi corta el filtro (guardia de 8 cm) y hay que
+      // volver a juntar 5 muestras y 250 ms desde cero. Ahora, entre los
+      // aceptables, se prefiere el MAS CERCANO al lugar donde ya estaba el aro.
+      let hit = null, pose = null, _dMejor = Infinity;
       for(let hi = 0; hi < hits.length; hi++){
         const ps = hits[hi].getPose(S.refSpaceLocal); if(!ps) continue;
-        if((!S.paperFixed && (S.esquinando || S.midiendo || S.escuadrando || S.pivMode)) || ps.transform.matrix[5] > (S.paperFixed ? .94 : .6)){ hit = hits[hi]; pose = ps; break; }
+        if(!((!S.paperFixed && (S.esquinando || S.midiendo || S.escuadrando || S.pivMode)) || ps.transform.matrix[5] > (S.paperFixed ? .94 : .6))) continue;
+        if(!hit){ hit = hits[hi]; pose = ps; }        // el primero (el mas cercano) como base
+        if(!(CFG.mejorasMS && S._aroUltima)) break;   // sin referencia previa, ese mismo
+        _tmpHitPos.setFromMatrixPosition(_tmpHitMat.fromArray(ps.transform.matrix));
+        const _d = _tmpHitPos.distanceTo(S._aroUltima);
+        if(_d < _dMejor && _d < .30){ _dMejor = _d; hit = hits[hi]; pose = ps; }
       }
       if(!CFG.mejorasMS && !hit && hits.length){ hit = hits[0]; pose = hits[0].getPose(S.refSpaceLocal); }
       // LA MESA DE VERDAD: ARCore tarda en armar el plano de una mesa (y una
@@ -2460,8 +2473,15 @@ async function iniciarARInterno(intento){
       if(pd){
         if(!hit) usarDepth = true;
         else{
-          const hp = new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
-          if(pd.dist < pd.cam.distanceTo(hp) - 0.12) usarDepth = true;
+          _tmpHitPos.setFromMatrixPosition(_tmpHitMat.fromArray(pose.transform.matrix));
+          const dHit = pd.cam.distanceTo(_tmpHitPos);
+          // HISTERESIS. El impacto y la profundidad pueden diferir 10-25 cm: cada
+          // vez que se cambiaba de fuente el aro daba ese salto y el filtro se
+          // cortaba. El registro del taller mostro ventanas de hit 156/prof 38 y
+          // hit 61/prof 175, o sea alternando todo el tiempo. Para CAMBIAR de
+          // fuente hay que ser claramente mejor; para seguir con la que se venia
+          // usando alcanza con no ser peor.
+          usarDepth = pd.dist < dHit - (S.hitDesdeDepth ? -0.06 : 0.12);
         }
       }
       if(usarDepth){
@@ -2703,9 +2723,12 @@ async function iniciarARInterno(intento){
       // dispersion medida contra tolerancia exigida: con 5+ muestras y aro ambar,
       // esto dice si lo que falta es quietud o son pocas muestras.
       const dt = S._hitFilter ? (Math.round((S._hitFilter.spread||0)*1000) + '/' + Math.round((S._hitFilter.maxSpread||0)*1000) + ' mm') : '-';
+      // cortes del filtro: cada uno obliga a juntar 5 muestras y 250 ms de cero
+      const co = S._hitFilter ? ('salto ' + (S._hitFilter.cortesSalto||0) + '/hueco ' + (S._hitFilter.cortesHueco||0)) : '-';
       registrar('buscando: hits ' + nh + ' - profundidad ' + pdd + ' m - aro ' + est +
                 ' - cuadros ' + rep + ' - muestras ' + mu + ' - quietud ' + dt +
-                ' - parpadeos ' + (S._cntFlips||0));
+                ' - cortes ' + co + ' - parpadeos ' + (S._cntFlips||0));
+      if(S._hitFilter){ S._hitFilter.cortesSalto = 0; S._hitFilter.cortesHueco = 0; }
       S._cntHit = 0; S._cntProf = 0; S._cntSost = 0; S._cntNada = 0; S._cntFlips = 0;
     }
     // ¿el modelo quedó lejos? (medido cada medio segundo): el HUD avisa y ofrece "Traer acá"
@@ -3301,7 +3324,8 @@ function tapPantalla(ev){
     // se coloca", y era justo el que no se podia ver.
     registrar('toque RECHAZADO: sin superficie validada - aro ' +
       (S.reticula && S.reticula.visible ? (S.aroSostenido ? 'sostenido' : (S.hitDesdeDepth ? 'por profundidad' : 'por hit')) : 'apagado') +
-      ' - muestras ' + ((S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-'));
+      ' - muestras ' + ((S._hitFilter && S._hitFilter.samples) ? S._hitFilter.samples.length : '-') +
+      ' - track ' + (S._trackPerdido ? 'PERDIDO' : 'ok') + ' - anclado ' + S.anclado + '/' + S.fijado);
     UI.msg('Buscando una superficie estable. Mové despacio la cámara por la mesa o el piso y tocá cuando el aro esté verde.');return;
   }
   if(SENS.activo){ if(!S.fijado){ colocarAlFrente(); refrescarHUD(); } return; }
@@ -3744,6 +3768,7 @@ const _pdInvP = new THREE.Matrix4(), _pdM = new THREE.Matrix4();
 // ahi: 18 mm hasta 1,5 m, 36 mm a 3 m. Sobre la hoja impresa no se toca (esa
 // exige 6 mm y se mide a 30 cm).
 const _tmpCamPos = new THREE.Vector3(), _lecturaCruda = new THREE.Vector3();
+const _tmpHitPos = new THREE.Vector3(), _tmpHitMat = new THREE.Matrix4();
 function _ajustarTolerancia(){
   if(!S._hitFilter || S.paperFixed) return;
   let d = 1;
