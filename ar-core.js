@@ -1293,7 +1293,9 @@ async function cargarModelo3D(file, interno){
       const bb = geo.boundingBox, c = bb.getCenter(new THREE.Vector3());
       const minY0 = bb.min.y;             // el min ANTES de trasladar (bb se recalcula después)
       geo.translate(-c.x, -bb.min.y, -c.z);
-      if(geo.userData.aristasGeo) geo.userData.aristasGeo.translate(-c.x, -bb.min.y, -c.z);
+      // minY0 y NO bb.min.y: geo.translate() de arriba recalcula bb, asi que
+      // aca ya vale 0 y las aristas quedaban desplazadas en altura.
+      if(geo.userData.aristasGeo) geo.userData.aristasGeo.translate(-c.x, -minY0, -c.z);
       geo.computeBoundingBox();
       const med = geo.boundingBox.getSize(new THREE.Vector3());
       const nTris = (geo.index ? geo.index.count : geo.getAttribute('position').count)/3;
