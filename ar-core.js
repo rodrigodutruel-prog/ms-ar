@@ -2293,7 +2293,7 @@ async function iniciarARInterno(intento){
   S.usaFloor = usaFloor;
   if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
-  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; S._hitHueco=0; S._hitUltima=null; window.MSStability?.reset(); }
+  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; S._hitUltima=null; S._hitUltimaT=0; S._aroUltima=null; S._aroDesde=0; S.aroSostenido=false; window.MSStability?.reset(); }
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
   S.lightProbe = null; S._luzK = 1;
@@ -2473,6 +2473,8 @@ async function iniciarARInterno(intento){
         S.hitDesdeDepth = true;
         S.ultimoHit = null;                        // ancla libre (no hay trackable ahí)
         S.reticula.material.color.setHex(PAL.aviso);
+        S.aroSostenido = false;
+        _recordarAro(t);
       }else if(hit && pose){
         S.reticula.visible = true;
         S.reticula.matrix.fromArray(pose.transform.matrix);
@@ -2484,19 +2486,73 @@ async function iniciarARInterno(intento){
         S.hitEsPared = Math.abs(_ny) < 0.5;
         S.hitDesdeDepth = false;
         S.reticula.material.color.setHex(S.hitEsPared ? PAL.acento2 : PAL.acento);
+        S.aroSostenido = false;
+        _recordarAro(t);
+      }else if(CFG.mejorasMS && S._aroUltima && ((t || 0) - S._aroDesde) < 700
+               && !S.midiendo && !S.escuadrando && !S.esquinando && !S.pivMode && !S.paperFixed){
+        // Solo en el modo de APOYAR. En medir / escuadrar / replanteo el aro
+        // sirve para MARCAR PUNTOS: sostener una posicion vieja registraria un
+        // vertice fantasma, y ahi el sostenimiento no aporta nada porque sin
+        // aro el toque simplemente no hace nada (no existe el apoyo a 80 cm).
+        // HUECO: este cuadro no dio ni impacto ni profundidad. En una nave o una
+        // oficina eso pasa a cada rato y las dos fuentes se turnan, asi que el
+        // aro parpadeaba tanto que era casi imposible tocar con el visible — y
+        // el toque sin aro apoyaba el modelo al frente de la camara, elevado.
+        // Se sostiene la ultima posicion que el telefono ya dio por buena.
+        S.reticula.visible = true;
+        S.reticula.position.copy(S._aroUltima);
+        S.ultimoHit = null;                        // el impacto viejo ya no vale
+        S.aroSostenido = true;                     // NO es una lectura: el filtro lo saltea
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
+        if(CFG.mejorasMS){ S._aroUltima = null; S.aroSostenido = false; }
       }
       if(CFG.mejorasMS && S._hitFilter){
-        if(S.reticula.visible && !S.hitEsPared && !S.hitDesdeDepth){
-          S._hitHueco = 0;
+        if(S.aroSostenido){
+          // CUADRO SOSTENIDO: no hubo lectura. Alimentar el filtro con la misma
+          // posicion congelada le daba dispersion CERO y lo declaraba estable a
+          // los ~0,27 s: el aro se ponia VERDE con una sola lectura real. El
+          // verde es lo que la app le ensena al usuario a creer y ademas es la
+          // compuerta del toque. Un cuadro sostenido no cambia nada del filtro.
+          //
+          // UN SOLO RELOJ para los dos sostenimientos. El de mas abajo tiene su
+          // propio cronometro que solo arrancaba cuando este ya
+          // habia vencido: se ENCADENABAN y el aro quedaba congelado ~1,4 s en
+          // vez de 700 ms, con la compuerta del toque abierta todo ese tiempo.
+          // El presupuesto se mide desde la VALIDACION REAL (_hitUltimaT), no
+          // desde un reloj reconstruido: un corte del bucle (pantalla bloqueada,
+          // cambio de app) regalaba 700 ms nuevos sobre una posicion vieja — se
+          // llego a medir verde vivo 3,7 s despues de la ultima lectura.
+          // ...y ADEMAS hay que EVALUARLO aca. Arrancar el cronometro sin mirarlo
+          // solo funcionaba por casualidad, cuando los dos relojes coincidian.
+          // Si entre la ultima lectura del filtro y el apagon hubo cuadros de la
+          // camara de profundidad, esos refrescan _aroDesde pero no el otro reloj:
+          // los relojes se desfasan y el congelado volvia a 1,4 s por otro lado.
+          if(S._hitReady && S._hitUltima && ((t || 0) - (S._hitUltimaT || 0)) < 700){
+            // Se muestra la posicion que el filtro VALIDO: sin esto, cuando el
+            // ultimo dato venia de la profundidad, el aro quedaba verde sobre un
+            // punto que nunca paso por el filtro.
+            S.reticula.position.copy(S._hitUltima);
+            S.reticula.material.color.setHex(0x30d69b);   // la compuerta del toque esta
+            // abierta: el aro TIENE que estar verde. Un cuadro sostenido no pinta color,
+            // asi que sin esto quedaba el ambar del ultimo cuadro de profundidad y el aro
+            // desmentia a la app, que le pide al usuario que toque "cuando este verde".
+          }else if(S._hitReady){
+            // vencio el presupuesto: se suelta la lectura validada y se cierra la
+            // compuerta del toque. El aro sigue visible (lo sostiene la rama de
+            // arriba) pero en ambar, que es lo honesto: hay algo, no confirmado.
+            S._hitFilter.reset(); S._hitReady = false; S._hitUltima = null; S._hitUltimaT = 0;
+            S.reticula.material.color.setHex(PAL.aviso);
+          }
+        }else if(S.reticula.visible && !S.hitEsPared && !S.hitDesdeDepth){
           const sm=S._hitFilter.update(S.reticula.position,t);
           S._hitReady=S._hitFilter.ready;
           if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
           if(S._hitReady){
             if(!S._hitUltima) S._hitUltima = new THREE.Vector3();
             S._hitUltima.copy(S.reticula.position);
+            S._hitUltimaT = t || 0;      // CUANDO se valido: los presupuestos se miden desde aca
           }
           S.reticula.material.color.setHex(S._hitReady ? 0x30d69b : PAL.aviso);
         }else{
@@ -2508,14 +2564,24 @@ async function iniciarARInterno(intento){
           // malo dejaba el modelo a una altura equivocada — lo que se veia
           // como que "flota". Ahora un hueco corto NO tira el filtro: se
           // sostiene la ultima lectura que ya estaba dada por buena.
-          if(!S._hitHueco) S._hitHueco = t || 0;
-          if(S._hitReady && S._hitUltima && ((t || 0) - S._hitHueco) < 700){
+          // UN CUADRO DE PROFUNDIDAD O DE PARED ES UN HUECO, NO UNA LECTURA MALA.
+          // Antes esta rama llamaba a reset() siempre que _hitReady fuera false,
+          // o sea MIENTRAS el filtro juntaba muestras. Como en el telefono del
+          // usuario las dos fuentes se turnan, el acumulado se borraba en cada
+          // cuadro de profundidad: el filtro nunca llegaba a las 5 muestras que
+          // necesita, el aro NUNCA se ponia verde y —como el verde es la
+          // compuerta del toque— se rechazaban TODOS los toques. Ese era el
+          // fondo del problema. El propio SurfaceFilter ya se auto-resetea si
+          // pasan mas de 150 ms sin alimentarlo: ese es el corte correcto.
+          if(S._hitReady && S._hitUltima && ((t || 0) - (S._hitUltimaT || 0)) < 700){
             S.reticula.visible = true;
             S.reticula.position.copy(S._hitUltima);
             S.reticula.material.color.setHex(0x30d69b);
-          }else{
-            S._hitFilter.reset(); S._hitReady=false; S._hitHueco=0; S._hitUltima=null;
+          }else if(S._hitReady){
+            // vencido el presupuesto desde la validacion real: se suelta
+            S._hitFilter.reset(); S._hitReady=false; S._hitUltima=null; S._hitUltimaT=0;
           }
+          // sin _hitReady no se toca el filtro: que siga juntando muestras.
         }
       }
       if(S.esqGuia){
@@ -2528,6 +2594,17 @@ async function iniciarARInterno(intento){
       }
     }else if(!S.midiendo && !S.escuadrando && !S.esquinando && !S.pivMode){
       S.reticula.visible = false;
+      // Con el modelo anclado Y fijado, todo el bloque de arriba deja de correr:
+      // _hitReady y _hitUltima quedaban CONGELADOS. Al soltar con
+      // "Apoyar de nuevo" —minutos despues— el primer cuadro sin lectura se
+      // regalaba un presupuesto nuevo de 700 ms y pintaba el aro VERDE sobre una
+      // posicion validada mucho antes; un toque ahi apoyaba el modelo en ese
+      // punto viejo. Se cierra la compuerta mientras el bloque no corre, asi que
+      // al reanudar hay que volver a ganarse el verde con lecturas reales.
+      if(CFG.mejorasMS && S._hitReady){
+        S._hitFilter?.reset(); S._hitReady = false; S._hitUltima = null; S._hitUltimaT = 0;
+        S._aroUltima = null; S._aroDesde = 0; S.aroSostenido = false;
+      }
     }
     // el aro se achica y atenúa cuando el modelo ya está apoyado (solo sugiere "tocá para re-apoyar")
     if(S.reticula.visible){
@@ -2729,7 +2806,7 @@ async function iniciarARInterno(intento){
       S.grupo.userData.grpMaq.visible  = S.verMaquinas;
       if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
-    if(CFG.mejorasMS && S._trackPerdido){S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();}
+    if(CFG.mejorasMS && S._trackPerdido){S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();S._hitUltima=null;S._hitUltimaT=0;S._aroUltima=null;S._aroDesde=0;S.aroSostenido=false;}   // sin esto, al recuperar el tracking el aro reaparecia en coordenadas previas a la relocalizacion
     if(S.paperFixed){
       if(S.esquinando===5 && S.esqP1 && S.anchor && S.ancListo){
         S.esqP1.copy(S.trazado.refEsquina).multiplyScalar(S.grupo.scale.x).applyQuaternion(S.grupo.quaternion).add(S.grupo.position);
@@ -3581,6 +3658,15 @@ function agregarPuntoEscuadra(){
    {p: punto en el mundo, dist: distancia a la cámara, cam: pos cámara}
    ------------------------------------------------------------ */
 const _pdInvP = new THREE.Matrix4(), _pdM = new THREE.Matrix4();
+// Ultima posicion buena del aro, venga de un impacto o de la profundidad. Es lo
+// que permite sostenerlo en los huecos en vez de que parpadee.
+function _recordarAro(t){
+  if(!CFG.mejorasMS || !S.reticula) return;
+  if(!S._aroUltima) S._aroUltima = new THREE.Vector3();
+  S._aroUltima.copy(S.reticula.position);
+  S._aroDesde = t || 0;
+}
+
 function puntoDeProfundidadCentro(frame){
   let di = null, view = null;
   try{
