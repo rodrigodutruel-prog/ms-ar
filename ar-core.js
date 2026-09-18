@@ -2294,6 +2294,7 @@ async function iniciarARInterno(intento){
   if(typeof session.requestHitTestSource === 'function'){
     try{
       const refViewer = await session.requestReferenceSpace('viewer');
+      S.refViewer = refViewer;          // para el hit-test del punto tocado
       // 'plane' + 'point': engancha el PISO y también las PAREDES — marcar
       // la esquina contra la pared proyecta al piso con más precisión
       try{
@@ -2514,6 +2515,10 @@ async function iniciarARInterno(intento){
       }
     }else if(!S.midiendo && !S.escuadrando && !S.esquinando && !S.pivMode){
       S.reticula.visible = false;
+      // _hitReady y el aro no pueden quedar en desacuerdo: si se esconde el
+      // aro sin apagar la bandera, la guardia del toque deja pasar una
+      // colocacion sin superficie (visto en el registro del 18-sep).
+      if(CFG.mejorasMS){ S._hitReady = false; S._hitHueco = 0; }
     }
     // el aro se achica y atenúa cuando el modelo ya está apoyado (solo sugiere "tocá para re-apoyar")
     if(S.reticula.visible){
@@ -2623,6 +2628,37 @@ async function iniciarARInterno(intento){
         const gq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
         pedirAncla(()=>frame.createAnchor(new XRRigidTransform({x:gp.x, y:gp.y, z:gp.z, w:1}, {x:gq.x, y:gq.y, z:gq.z, w:gq.w}), S.refSpaceLocal));
       }catch(e){}
+    }
+
+    // PUNTO TOCADO: el hit-test pedido al tocar entrega recien ahora
+    if(S._hitTap && frame){
+      const t2 = S._hitTap;
+      let resuelto = false;
+      if(t2.fuente){
+        try{
+          const hs = frame.getHitTestResults(t2.fuente);
+          for(let i = 0; i < hs.length; i++){
+            const ps = hs[i].getPose(S.refSpaceLocal);
+            if(!ps) continue;
+            if(ps.transform.matrix[5] > .6){          // superficie que mira hacia arriba
+              S.reticula.position.setFromMatrixPosition(new THREE.Matrix4().fromArray(ps.transform.matrix));
+              S.ultimoHit = hs[i];
+              S.hitDesdeDepth = false;
+              cerrarHitTap();
+              apoyarEnReticula();
+              refrescarHUD();
+              resuelto = true;
+              break;
+            }
+          }
+        }catch(e){}
+      }
+      if(!resuelto && (t2.fallo || performance.now() > t2.hasta)){
+        // no hubo impacto por el punto tocado: se apoya en el aro, como antes
+        cerrarHitTap();
+        if(S.reticula && S.reticula.visible){ apoyarEnReticula(); refrescarHUD(); }
+        else UI.msg('Ahí no encontré piso. Apuntá el aro al lugar y tocá de nuevo.');
+      }
     }
 
     // segunda ancla (P2 del replanteo): su posición viva da el rumbo real
@@ -3129,7 +3165,42 @@ async function bitmapMarcador(mk){
    modelo nunca queda perdido). "Fijar" lo bloquea; "Apoyar de
    nuevo" lo libera. Medir / escuadrar / 2 puntos tienen prioridad.
    ------------------------------------------------------------ */
-function tapPantalla(ev){
+// Pide un hit-test por el PUNTO TOCADO. WebXR entrega los resultados en cuadros
+// siguientes, asi que esto deja el pedido pendiente y el bucle lo resuelve.
+function pedirHitEnPunto(cx, cy){
+  const s = S.session, rnd = S.renderer;
+  if(!s || !rnd || !S.refViewer || typeof s.requestHitTestSource !== 'function') return false;
+  if(typeof XRRay !== 'function') return false;
+  try{
+    const camX = rnd.xr.getCamera();
+    const cam = (camX && camX.cameras && camX.cameras.length) ? camX.cameras[0] : camX;
+    if(!cam) return false;
+    const x = (cx / window.innerWidth) * 2 - 1;
+    const y = -((cy / window.innerHeight) * 2 - 1);
+    const inv = new THREE.Matrix4().copy(cam.projectionMatrix).invert();
+    const p = new THREE.Vector4(x, y, -1, 1).applyMatrix4(inv);
+    if(!p.w) return false;
+    const d = new THREE.Vector3(p.x / p.w, p.y / p.w, p.z / p.w).normalize();
+    if(!isFinite(d.x) || !isFinite(d.y) || !isFinite(d.z)) return false;
+    const rayo = new XRRay({x:0, y:0, z:0, w:1}, {x:d.x, y:d.y, z:d.z, w:0});
+    S._hitTap = { fuente:null, hasta: performance.now() + 500, cancelado:false };
+    const pedido = S._hitTap;
+    s.requestHitTestSource({ space:S.refViewer, offsetRay:rayo }).then(f => {
+      if(pedido.cancelado){ try{ f.cancel(); }catch(e){} return; }
+      pedido.fuente = f;
+    }).catch(() => { pedido.fallo = true; });
+    return true;
+  }catch(e){ return false; }
+}
+
+function cerrarHitTap(){
+  const t = S._hitTap; S._hitTap = null;
+  if(!t) return;
+  t.cancelado = true;
+  if(t.fuente){ try{ t.fuente.cancel(); }catch(e){} }
+}
+
+function tapPantalla(ev, cx, cy){
   if(S.paperFixed && (S.esquinando===1 || S.esquinando===5) && (!S._hitReady || S._trackPerdido || !S.reticula?.visible)){UI.msg('Esperá a que el aro esté verde sobre la hoja apoyada en una mesa.');return;}
   if(CFG.mejorasMS && S.modoPapel && S.imgTrack){UI.msg('En este modo la ubicación la determina el QR. Mantenelo visible.');return;}
   if(CFG.mejorasMS && S.session && !S.fijado && !S.pivMode && !S.esquinando && !S.midiendo && !S.escuadrando && !S._hitReady){
@@ -3151,7 +3222,24 @@ function tapPantalla(ev){
     UI.msg('El modelo está FIJADO en su lugar. Para apoyarlo en otro lado: "Apoyar de nuevo".');
     return;
   }
+  // DONDE SE TOCA. Si hay coordenadas del dedo se pide el impacto por ese punto
+  // y lo resuelve el bucle; el aro queda de respaldo si ahi no hay superficie.
+  if(typeof cx === 'number' && typeof cy === 'number' && S.reticula && S.reticula.visible
+     && !S.esquinando && !S.midiendo && !S.escuadrando && !S.pivMode && !S.paperFixed){
+    if(pedirHitEnPunto(cx, cy)){
+      UI.msg('Apoyando donde tocaste…');
+      refrescarHUD();
+      return;
+    }
+  }
   if(S.reticula && S.reticula.visible){ apoyarEnReticula(); }
+  else if(CFG.mejorasMS){
+    // sin superficie no se apoya. Las dos ramas de abajo colocan el modelo a
+    // 80 cm DELANTE DE LA CAMARA: queda colgado del telefono y se mueve con el
+    // — es lo que Rodrigo veia como que "flota". MS exige superficie real.
+    UI.msg('Todavía no hay piso detectado. Movete despacio apuntando al piso hasta que el aro se ponga verde, y ahí tocá.');
+    registrar('toque IGNORADO: sin aro (no se apoya a una distancia inventada)');
+  }
   else if(S.escala > 1){
     // MAQUETA sin aro: igual se apoya — al frente, a 80 cm, a la altura de la
     // mano — y se acomoda con el dedo (1 dedo mueve, 2 dedos suben/bajan/giran)
@@ -4146,6 +4234,7 @@ function cerrarAR(desdeEvento){
   const r = S.renderer;
   const hs = S.hitSource;
   if(hs){ try{ hs.cancel(); }catch(e){} }
+  cerrarHitTap(); S.refViewer = null;
   S.renderer = null; S.session = null; S.hitSource = null;
   S.scene = null; S.camera = null; S.reticula = null; S.refSpaceLocal = null;
   GES.punteros.clear(); GES.angPrev = null; GES.cyPrev = null;
@@ -4268,7 +4357,7 @@ function gesFin(ev){
   if(ev.type === 'pointerup' && p && GES.punteros.size === 0 && (GES.maxP || 1) === 1 && S.overlayOK &&
      !S._gesMovio && (performance.now() - (p.t0 || 0)) < 600 &&
      !(S.esquinando === 3 || S.esquinando === 4)){
-    tapPantalla(null);
+    tapPantalla(null, ev.clientX, ev.clientY);
   }
 }
 $('gestos').addEventListener('pointerup', ev => {
