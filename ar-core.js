@@ -31,7 +31,9 @@ const AR_TOPE_CARAS = CFG.maxCaras || 110000;
 const AR_TOPE_ARISTAS = CFG.maxAristas || 45000;
 // Aristas negras, como el sombreado con aristas de Inventor. Iban blancas
 // porque el visor de MS tenia fondo oscuro; ahora el fondo es claro.
-const AR_COLOR_ARISTAS = (CFG.colorAristas !== undefined) ? CFG.colorAristas : 0x1a2432;
+// NEGRAS. Estuvieron en 0x1a2432 (navy muy oscuro) y Rodrigo lo marco: las
+// quiere negras, como el sombreado con aristas de Inventor.
+const AR_COLOR_ARISTAS = (CFG.colorAristas !== undefined) ? CFG.colorAristas : 0x000000;
 // PALETA del 3D (retícula, banderas, etiquetas…): cada marca pone la suya
 const PAL = Object.assign({
   acento: 0xe31e24, acento2: 0x00aeef, aviso: 0xffc400,
@@ -146,7 +148,11 @@ function liberarObjeto(objeto, conservar){
   objeto.traverse(o => { o.userData.liberado = true; });
   const geometrias = new Set(), materiales = new Set(), texturas = new Set();
   objeto.traverse(o => {
-    if(o.geometry && o.geometry !== conservar) geometrias.add(o.geometry);
+    // las aristas del archivo cuelgan del modelo y se conservan con el:
+    // liberarlas dejaba la referencia viva apuntando a una geometria muerta y
+    // la segunda sesion abria el modelo sin contornos.
+    const _aris = conservar && conservar.userData && conservar.userData.aristasGeo;
+    if(o.geometry && o.geometry !== conservar && o.geometry !== _aris) geometrias.add(o.geometry);
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     mats.filter(Boolean).forEach(m => {
       materiales.add(m);
@@ -2273,7 +2279,7 @@ async function iniciarARInterno(intento){
   S.usaFloor = usaFloor;
   if(S.session !== session) return false;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
-  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; window.MSStability?.reset(); }
+  if(CFG.mejorasMS && window.MSTracking){ S._hitFilter=new MSTracking.SurfaceFilter(S.paperFixed ? {maxSpread:.006,jump:.035} : {}); S._hitReady=false; S._trackPerdido=false; S._hitHueco=0; S._hitUltima=null; window.MSStability?.reset(); }
 
   // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
   S.lightProbe = null; S._luzK = 1;
@@ -2470,11 +2476,33 @@ async function iniciarARInterno(intento){
       }
       if(CFG.mejorasMS && S._hitFilter){
         if(S.reticula.visible && !S.hitEsPared && !S.hitDesdeDepth){
+          S._hitHueco = 0;
           const sm=S._hitFilter.update(S.reticula.position,t);
           S._hitReady=S._hitFilter.ready;
           if(sm) S.reticula.position.set(sm.x,sm.y,sm.z);
+          if(S._hitReady){
+            if(!S._hitUltima) S._hitUltima = new THREE.Vector3();
+            S._hitUltima.copy(S.reticula.position);
+          }
           S.reticula.material.color.setHex(S._hitReady ? 0x30d69b : PAL.aviso);
-        }else{ S._hitFilter.reset(); S._hitReady=false; }
+        }else{
+          // HUECO DE LECTURA. En un piso de oficina (liso, sin textura, luz
+          // pareja) ARCore devuelve impacto un cuadro si y otro no. Antes
+          // CUALQUIER cuadro sin impacto llamaba a reset() y tiraba todo lo
+          // acumulado: el filtro no terminaba nunca de estabilizarse, el aro
+          // titilaba entre verde, ambar e invisible, y un toque en un cuadro
+          // malo dejaba el modelo a una altura equivocada — lo que se veia
+          // como que "flota". Ahora un hueco corto NO tira el filtro: se
+          // sostiene la ultima lectura que ya estaba dada por buena.
+          if(!S._hitHueco) S._hitHueco = t || 0;
+          if(S._hitReady && S._hitUltima && ((t || 0) - S._hitHueco) < 700){
+            S.reticula.visible = true;
+            S.reticula.position.copy(S._hitUltima);
+            S.reticula.material.color.setHex(0x30d69b);
+          }else{
+            S._hitFilter.reset(); S._hitReady=false; S._hitHueco=0; S._hitUltima=null;
+          }
+        }
       }
       if(S.esqGuia){
         const mostrar = !S.paperFixed && S.esquinando === 1 && S.reticula.visible;
@@ -4101,6 +4129,10 @@ function obtenerRenderer(){
   return _rendererUnico;
 }
 
+// cerrarAR deja aca la funcion que libera la escena; salirAR la llama cuando
+// session.end() resolvio, para no tocar nada mientras ARCore desarma.
+let _liberarEscena = null;
+
 function cerrarAR(desdeEvento){
   if(S._cerrando) return;            // guard de reentrada: 'end' + botón Salir
   registrar('cierre AR ' + (desdeEvento ? '(evento end / atras)' : '(boton Salir)'));
@@ -4124,7 +4156,18 @@ function cerrarAR(desdeEvento){
   S.esquinando = 0; S.esqP1 = null; S.refP2 = null; S.fijado = false; S._distModelo = null; S.marcadorBuscando = false; S.imgTrack = false; S.imgCfg = null; S._facMedido = 0; S._mkLock = null; S._mkBuf = []; S._mkDesde = 0; S._mkMovTick = 0; S.papelSinAncla = false; S._alturaCero = false; S._escFija = 0; S._anchoMedido = 0; S._facPlano = 0; S._facPlanoN = 0; S._facLista = []; S._avisoFac = false; S.piv = null; S.pivMode = 0; S._pivMesh = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   UI.paso('', '');
-  if(escena) setTimeout(() => { try{ liberarObjeto(escena, geoModelo); escena.clear(); }catch(e){} }, desdeEvento ? 1200 : 100);
+  // La escena se libera RECIEN cuando ARCore desarmo la sesion: hacerlo antes
+  // cuelga Chrome (ya documentado para el boton atras, que espera 1200 ms).
+  // salirAR() avisa por _liberarEscena cuando session.end() resolvio.
+  if(escena){
+    let _libre = false;
+    const soltar = () => {
+      if(_libre) return; _libre = true;
+      try{ liberarObjeto(escena, geoModelo); escena.clear(); }catch(e){}
+    };
+    _liberarEscena = soltar;
+    setTimeout(soltar, desdeEvento ? 1200 : 2500);   // red de seguridad
+  }
   S.ocl = null; S.oclDisponible = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
@@ -4160,10 +4203,11 @@ function salirAR(){
   if(!s){ if(S.renderer) cerrarAR(false); return; }
   cerrarAR(false);
   setTimeout(() => {
+    const soltar = () => { const f = _liberarEscena; _liberarEscena = null; if(f) f(); };
     try{
       const p = s.end();
-      if(p && p.catch) p.catch(() => {});
-    }catch(e){}
+      if(p && p.then) p.then(soltar, soltar); else soltar();
+    }catch(e){ soltar(); }
   }, 50);
 }
 

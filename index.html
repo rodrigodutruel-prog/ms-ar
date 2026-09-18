@@ -225,13 +225,18 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
       <div class="lbl">¿Cuánto mide el marco negro completo? (mm)</div>
       <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
              placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
-      <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
-      <select id="msModoPapel" class="mini" style="width:100%">
-        <option value="anclado" selected>Fijar a la hoja · recomendado para moverte</option><option value="camara">Seguir QR · mantenerlo visible</option>
-        <option value="manual">Dos cruces · ubicación manual</option>
-        <option value="nativo">Reconocimiento del teléfono · si está disponible</option>
+      <!-- Modo hoja SIMPLIFICADO a la lectura de QR. Los otros tres (dos
+           cruces, fijar a la hoja, reconocimiento del telefono) se sacaron de
+           la vista porque no se usaban. El select queda en el DOM, con un
+           unico valor, para no romper el codigo ni las pruebas que lo leen. -->
+      <label class="lbl" for="msModoPapel" hidden>Ubicar sobre la hoja</label>
+      <select id="msModoPapel" class="mini" style="width:100%" hidden>
+        <option value="camara" selected>Leer QR</option>
+        <option value="anclado">Fijar a la hoja</option>
+        <option value="manual">Dos cruces</option>
+        <option value="nativo">Reconocimiento del telefono</option>
       </select>
-      <div class="nota"><b>Sobre plano impreso:</b> para recorrer el modelo, elegí <b>Fijar a la hoja</b>. Apoyá la hoja en una mesa, marcá la cruz 1 y la cruz 2 cuando el aro esté verde y mantené la hoja quieta. La posición usa el seguimiento espacial del teléfono; después de colocar no necesita ver el QR. <b>Seguir QR</b> queda como opción para mantener el código a la vista. El lector del inicio busca el archivo guardado en este teléfono.</div>
+      <div class="nota"><b>Sobre plano impreso:</b> apoyá la hoja en una mesa y apuntá al QR. El modelo se ubica solo sobre la hoja, a escala. Mantené el código a la vista.</div>
     </section>
 
     <section class="card">
@@ -356,7 +361,7 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v4.6.0', mejorasMS: true,
+  marca: 'MS', version: 'v4.7.0', mejorasMS: true,
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,

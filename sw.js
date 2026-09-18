@@ -4,7 +4,7 @@
 'use strict';
 
 const APP_NAME = 'ms-ar';
-const VERSION = 'ar-bac94fcc67fa';
+const VERSION = 'ar-174b5eeb2f2d';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
