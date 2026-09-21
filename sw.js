@@ -4,7 +4,7 @@
 'use strict';
 
 const APP_NAME = 'ms-ar';
-const VERSION = 'ar-916a7f585095';
+const VERSION = 'ar-2995965ba933';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
@@ -15,6 +15,8 @@ const ASSETS = [
   "./qrcode.js",
   "./ar-app.js",
   "./ms-anchor-ui.js",
+  "./ms-native.js",
+  "./ms-visual.js",
   "./ms-anchor.css",
   "./ms-library.js",
   "./ms-library.css",

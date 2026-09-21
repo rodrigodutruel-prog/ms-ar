@@ -39,6 +39,7 @@
   });
   window.addEventListener('ar:graphics-status', event => AR.UI.estado(event.detail.message, event.detail.lost ? 'err' : 'ok'));
   async function workerMessage(type) {
+    if(window.MSNative?.available())return {ready:true};
     if (!registration?.active) throw new Error('Esperá a que termine la descarga inicial de la aplicación y reintentá.');
     return new Promise((resolve,reject) => {
       const channel = new MessageChannel();
@@ -104,6 +105,7 @@
     else location.reload();
   }
   async function prepareApp() {
+    if(window.MSNative?.available()){message('Aplicación instalada sin conexión. Agregá tus archivos a la biblioteca QR para encontrarlos en este teléfono.');return;}
     if (!isSecureContext || !('serviceWorker' in navigator)) { message('El uso sin conexión requiere HTTPS o el servidor local de esta computadora.'); return; }
     try {
       registration = await navigator.serviceWorker.register('sw.js',{updateViaCache:'none'});

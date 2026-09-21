@@ -1,40 +1,17 @@
-# MS AR 4.3.0
+MS AR y 3DDUT AR 4.14.0
 
-## Correcciones de esta versión
+Mejoras aplicadas sobre la versión 4.13, conservando su diseño y herramientas.
 
-- El modo de cámara ya no llama a `renderer.setSize` en cada captura. Esa llamada reiniciaba el lienzo WebGL aunque el tamaño no cambiara y podía borrar el modelo mientras el lector procesaba la siguiente imagen. Una prueba nueva reproduce el error de 4.2 y verifica su corrección.
-- **Fijar a la hoja** es el modo recomendado para mover el teléfono. Usa detección de superficies y seguimiento espacial WebXR. La ubicación no depende de seguir leyendo el QR. Las dos cruces determinan posición, orientación y escala.
-- Se requieren una superficie detectada y controles visibles. No degrada a una ubicación supuesta si esas capacidades faltan. La retícula de papel es pequeña y exige más estabilidad que la colocación de un modelo a tamaño real.
-- El recorrido tiene dos pasos: marcar cruz 1 y marcar cruz 2. Rechaza puntos demasiado cercanos o en distintas alturas. Evita mostrar un modelo orientado a medias.
-- Si falta temporalmente la pose de un ancla pero el teléfono conserva seguimiento espacial, mantiene las coordenadas de la sesión. Si se pierde el seguimiento espacial, lo informa y recupera la visualización al volver. Reubicar libera las anclas anteriores.
-- Se conservan la lectura QR local, el seguimiento óptico entre lecturas, los controles 3D y la biblioteca local. La biblioteca también está disponible en 3DDUT.
-- Después de encontrar un archivo por QR, iniciar el modo espacial requiere tocar **Fijar el archivo encontrado a la hoja**. La solicitud WebXR ocurre desde ese gesto, no desde la respuesta asíncrona del lector.
+- APK con visor AR nativo: reconoce el marcador de la hoja, valida su posición durante varios fotogramas y crea un anclaje espacial. Después de fijarlo, el QR puede salir de la cámara mientras el seguimiento espacial continúe disponible.
+- Biblioteca local: importar los modelos al teléfono una vez y encontrarlos escaneando su QR. El lector libera la cámara antes de abrir el visor AR.
+- Modos a escala real y maqueta con colocación sobre una superficie horizontal detectada, rotación y reposicionamiento.
+- Materiales con rugosidad, respuesta metálica, microtextura y reflejos. Sombras suaves proyectadas en el visor 3D y sombra del modelo sobre el plano en AR nativa. Se conservan los colores del modelo.
+- Correcciones de altura y orientación de anclajes WebXR, rechazo de paredes al colocar por profundidad y limpieza de recursos al cerrar y reabrir el visor.
+- Correcciones de geometrías OBJ y exportación Android: los modelos se guardan con extensión .obj, sin agregar .txt.
+- Recursos esenciales incluidos en las APK para abrir la interfaz y los modelos importados sin Internet. Los servicios AR de Google deben estar instalados y actualizados; su instalación inicial puede requerir Internet.
 
-## Ver el modelo sobre la hoja y moverse
+Instalación: actualizar con la APK 4.14.0 de la misma marca. Conserva el identificador y certificado de firma de la versión anterior. La biblioteca de la APK ahora se guarda dentro de la aplicación; si los modelos estaban guardados en Chrome, hay que importarlos una vez en esta biblioteca.
 
-1. Actualizar con Internet desde **Más opciones → Actualizar aplicación** y comprobar **v4.3.0**. Las APK 4.1.0 existentes abren esta web; no hace falta desinstalarlas.
-2. Abrir el JSON AR de la Calculadora o el OBJ exportado con su plano AR. Se debe usar la hoja de esa misma exportación.
-3. Elegir **Sobre plano impreso → Fijar a la hoja** e **Iniciar AR**.
-4. Apoyar la hoja plana sobre una mesa. Mover despacio la cámara para que detecte la mesa. Apuntar al centro de la cruz 1 y tocar **Marcar cruz 1** cuando el aro esté verde.
-5. Repetir con la cruz 2. A partir de allí se puede cambiar el punto de vista sin mantener el QR en cámara.
-6. La hoja debe permanecer en su lugar. Si se mueve la hoja, usar **Volver a ubicar**. Este modo fija una ubicación en el espacio; no sigue una hoja que alguien levanta o traslada.
+Uso sobre la hoja: importar el JSON de la Calculadora o el OBJ con el marcador de su hoja, seleccionar Sobre plano impreso y Anclaje automático, y enfocar el QR con la hoja apoyada, buena luz y pequeños movimientos laterales hasta que indique Modelo fijado. Usar el porcentaje real de impresión. Si el teléfono pierde el seguimiento espacial, se solicita recuperar el encuadre para evitar dibujar una ubicación falsa.
 
-Si el equipo no ofrece seguimiento espacial, la app lo indica. **Seguir QR** sigue disponible como modo de cámara, pero exige detalles visibles y confirmaciones periódicas del código. Ocultar completamente la referencia o mover muy rápido la cámara puede interrumpir ese seguimiento. **Ver 3D sin cámara** permite explorar sin apuntar a la hoja.
-
-## Abrir archivos del teléfono con QR
-
-**Agregar archivos del teléfono** o **Agregar carpeta** permite seleccionar JSON de la Calculadora y OBJ con QR embebido, junto con sus MTL. La biblioteca guarda copias locales; no sube archivos ni imágenes. La selección inicial es necesaria para conceder acceso a los archivos.
-
-Después, **Leer QR y abrir modelo** encuentra el archivo sin elegirlo de nuevo. Se puede abrir en 3D, preparar la colocación fija sobre la hoja o iniciar el seguimiento del QR. Si varias revisiones comparten un QR, se elige la correcta. Un código desconocido no abre otra obra ni navega a una dirección externa.
-
-Las copias persisten entre aperturas y funcionan sin Internet una vez descargada la app. Modificar el archivo original no cambia la copia: hay que agregar la nueva revisión. **Quitar copia** elimina únicamente la copia de la biblioteca. Borrar los datos del sitio o del navegador puede quitar esas copias.
-
-## Verificación y alcance
-
-Se prueban ambas interfaces, lectura real de los QR de prueba, cámara simulada, geometría 3D y sesiones WebXR con poses simuladas. Las comprobaciones espaciales cubren alineación de las dos cruces, escala, movimiento sin QR, pérdida y recuperación, ausencia de la API opcional de anclas, permisos, salida y capacidades insuficientes. También se prueban biblioteca persistente, uso sin conexión, revisiones duplicadas y solicitud WebXR desde un gesto.
-
-**No se verificó físicamente en el Motorola Edge 20 Pro ni con el plano concreto del usuario.** Estas pruebas verifican el código y sus transformaciones; no certifican la precisión ni la calidad del seguimiento de los sensores reales. La visualización no reemplaza una medición de replanteo.
-
-La detección de superficie y las anclas siguen las API de [WebXR hit testing](https://developer.mozilla.org/en-US/docs/Web/API/XRSession/requestHitTestSource) y [WebXR anchors](https://developer.mozilla.org/en-US/docs/Web/API/XRFrame/createAnchor). Las dependencias locales jsQR, js-aruco y jsfeat conservan licencias y referencias en `vendor/sources.json`.
-
-Sincronizar ambas aplicaciones: `python sincronizar_core.py`. Verificar sin modificar: `python sincronizar_core.py --check`.
+Validación: pruebas automatizadas de lectura QR, biblioteca, geometría, exportación, materiales, sombras, apertura y cierre, anclajes y colocación. Compilación Android y pruebas con cámara virtual del emulador. La alineación y estabilidad física sobre el plano requieren validación final en el Motorola Edge 20 Pro; no se afirma precisión milimétrica medida en ese equipo.

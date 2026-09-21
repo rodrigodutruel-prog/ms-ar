@@ -3,7 +3,7 @@
   'use strict';
   const $=id=>document.getElementById(id),S=AR.S;
   const box=document.createElement('section');box.id='bibliotecaQR';box.className='qr-library';
-  box.innerHTML='<h2>Abrir archivo por QR</h2><p>Agregá tus archivos una vez. Después escaneá el QR y la app encontrará el modelo guardado en este teléfono, incluso sin Internet.</p><div class="qr-actions"><button id="qrBuscar" type="button">Leer QR y abrir modelo</button><button id="qrAgregar" type="button">Agregar archivos del teléfono</button><button id="qrCarpeta" type="button">Agregar carpeta</button></div><input id="qrArchivos" type="file" accept=".json,.obj,.mtl" multiple hidden><input id="qrDirectorio" type="file" webkitdirectory multiple hidden><label>Al encontrarlo <select id="qrDestino"><option value="3d">Abrir en 3D sin cámara</option><option value="papel">Fijar en la hoja y moverme</option><option value="papel-qr">Seguir QR visible con cámara</option></select></label><p id="qrBibliotecaEstado" role="status" aria-live="polite"></p><details><summary>Archivos guardados</summary><div id="qrLista"></div></details>';
+  box.innerHTML='<h2>Abrir archivo por QR</h2><p>Agregá tus archivos una vez. Después escaneá el QR y la app encontrará el modelo guardado en este teléfono, incluso sin Internet.</p><div class="qr-actions"><button id="qrBuscar" type="button">Leer QR y abrir modelo</button><button id="qrAgregar" type="button">Agregar archivos del teléfono</button><button id="qrCarpeta" type="button">Agregar carpeta</button></div><input id="qrArchivos" type="file" accept=".json,.obj,.mtl" multiple hidden><input id="qrDirectorio" type="file" webkitdirectory multiple hidden><label>Al encontrarlo <select id="qrDestino"><option value="3d">Abrir en 3D sin cámara</option><option value="papel">Ubicar automáticamente sobre la hoja</option><option value="papel-qr">Seguir QR visible con cámara</option></select></label><p id="qrBibliotecaEstado" role="status" aria-live="polite"></p><details><summary>Archivos guardados</summary><div id="qrLista"></div></details>';
   document.querySelector('#capaUI main').prepend(box);
   const placeButton=document.createElement('button');placeButton.id='qrIniciarAnclado';placeButton.type='button';placeButton.hidden=true;placeButton.textContent='Fijar el archivo encontrado a la hoja';
   $('qrBibliotecaEstado').after(placeButton);
@@ -12,10 +12,12 @@
   placeButton.onclick=async()=>{
     if(active())return;
     const radio=document.querySelector('input[name=modo][value=papel]');radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));
-    $('msModoPapel').value='anclado';
+    $('msModoPapel').value=window.MSNative?.available()?'automatico':'anclado';
     // requestSession must originate from this user gesture, not the QR worker callback.
     if(await AR.iniciarAR())placeButton.hidden=true;
   };
+  if(window.MSNative?.available()){$('qrDestino').value='papel';$('qrCarpeta').hidden=true;}
+  else $('qrDestino').querySelector('[value=papel]').textContent='Dos cruces · fijar a la hoja';
   let dbPromise,scan=null,busy=false,records=[];
   const say=text=>{$('qrBibliotecaEstado').textContent=text;};
   const active=()=>!!(busy||scan||S._cargando||S._iniciando||S.session||S.modo3D||S.renderer);
@@ -96,8 +98,8 @@
       say('Encontrado en este teléfono: '+r.name);
       if(destination==='papel'||destination==='papel-qr'){
         const radio=document.querySelector('input[name=modo][value=papel]');radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));
-        $('msModoPapel').value=destination==='papel'?'anclado':'camara';AR.revisarSoporte();
-        if(destination==='papel'){placeButton.hidden=false;say('Encontrado: '+r.name+'. Tocá Fijar el archivo encontrado a la hoja para activar el seguimiento espacial.');}
+        $('msModoPapel').value=destination==='papel'?(window.MSNative?.available()?'automatico':'anclado'):'camara';AR.revisarSoporte();
+        if(destination==='papel'&&!window.MSNative?.available()){placeButton.hidden=false;say('Encontrado: '+r.name+'. Tocá Fijar el archivo encontrado a la hoja para activar el seguimiento espacial.');}
         else await AR.iniciarAR();
       }else if(destination==='3d')await AR.iniciar3D();
       return true;

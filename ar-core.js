@@ -145,6 +145,7 @@ const UI = {
 function numeroValido(v){ return typeof v === 'number' && Number.isFinite(v); }
 function liberarObjeto(objeto, conservar){
   if(!objeto) return;
+  window.MSVisual?.dispose(objeto);
   objeto.traverse(o => { o.userData.liberado = true; });
   const geometrias = new Set(), materiales = new Set(), texturas = new Set();
   objeto.traverse(o => {
@@ -271,6 +272,10 @@ function etiqueta(texto, color){
 }
 
 function construirGrupo(tz){
+  const grupo=construirGrupoBase(tz);
+  return window.MSVisual ? MSVisual.prepare(grupo,tz) : grupo;
+}
+function construirGrupoBase(tz){
   if(tz && tz.esModelo) return construirGrupoModelo(tz);
   if(tz && tz.esMS) return construirGrupoMS(tz);
   const g = new THREE.Group();
@@ -1043,8 +1048,9 @@ async function parseOBJ(txt, avance, mtl){
         const nv = vs.length/3;
         for(let k=1;k+1<p.length;k++){
           const ia = parseInt(p[k],10), ib = parseInt(p[k+1],10);
-          if(!ia || !ib) continue;
-          aristas.push(ia<0 ? nv+ia : ia-1, ib<0 ? nv+ib : ib-1);
+          const a=ia<0?nv+ia:ia-1,b=ib<0?nv+ib:ib-1;
+          if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a>=nv||b>=nv)throw new Error('El OBJ contiene una arista con índices inválidos.');
+          aristas.push(a,b);
         }
       }else if(c0===111 && c1===32){    // "o "
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
@@ -1168,7 +1174,7 @@ function hornearReal(g){
   const nv = new THREE.Vector3();
   for(let i=0;i<n;i++){
     nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
-    const lam = .48 + .52*Math.abs(nv.dot(L));
+    const lam = window.MSVisual ? 1 : .48 + .52*Math.abs(nv.dot(L));
     col[i*3] = Math.min(1, crudo[i*3]*lam); col[i*3+1] = Math.min(1, crudo[i*3+1]*lam); col[i*3+2] = Math.min(1, crudo[i*3+2]*lam);
   }
   const attr = new THREE.BufferAttribute(col, 3);
@@ -1420,7 +1426,7 @@ function prepararPlanoImagen(tz, objeto){
     }
     if(!objeto && tz.tris < 60000){   // en modelos grandes las aristas del plano costaban segundos: va la masa sola
       try{
-        if(g.userData.liberado || tz.geo.userData.liberado) return;
+        if(tz.geo.userData.liberado) return;
         const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
           new THREE.LineBasicMaterial({ color: 0xffffff }));
         esc.add(bordes);
@@ -1486,13 +1492,14 @@ function construirGrupoModelo(tz){
     for(let i=0;i<nV;i++){
       c.copy(cBajo).lerp(cAlto, Math.max(0, Math.min(1, pos.getY(i)/alto)));
       nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
-      const lam = .42 + .58*Math.abs(nv.dot(L));   // luz fija horneada (dos caras)
+      const lam = window.MSVisual ? 1 : .42 + .58*Math.abs(nv.dot(L));   // luz fija horneada (dos caras)
       col[i*3] = c.r*lam; col[i*3+1] = c.g*lam; col[i*3+2] = c.b*lam;
     }
     tz.geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     tz.geo.userData.pieles.altura = tz.geo.getAttribute('color');
   }
-  const mat = new THREE.MeshBasicMaterial({
+  const mat = new (window.MSVisual ? THREE.MeshStandardMaterial : THREE.MeshBasicMaterial)({
+    ...(window.MSVisual ? {metalness:S.piel==='metal'?.72:.18,roughness:S.piel==='metal'?.34:.6} : {}),
     vertexColors:true, side:THREE.DoubleSide,
     transparent:false, opacity:1, depthWrite:true,
     polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:2
@@ -1500,7 +1507,8 @@ function construirGrupoModelo(tz){
   // VIDRIOS del OBJ de PlanObra: segundo grupo de la geometría → material translúcido
   let matVid = null;
   if(tz.geo.userData.hayVidrio && tz.geo.groups && tz.geo.groups.length > 1){
-    matVid = new THREE.MeshBasicMaterial({
+    matVid = new (window.MSVisual ? THREE.MeshStandardMaterial : THREE.MeshBasicMaterial)({
+      ...(window.MSVisual ? {metalness:.05,roughness:.16} : {}),
       vertexColors:true, side:THREE.DoubleSide,
       transparent:true, opacity:.35, depthWrite:false
     });
@@ -1550,6 +1558,7 @@ function construirGrupoModelo(tz){
   }else if(tz.tris <= AR_TOPE_ARISTAS){
     setTimeout(() => {
       try{
+        if(g.userData.liberado)return;
         const bordes = new THREE.LineSegments(
           new THREE.EdgesGeometry(tz.geo, 24),
           new THREE.LineBasicMaterial({ color:AR_COLOR_ARISTAS, transparent:true, opacity:.9 })
@@ -1953,6 +1962,7 @@ function aplicarCalibGuardada(){
    6. ESCENA COMÚN
    ------------------------------------------------------------ */
 function nuevaEscena(){
+  if(window.MSVisual)return MSVisual.scene();
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2f38, 2.2));
   const dir = new THREE.DirectionalLight(0xffffff, 1.1);
@@ -2071,6 +2081,10 @@ async function revisarSoporte(){
     $('btnAR').disabled = true;
     return;
   }
+  if(window.MSNative?.available() && (!S.modoPapel || $('msModoPapel').value==='automatico')){
+    est.className='nota ok';est.textContent=hayTrazado?(S.modoPapel?'Listo: escaneá el QR para fijar el modelo sobre su hoja.':'Listo: apuntá al piso o a la mesa y tocá para apoyar el modelo.'):'Abrí el archivo AR de la Calculadora o agregalo a la biblioteca QR.';
+    $('btnAR').disabled=!hayTrazado||!!S._iniciando;return;
+  }
   if(window.self !== window.top || esWebView()){
     est.className='nota err';
     est.innerHTML = 'Parece un <b>visor embebido / WebView</b> (no Chrome).<br>' +
@@ -2083,7 +2097,7 @@ async function revisarSoporte(){
     $('btnAR').disabled = true;
     return;
   }
-  if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value === 'camara' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+  if(CFG.mejorasMS && S.modoPapel && ['camara','automatico'].includes($('msModoPapel').value) && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
     est.className='nota ok'; est.textContent=hayTrazado ? 'Cámara lista para reconocer el QR del plano.' : 'Abrí el JSON de la Calculadora o un modelo con su plano AR.'; $('btnAR').disabled=!hayTrazado; return;
   }
   if(!('xr' in navigator)){
@@ -2108,6 +2122,7 @@ async function revisarSoporte(){
 }
 
 async function iniciarAR(){
+  if(window.MSNative?.available() && (!S.modoPapel || $('msModoPapel').value==='automatico'))return MSNative.start();
   if(S.papelCamera) return false;
   if(CFG.mejorasMS && S.modoPapel && $('msModoPapel').value !== 'manual' && $('msModoPapel').value !== 'nativo' && $('msModoPapel').value !== 'anclado' && window.MSPaper) return window.MSPaper.start();
   if(!S.trazado || S.papelCamera || S._iniciando || S._cargando || S.session || SENS.activo || S.modo3D) return false;
@@ -2168,6 +2183,7 @@ async function iniciarARInterno(intento){
   S.grupo.visible = false;
   aplicarEscala();
   S.scene.add(S.grupo);
+  window.MSVisual?.attach(S.scene,S.grupo,S.trazado);
   S.anclado = false;
   S.rotY = 0; S.offsetY = 0;
   const habiaCalib = S.paperFixed ? false : aplicarCalibGuardada();   // restaura rot/alt/opacidad de esta obra
@@ -2864,11 +2880,11 @@ async function iniciarARInterno(intento){
           if(_da > S._derivaMax.a) S._derivaMax.a = _da;
         }
         // BASE SETEADA: fijado, la altura no la mueve mas el ancla
-        if(S.fijado && typeof S.baseFijada === 'number') S.grupo.position.y = S.baseFijada;
+        // Preserve the complete anchor correction, including vertical relocalization.
         // GIRO: crudo mientras se coloca; amortiguado una vez fijado, asi el yaw
         // del ancla (lo menos firme de ARCore) no hace girar el modelo despacio.
         const _objY = S.ancRotLocal + yA;
-        S.rotY = S.fijado ? (S.rotY + angNorm(_objY - S.rotY) * 0.04) : _objY;
+        S.rotY = _objY; // Position and orientation use the same reference-space correction.
         S.grupo.rotation.y = S.rotY;
         S.grupo.visible = true;
       }
@@ -2908,6 +2924,7 @@ async function iniciarARInterno(intento){
       S.grupo.visible=!!(S.fijado && S.anclado && !S._trackPerdido);
       window.MSAnchorUI?.update();
     }
+    window.MSVisual?.update(S.scene);
     renderer.render(S.scene, S.camera);
   });
   return true;
@@ -3378,6 +3395,7 @@ function apoyarEnElPiso(){
   const cp = new THREE.Vector3(), dir = new THREE.Vector3();
   cam.getWorldPosition(cp); cam.getWorldDirection(dir);
   const pisoY = S.usaFloor ? 0 : (cp.y - 1.4);
+  S.colocacionAproximada = true;
   const p = new THREE.Vector3();
   if(dir.y < -0.05){
     let d = (pisoY - cp.y) / dir.y;                       // donde la mira cruza el piso
@@ -3401,12 +3419,13 @@ function apoyarEnElPiso(){
   const dm = cp.distanceTo(p);
   registrar('apoyado EN EL PISO DE LA SESION en (' + p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ', ' +
             p.z.toFixed(2) + ') a ' + dm.toFixed(1) + ' m' + (S.usaFloor ? ' [local-floor]' : ' [piso estimado]'));
-  UI.msg('Apoyado sobre el piso, a ' + dm.toFixed(1) + ' m. 1 dedo lo mueve · 2 dedos lo giran · − + lo acercan y alejan · "Apoyar de nuevo" para cambiarlo de lugar.');
+  UI.msg('Ubicación aproximada; el piso todavía no está medido. Modelo a ' + dm.toFixed(1) + ' m. 1 dedo lo mueve · 2 dedos lo giran · − + lo acercan y alejan · "Apoyar de nuevo" para cambiarlo de lugar.');
   if(CFG.mejorasMS) fijarModelo(true);
   UI.paso('', '');
 }
 
 function apoyarEnReticula(){
+  S.colocacionAproximada=false;
   S.grupo.position.copy(S.reticula.position);
   registrar('apoyado en (' + S.reticula.position.x.toFixed(2) + ', ' + S.reticula.position.y.toFixed(2) + ', ' + S.reticula.position.z.toFixed(2) + ') escala ef 1:' + (S.escalaEf || S.escala) + (S.hitDesdeDepth ? ' por profundidad' : ' por hit'));
   S._mejorarAncla = !!S.hitDesdeDepth;   // ancla libre por ahora: si aparece el plano, se pasa a él
@@ -3641,7 +3660,7 @@ function sincronizarAncla(){
   // BASE SETEADA: la altura a la que quedo el modelo. Con el modelo fijado, la
   // Y deja de salir del ancla (ARCore reestima el piso y lo hacia subir o
   // bajar). X y Z se siguen corrigiendo, que es lo que ARCore hace bien.
-  S.baseFijada = S.grupo.position.y;
+  S.baseFijada = null;
   S._derivaRef = null;                  // se vuelve a medir desde esta colocacion
   guardarAncla();
 }
@@ -3841,30 +3860,34 @@ function _recordarAro(t){
 }
 
 function puntoDeProfundidadCentro(frame){
-  let di = null, view = null;
-  try{
-    const vp = frame.getViewerPose(S.refSpaceLocal);
-    if(!vp || !vp.views.length) return null;
-    view = vp.views[0];
-    di = frame.getDepthInformation(view);
-  }catch(e){ return null; }
-  if(!di || typeof di.getDepthInMeters !== 'function') return null;
-  // promedio robusto de un parche chico alrededor del centro (la profundidad por movimiento es ruidosa)
-  const ds = [];
-  for(let j=-2;j<=2;j++) for(let i=-2;i<=2;i++){
-    let d = 0;
-    try{ d = di.getDepthInMeters(0.5 + i*0.012, 0.5 + j*0.012); }catch(e){ continue; }
-    if(d > 0.15 && d < 6) ds.push(d);
+  let di,view;
+  try{const vp=frame.getViewerPose(S.refSpaceLocal);if(!vp||vp.emulatedPosition||!vp.views.length)return null;view=vp.views[0];di=frame.getDepthInformation(view);}catch(e){return null;}
+  if(!di||typeof di.getDepthInMeters!=='function')return null;
+  _pdInvP.fromArray(view.projectionMatrix).invert();_pdM.fromArray(view.transform.matrix);
+  const grid=[],valid=[];
+  for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){
+    const u=.5+i*.02,v=.5+j*.02;let d=0;
+    try{d=di.getDepthInMeters(u,v);}catch(e){}
+    let p=null;
+    if(d>.15&&d<6){p=new THREE.Vector3(u*2-1,1-v*2,.5).applyMatrix4(_pdInvP);p.multiplyScalar(-d/p.z).applyMatrix4(_pdM);valid.push(p);}
+    grid.push(p);
   }
-  if(ds.length < 5) return null;
-  ds.sort((a,b) => a-b);
-  const d = ds[Math.floor(ds.length/2)];
-  _pdInvP.fromArray(view.projectionMatrix).invert();
-  _pdM.fromArray(view.transform.matrix);
-  const p = new THREE.Vector3(0, 0, 0.5).applyMatrix4(_pdInvP);     // rayo del centro en coords de vista
-  p.multiplyScalar(-d / p.z).applyMatrix4(_pdM);                     // a la profundidad medida → mundo
-  const cam = new THREE.Vector3().setFromMatrixPosition(_pdM);
-  return { p: p, dist: d, cam: cam };
+  if(valid.length<20||!grid[12])return null;
+  // Fit the patch orientation from independent horizontal/vertical baselines.
+  const normals=[];
+  for(const [l,r,t,b] of [[10,14,2,22],[11,13,7,17],[5,9,1,21],[15,19,3,23]]){
+    if(!grid[l]||!grid[r]||!grid[t]||!grid[b])continue;
+    const normal=new THREE.Vector3().subVectors(grid[r],grid[l]).cross(new THREE.Vector3().subVectors(grid[b],grid[t]));
+    if(normal.length()<.00001)continue;normal.normalize();if(normal.y<0)normal.negate();normals.push(normal);
+  }
+  if(normals.length<3)return null;
+  const normal=new THREE.Vector3();normals.forEach(n=>normal.add(n));normal.normalize();
+  if(normal.y<.94||normals.some(n=>n.dot(normal)<.97))return null;
+  const center=new THREE.Vector3();valid.forEach(p=>center.add(p));center.multiplyScalar(1/valid.length);
+  const cam=new THREE.Vector3().setFromMatrixPosition(_pdM),distance=cam.distanceTo(grid[12]);
+  const residual=Math.max(...valid.map(p=>Math.abs(new THREE.Vector3().subVectors(p,center).dot(normal))));
+  if(residual>Math.min(.012,Math.max(.003,distance*.005)))return null;
+  return {p:grid[12],dist:distance,cam,normal};
 }
 
 /* ------------------------------------------------------------
@@ -4068,10 +4091,10 @@ function hornearPiel(geo, modo, alto){
   const cBajo = new THREE.Color(PAL.bajo), cAlto = new THREE.Color(PAL.alto);
   for(let i=0;i<nV;i++){
     nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
-    const lam = .42 + .58*Math.abs(nv.dot(L));
+    const lam = window.MSVisual ? 1 : .42 + .58*Math.abs(nv.dot(L));
     if(modo === 'metal'){
       // chapa: gris frío con un brillo direccional más marcado
-      const esp = Math.pow(Math.abs(nv.dot(L)), 8) * .35;
+      const esp = window.MSVisual ? 0 : Math.pow(Math.abs(nv.dot(L)), 8) * .35;
       c.setRGB(.72*lam + esp, .75*lam + esp, .78*lam + esp);
     }else if(modo === 'piezas'){
       const comp = geo.userData.comp;
@@ -4397,6 +4420,7 @@ function obtenerRenderer(){
       window.dispatchEvent(new CustomEvent('ar:graphics-status', { detail: { lost: false, message: 'Motor gráfico recuperado. Podés volver a abrir el modelo.' } }));
     });
   }
+  window.MSVisual?.renderer(_rendererUnico);
   _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   _rendererUnico.setSize(window.innerWidth, window.innerHeight);
   return _rendererUnico;
@@ -4475,8 +4499,9 @@ function salirAR(){
   const s = S.session;
   if(!s){ if(S.renderer) cerrarAR(false); return; }
   cerrarAR(false);
+  const liberarEstaEscena = _liberarEscena; _liberarEscena = null;
   setTimeout(() => {
-    const soltar = () => { const f = _liberarEscena; _liberarEscena = null; if(f) f(); };
+    const soltar = () => { if(liberarEstaEscena) liberarEstaEscena(); };
     try{
       const p = s.end();
       if(p && p.then) p.then(soltar, soltar); else soltar();
@@ -4995,6 +5020,7 @@ async function iniciarARSensorInterno(intento){
   aplicarEscala();
   S.grupo.visible = false;
   S.scene.add(S.grupo);
+  window.MSVisual?.attach(S.scene,S.grupo,S.trazado);
   S.anclado = false; S.rotY = 0; S.offsetY = 0;
   SENS.q = new THREE.Quaternion();
   SENS.dist = (S.escala === 1) ? 8 : 2.5;
@@ -5134,6 +5160,7 @@ function iniciar3DInterno(){
   const cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, .01, Math.max(500, S.trazado.medidas.length()*12));
   const grupo = construirGrupo(S.trazado);
   scene.add(grupo);
+  // Shadows are attached after framing, so they never enlarge the model bounds.
 
   // Encuadrar la geometría real: la grilla y las etiquetas no agrandan el modelo.
   grupo.updateMatrixWorld(true);
@@ -5164,6 +5191,7 @@ function iniciar3DInterno(){
     cam.lookAt(centro);
   }
   ubicarCam();
+  window.MSVisual?.attach(scene,grupo,S.trazado);
 
   const el = renderer.domElement;
   const pointers=new Map();
@@ -5222,6 +5250,7 @@ function iniciar3DInterno(){
     if(grupo.userData.grpEtiq) grupo.userData.grpEtiq.visible = S.verEtiquetas;
     if(grupo.userData.grpMaq) grupo.userData.grpMaq.visible = S.verMaquinas;
     if(grupo.userData.grpPiso) grupo.userData.grpPiso.visible = S.verPiso;
+    window.MSVisual?.update(scene);
     renderer.render(scene, cam);
     S.raf3D = requestAnimationFrame(loop);
   }
