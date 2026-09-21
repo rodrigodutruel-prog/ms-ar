@@ -1010,6 +1010,73 @@ function parseMTL(txt){
   return out;
 }
 
+// ARISTAS CALCULADAS EN LA APP (v4.16). Antes, un modelo sin lineas 'l' en el
+// archivo (o simplificado aca adentro) quedaba sin aristas negras si pasaba de
+// AR_TOPE_ARISTAS caras, porque EdgesGeometry bloquea el telefono. Esto hace lo
+// mismo que EdgesGeometry con Map de enteros sobre los indices ya unificados:
+// 100.000 caras en ~0,2 s. Criterio: borde (una sola cara) o diedro >= angulo.
+// Si sobran, se quedan las mas vivas hasta el tope.
+function calcularAristas(vs, todos, anguloDeg, tope){
+  const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
+  if(!nt || !nv) return null;
+  // 1) un id por posicion (el OBJ puede repetir el mismo punto)
+  const remap = new Int32Array(nv), rep = [], claves = new Map();
+  for(let i=0;i<nv;i++){
+    const k = Math.round(vs[i*3]*100) + ',' + Math.round(vs[i*3+1]*100) + ',' + Math.round(vs[i*3+2]*100);
+    let id = claves.get(k);
+    if(id === undefined){ id = rep.length; claves.set(k, id); rep.push(i); }
+    remap[i] = id;
+  }
+  claves.clear();
+  const nu = rep.length;
+  // 2) normal de cada cara
+  const fn = new Float32Array(nt*3);
+  for(let t=0;t<nt;t++){
+    const a = todos[t*3]*3, b = todos[t*3+1]*3, c = todos[t*3+2]*3;
+    const ux=vs[b]-vs[a], uy=vs[b+1]-vs[a+1], uz=vs[b+2]-vs[a+2], wx=vs[c]-vs[a], wy=vs[c+1]-vs[a+1], wz=vs[c+2]-vs[a+2];
+    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.hypot(x,y,z)||1;
+    fn[t*3]=x/l; fn[t*3+1]=y/l; fn[t*3+2]=z/l;
+  }
+  // 3) cada arista (par de ids) → la primera cara; con la segunda se decide
+  const vistos = new Map(), ea = [], eb = [], eang = [];
+  const cosLim = Math.cos(anguloDeg*Math.PI/180);
+  for(let t=0;t<nt;t++){
+    for(let e=0;e<3;e++){
+      let p = remap[todos[t*3+e]], q = remap[todos[t*3+(e+1)%3]];
+      if(p === q) continue;
+      if(p > q){ const s=p; p=q; q=s; }
+      const k = p*nu + q;
+      const prev = vistos.get(k);
+      if(prev === undefined) vistos.set(k, t);
+      else if(prev >= 0){
+        // |cos|: da lo mismo el sentido de giro de cada cara
+        const d = Math.abs(fn[prev*3]*fn[t*3] + fn[prev*3+1]*fn[t*3+1] + fn[prev*3+2]*fn[t*3+2]);
+        if(d <= cosLim){ ea.push(p); eb.push(q); eang.push(Math.acos(Math.min(1,d))); }
+        vistos.set(k, -1);
+      }
+    }
+  }
+  for(const [k,t] of vistos){ if(t >= 0){ const p=Math.floor(k/nu); ea.push(p); eb.push(k-p*nu); eang.push(Math.PI); } }
+  vistos.clear();
+  let orden = null;
+  if(ea.length > tope){
+    orden = new Int32Array(ea.length); for(let i=0;i<ea.length;i++) orden[i]=i;
+    orden.sort((i,j) => eang[j]-eang[i]);
+    orden = orden.subarray(0, tope);
+  }
+  const n = orden ? orden.length : ea.length;
+  if(!n) return null;
+  const ap = new Float32Array(n*6);
+  for(let i=0;i<n;i++){
+    const e = orden ? orden[i] : i, a = rep[ea[e]]*3, b = rep[eb[e]]*3;
+    ap[i*6]=vs[a]; ap[i*6+1]=vs[a+1]; ap[i*6+2]=vs[a+2]; ap[i*6+3]=vs[b]; ap[i*6+4]=vs[b+1]; ap[i*6+5]=vs[b+2];
+  }
+  const ga = new THREE.BufferGeometry();
+  ga.setAttribute('position', new THREE.BufferAttribute(ap,3));
+  ga.userData.calculadas = true; ga.userData.total = ea.length;
+  return ga;
+}
+
 // OBJ — ASÍNCRONO por tandas (un OBJ grande de Inventor congelaba la app al
 // abrirlo). Lee:
 //  · "v x y z r g b"  colores por vértice (PlanObra, o el conversor de PC)
@@ -1141,6 +1208,15 @@ async function parseOBJ(txt, avance, mtl){
       const ga = new THREE.BufferGeometry();
       ga.setAttribute('position', new THREE.BufferAttribute(ap,3));
       g.userData.aristasGeo = ga;
+    }catch(e){}
+  }
+  // Si el archivo no las trae (o se descartaron al simplificar), se calculan aca
+  // sobre la malla final, a cualquier tamano y con tope. Asi el visor y la AR
+  // nativa muestran siempre las aristas negras del sombreado de Inventor.
+  if(!g.userData.aristasGeo){
+    try{
+      const ga = calcularAristas(vs, todos, 24, AR_TOPE_ARISTAS);
+      if(ga) g.userData.aristasGeo = ga;
     }catch(e){}
   }
   g.userData.matNombres = matNombres;
@@ -5148,6 +5224,7 @@ function iniciar3DInterno(){
   const escuchar = (dest, evento, fn, opts) => { dest.addEventListener(evento, fn, opts); callbacks.push(() => dest.removeEventListener(evento, fn, opts)); };
   S._cerrar3D = () => {
     S.modo3D = false;
+    S._pedirCuadro = null; S._foto3D = null;
     if(S.raf3D != null) cancelAnimationFrame(S.raf3D);
     S.raf3D = null;
     callbacks.forEach(fn => fn());
@@ -5182,6 +5259,16 @@ function iniciar3DInterno(){
   let R = distanciaAjustada();
   let ang = Math.PI*0.25, alt = Math.PI*0.28, dist = R;
   let needsDraw=true,lastVisualState="";
+  // ganchos del visor: pedir un cuadro (el dibujo es bajo demanda) y sacar la foto
+  S._pedirCuadro = () => { needsDraw = true; };
+  S._foto3D = () => {
+    // se dibuja y se lee el canvas EN EL MISMO INSTANTE: sin preserveDrawingBuffer el
+    // cuadro solo existe hasta que el navegador lo compone
+    window.MSVisual?.update(scene);
+    renderer.render(scene, cam);
+    needsDraw = false;
+    return renderer.domElement.toDataURL('image/png');
+  };
 
   function ubicarCam(){
     needsDraw=true;
@@ -5234,9 +5321,10 @@ function iniciar3DInterno(){
   if(CFG.mejorasMS){
     const controls=document.createElement('div');controls.className='ms-vista-controles';
     const originalCenter=centro.clone();
-    [['msCentrar','Centrar'],['msPlanta','Planta'],['msIso','Isométrica']].forEach(([id,label])=>{
+    [['msCentrar','Centrar'],['msPlanta','Planta'],['msIso','Isométrica'],['msFoto','Foto']].forEach(([id,label])=>{
       const button=document.createElement('button');button.id=id;button.textContent=label;button.type='button';controls.appendChild(button);
       escuchar(button,'click',()=>{
+        if(id==='msFoto'){ fotoDelVisor(); return; }
         centro.copy(originalCenter);dist=R;
         if(id==='msPlanta'){alt=Math.PI/2-.001;ang=-Math.PI/2;}
         else if(id==='msIso'){alt=Math.PI*.28;ang=Math.PI*.25;}
@@ -5274,6 +5362,42 @@ function iniciar3DInterno(){
   });
 
   return true;
+}
+
+/* ------------------------------------------------------------
+   8b. FOTO DEL VISOR 3D
+   En la APK va a la galería (NativePaper.savePhoto); en el celular con
+   navegador se comparte; en la PC se descarga. En la vista AR nativa la
+   foto la saca el botón Foto de esa pantalla (incluye la cámara).
+   ------------------------------------------------------------ */
+function fechaCorta(){ const d = new Date(), p = n => String(n).padStart(2,'0'); return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
+function avisoVisor(texto){
+  const cont = $('visor3D'); if(!cont) return;
+  let av = document.getElementById('avisoVisor3D');
+  if(!av){ av = document.createElement('div'); av.id = 'avisoVisor3D'; av.style.cssText = 'position:absolute;left:50%;bottom:18%;transform:translateX(-50%);z-index:5;padding:10px 16px;border-radius:10px;background:rgba(14,18,34,.9);color:#fff;font:600 .9rem sans-serif;pointer-events:none;max-width:88vw;text-align:center'; cont.appendChild(av); }
+  av.textContent = texto; av.style.display = 'block';
+  clearTimeout(av._t); av._t = setTimeout(() => { av.style.display = 'none'; }, 2600);
+}
+async function fotoDelVisor(){
+  if(!S.modo3D || !S._foto3D) return false;
+  let png;
+  try{ png = S._foto3D(); }catch(e){ mostrarError('No se pudo capturar la vista: ' + (e.message || e)); return false; }
+  const base = ((S.trazado && (S.trazado.obra || S.trazado.nombre)) || (CFG.marca + ' AR')).replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60);
+  const nombre = base + '_' + fechaCorta() + '.png';
+  return entregarImagen(png, nombre);
+}
+async function entregarImagen(dataUrl, nombre){
+  if(window.NativePaper && typeof NativePaper.savePhoto === 'function'){
+    NativePaper.savePhoto(nombre, dataUrl); avisoVisor('Guardando la foto en la galería…'); return true;
+  }
+  try{
+    const blob = await (await fetch(dataUrl)).blob();
+    const f = new File([blob], nombre, { type: 'image/png' });
+    if(navigator.share && navigator.canShare && navigator.canShare({ files: [f] })){ await navigator.share({ files: [f], title: nombre }); return true; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = nombre; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    avisoVisor('Foto descargada: ' + nombre); return true;
+  }catch(e){ if(e && e.name === 'AbortError') return false; mostrarError('No se pudo guardar la foto: ' + (e.message || e)); return false; }
 }
 
 /* ------------------------------------------------------------
@@ -5430,4 +5554,5 @@ if(location.hash === '#compartido-error') UI.estado('No se pudo guardar el archi
 window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bitmapMarcador,centroMarcador}, S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, reiniciarPlanoFijo, refrescarHUD, DEMO, VERSION,
-              construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote };
+              construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote,
+              fotoDelVisor, entregarImagen, calcularAristas };

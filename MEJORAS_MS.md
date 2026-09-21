@@ -1,3 +1,19 @@
+MS AR y 3DDUT AR 4.16.1
+
+Corrección sobre 4.15.0 pensada para los modelos reales (maquetas de Inventor de 100.000 caras o más). Conserva el diseño, los materiales, las texturas y las sombras.
+
+- Botón Foto. En la vista AR (APK) saca una foto de lo que se ve en pantalla —cámara y modelo— y la guarda en la galería del teléfono, en el álbum de la aplicación. En el visor 3D hay un botón Foto junto a Centrar / Planta / Isométrica: en la APK va a la galería; en el navegador del celular se comparte; en la PC se descarga.
+- El pasaje del modelo a la vista AR nativa ahora es binario. Antes cada vértice viajaba como números de texto: con la maqueta de FITECMA reducida a 100.000 triángulos eran 21,5 MB de texto y 2,8 millones de números que Android parseaba dos veces. Ahora es un buffer de 9 números por vértice (14 MB) que Android copia directo al motor gráfico: en el emulador la vista AR abre en 3 s en vez de 6, con menos memoria y menos riesgo de que el sistema cierre la aplicación al abrir la cámara con un modelo grande.
+- Un OBJ que no trae su hoja con QR ya no falla con "Abrí el JSON de la Calculadora…": se apoya sobre una superficie (piso o mesa), aunque el modo elegido sea "Sobre plano impreso". El aviso lo dice antes de abrir la cámara.
+- Ajuste en la vista AR de la APK. Un toque apoya el modelo en la mira; ya apoyado, 1 dedo lo arrastra por el piso o la mesa, 2 dedos lo giran y un toque en otro lugar lo re-apoya ahí. Sigue el botón Girar 90°. Sobre plano impreso no hace falta: el QR fija la posición.
+- Aristas negras en la vista AR de la APK: las mismas del visor (el sombreado con aristas de Inventor) ahora viajan al módulo nativo y se dibujan sobre las caras.
+- Aristas calculadas en la app. Si el OBJ no trae las líneas de aristas (opciones Detalle o Máximo del .bat, o un OBJ exportado directo de Inventor) o la app tuvo que reducirlo, las calcula sobre la malla final —hasta 45.000, las más marcadas— en vez de dejar el modelo liso. Con la maqueta de FITECMA (745.558 caras, preparada sin aristas): 43.400 aristas y 6 s de apertura, igual que antes. El .bat Preparar_OBJ_para_AR aclara ahora que Detalle y Máximo se vuelven a reducir a 110.000 caras al abrir: la opción Normal es la recomendada.
+- El visor 3D conserva el dibujo bajo demanda de 4.15 y suma los ganchos que usa la foto.
+
+Pruebas: puente nativo en las dos marcas (38 comprobaciones: aristas del archivo y calculadas → módulo nativo, esquema binario, normales unitarias, reducción de impresión, error nativo visible, OBJ suelto → superficie, foto del visor), regresión del núcleo y del service worker (40), y la maqueta real de FITECMA abierta y pasada al módulo nativo en el emulador Android 16 (192 MB de heap). La cámara AR y los gestos de ajuste sobre el teléfono siguen pendientes de comprobación física.
+
+Instalar la APK 4.16.1 de cada marca sobre la anterior. Conserva los modelos importados en la biblioteca.
+
 MS AR y 3DDUT AR 4.15.0
 
 Actualización de rendimiento sobre 4.14.0. Conserva el diseño, los materiales, las texturas y las sombras.
