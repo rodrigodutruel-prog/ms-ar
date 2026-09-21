@@ -5181,8 +5181,10 @@ function iniciar3DInterno(){
   };
   let R = distanciaAjustada();
   let ang = Math.PI*0.25, alt = Math.PI*0.28, dist = R;
+  let needsDraw=true,lastVisualState="";
 
   function ubicarCam(){
+    needsDraw=true;
     cam.position.set(
       centro.x + dist*Math.cos(alt)*Math.cos(ang),
       centro.y + dist*Math.sin(alt),
@@ -5250,12 +5252,17 @@ function iniciar3DInterno(){
     if(grupo.userData.grpEtiq) grupo.userData.grpEtiq.visible = S.verEtiquetas;
     if(grupo.userData.grpMaq) grupo.userData.grpMaq.visible = S.verMaquinas;
     if(grupo.userData.grpPiso) grupo.userData.grpPiso.visible = S.verPiso;
-    window.MSVisual?.update(scene);
-    renderer.render(scene, cam);
+    const visualState=[S.verEtiquetas,S.verMaquinas,S.verPiso,grupo.children.length,grupo.userData.renderVersion||0].join(':');
+    if(needsDraw||visualState!==lastVisualState){
+      window.MSVisual?.update(scene);
+      renderer.render(scene, cam);
+      needsDraw=false;lastVisualState=visualState;
+    }
     S.raf3D = requestAnimationFrame(loop);
   }
   loop();
 
+  escuchar(document,'visibilitychange',()=>{needsDraw=true;});
   escuchar(window, 'resize', () => {
     const zoomRelativo = dist / R;
     cam.aspect = window.innerWidth/window.innerHeight;

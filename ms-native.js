@@ -105,10 +105,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.14 incorpora ubicación automática por QR y seguimiento espacial al mover el teléfono. ';
+    card.textContent='La APK 4.15 incorpora ubicación automática por QR y seguimiento espacial al mover el teléfono. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.14';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.14.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.14.0.apk';
+    link.textContent='Descargar APK 4.15';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.15.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.15.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

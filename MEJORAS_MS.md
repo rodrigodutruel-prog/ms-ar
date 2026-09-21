@@ -1,17 +1,17 @@
-MS AR y 3DDUT AR 4.14.0
+MS AR y 3DDUT AR 4.15.0
 
-Mejoras aplicadas sobre la versión 4.13, conservando su diseño y herramientas.
+Actualización de rendimiento sobre 4.14.0. Conserva el diseño, los materiales, las texturas y las sombras.
 
-- APK con visor AR nativo: reconoce el marcador de la hoja, valida su posición durante varios fotogramas y crea un anclaje espacial. Después de fijarlo, el QR puede salir de la cámara mientras el seguimiento espacial continúe disponible.
-- Biblioteca local: importar los modelos al teléfono una vez y encontrarlos escaneando su QR. El lector libera la cámara antes de abrir el visor AR.
-- Modos a escala real y maqueta con colocación sobre una superficie horizontal detectada, rotación y reposicionamiento.
-- Materiales con rugosidad, respuesta metálica, microtextura y reflejos. Sombras suaves proyectadas en el visor 3D y sombra del modelo sobre el plano en AR nativa. Se conservan los colores del modelo.
-- Correcciones de altura y orientación de anclajes WebXR, rechazo de paredes al colocar por profundidad y limpieza de recursos al cerrar y reabrir el visor.
-- Correcciones de geometrías OBJ y exportación Android: los modelos se guardan con extensión .obj, sin agregar .txt.
-- Recursos esenciales incluidos en las APK para abrir la interfaz y los modelos importados sin Internet. Los servicios AR de Google deben estar instalados y actualizados; su instalación inicial puede requerir Internet.
+- La vista 3D se actualiza cuando se gira, acerca o cambia el modelo. Una pieza quieta deja de generar cuadros y consumir GPU innecesariamente.
+- Las sombras se reutilizan mientras la geometría, su posición y visibilidad no cambien. Girar la cámara mantiene las sombras sin volver a dibujar todas las piezas desde la luz.
+- La APK limita la superficie de dibujo a 1,2 millones de píxeles y usa suavizado de bordes de 2 muestras. Mantiene la proporción de la cámara y el modelo, con menor demanda de GPU en pantallas de alta resolución.
+- La microtextura nativa usa una textura con niveles de detalle, evitando cálculos trigonométricos por píxel y parpadeo de grano fino.
+- Se reutilizan los parámetros gráficos y los arreglos de trabajo para reducir llamadas y pausas de memoria durante la cámara.
+- Una vez fijado el modelo a la hoja, se detiene la detección de imágenes y superficies; el anclaje espacial sigue activo. Volver a ubicar reactiva la búsqueda del QR.
+- El primer anclaje espera a que el seguimiento haya tenido tiempo de estabilizarse; cuando se usa una imagen reconocida, se conserva la posición del fotograma actual para evitar mezclar correcciones anteriores del mapa.
 
-Instalación: actualizar con la APK 4.14.0 de la misma marca. Conserva el identificador y certificado de firma de la versión anterior. La biblioteca de la APK ahora se guarda dentro de la aplicación; si los modelos estaban guardados en Chrome, hay que importarlos una vez en esta biblioteca.
+Pruebas: comparación con 4.14, reapertura y recuperación del visor, materiales, sombras, geometría y biblioteca. Pruebas de cámara virtual a 1080x2400, seguimiento después del anclaje y reposicionamiento. Las medidas del emulador no equivalen al rendimiento real del Motorola; esa comprobación física sigue pendiente.
 
-Uso sobre la hoja: importar el JSON de la Calculadora o el OBJ con el marcador de su hoja, seleccionar Sobre plano impreso y Anclaje automático, y enfocar el QR con la hoja apoyada, buena luz y pequeños movimientos laterales hasta que indique Modelo fijado. Usar el porcentaje real de impresión. Si el teléfono pierde el seguimiento espacial, se solicita recuperar el encuadre para evitar dibujar una ubicación falsa.
+Instalar la APK 4.15.0 de cada marca sobre la anterior. Conserva los modelos importados en la biblioteca de la APK 4.14.0.
 
-Validación: pruebas automatizadas de lectura QR, biblioteca, geometría, exportación, materiales, sombras, apertura y cierre, anclajes y colocación. Compilación Android y pruebas con cámara virtual del emulador. La alineación y estabilidad física sobre el plano requieren validación final en el Motorola Edge 20 Pro; no se afirma precisión milimétrica medida en ese equipo.
+Referencia técnica: https://developers.google.com/ar/develop/performance

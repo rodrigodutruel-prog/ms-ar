@@ -64,9 +64,10 @@
     s.add(new T.HemisphereLight(0xe8f1ff,0x687080,1.35));
     const key=new T.DirectionalLight(0xfff3df,2.4);key.position.set(3,6,4);
     key.castShadow=true;key.shadow.mapSize.set(1024,1024);key.shadow.radius=3;
+    key.shadow.autoUpdate=false;key.shadow.needsUpdate=true;
     s.add(key,key.target);
     const fill=new T.DirectionalLight(0xbdd5ff,.7);fill.position.set(-4,2,-3);s.add(fill);
-    s.userData.visual={key};return s;
+    s.userData.visual={key,matrix:new T.Matrix4(),initialized:false,scale:new T.Vector3(),center:new T.Vector3(),offset:new T.Vector3()};return s;
   }
   function attach(s,group,tz){
     if(!s.userData.visual)return;
@@ -80,10 +81,13 @@
   }
   function update(s){
     const v=s?.userData.visual;if(!v?.group)return;
-    const group=v.group;group.updateMatrixWorld(true);
-    const scale=group.getWorldScale(new T.Vector3()).length()/Math.sqrt(3);
-    const r=Math.max(.02,v.span*scale),center=new T.Vector3(0,v.size.y*.35,0).applyMatrix4(group.matrixWorld);
-    v.key.position.copy(center).add(new T.Vector3(r*.7,r*1.6,r*.8));v.key.target.position.copy(center);
+    const group=v.group;group.updateWorldMatrix(true,false);
+    const visibility=group.visible+':'+group.userData.grpMaq?.visible+':'+group.children.length;
+    if(v.initialized&&v.matrix.equals(group.matrixWorld)&&v.visibility===visibility)return;
+    v.matrix.copy(group.matrixWorld);v.visibility=visibility;v.initialized=true;v.key.shadow.needsUpdate=true;
+    const scale=v.scale.setFromMatrixScale(group.matrixWorld).length()/Math.sqrt(3);
+    const r=Math.max(.02,v.span*scale),center=v.center.set(0,v.size.y*.35,0).applyMatrix4(group.matrixWorld);
+    v.key.position.copy(center).add(v.offset.set(r*.7,r*1.6,r*.8));v.key.target.position.copy(center);
     const cam=v.key.shadow.camera;cam.left=cam.bottom=-r;cam.right=cam.top=r;cam.near=r*.03;cam.far=r*5;cam.updateProjectionMatrix();
     v.key.shadow.normalBias=r*.001;v.key.shadow.bias=-.00015;
     if(group.userData.grpSombra)group.userData.grpSombra.visible=false;
