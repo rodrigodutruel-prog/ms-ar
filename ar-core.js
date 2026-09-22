@@ -1016,6 +1016,59 @@ function parseMTL(txt){
 // mismo que EdgesGeometry con Map de enteros sobre los indices ya unificados:
 // 100.000 caras en ~0,2 s. Criterio: borde (una sola cara) o diedro >= angulo.
 // Si sobran, se quedan las mas vivas hasta el tope.
+// SOMBREADO SUAVE con angulo de quiebre. parseOBJ arma la malla sin indexar, asi que
+// computeVertexNormals() da UNA normal por cara y toda superficie curva se ve como un
+// poliedro (Rodrigo: "se ve de muy baja calidad"). Esto promedia, en cada esquina, las
+// normales de las caras que comparten la POSICION (el OBJ repite puntos) y cuyo diedro
+// con la cara es menor que el angulo: las curvas quedan lisas y los cantos vivos siguen
+// planos, con el mismo criterio (24 grados) con el que se dibujan las aristas negras.
+function normalesSuaves(vs, todos, anguloDeg){
+  const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
+  if(!nt || !nv) return null;
+  const remap = new Int32Array(nv), claves = new Map();
+  let nu = 0;
+  for(let i=0;i<nv;i++){
+    const k = Math.round(vs[i*3]*100) + ',' + Math.round(vs[i*3+1]*100) + ',' + Math.round(vs[i*3+2]*100);
+    let id = claves.get(k);
+    if(id === undefined){ id = nu++; claves.set(k, id); }
+    remap[i] = id;
+  }
+  claves.clear();
+  // normal de cada cara y ANGULO de cada esquina: el peso por angulo hace que el resultado no
+  // dependa de como Inventor corto cada cuadrilatero en triangulos (por area se desbalancea).
+  const fn = new Float32Array(nt*3), ang = new Float32Array(nt*3);
+  for(let t=0;t<nt;t++){
+    const a = todos[t*3]*3, b = todos[t*3+1]*3, c = todos[t*3+2]*3;
+    const ux=vs[b]-vs[a], uy=vs[b+1]-vs[a+1], uz=vs[b+2]-vs[a+2], wx=vs[c]-vs[a], wy=vs[c+1]-vs[a+1], wz=vs[c+2]-vs[a+2];
+    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.hypot(x,y,z)||1;
+    fn[t*3]=x/l; fn[t*3+1]=y/l; fn[t*3+2]=z/l;
+    const lu=Math.hypot(ux,uy,uz)||1, lw=Math.hypot(wx,wy,wz)||1;
+    const vx=vs[c]-vs[b], vy=vs[c+1]-vs[b+1], vz=vs[c+2]-vs[b+2], lv=Math.hypot(vx,vy,vz)||1;
+    const aA = Math.acos(Math.max(-1,Math.min(1,(ux*wx+uy*wy+uz*wz)/(lu*lw))));
+    const aB = Math.acos(Math.max(-1,Math.min(1,(-ux*vx-uy*vy-uz*vz)/(lu*lv))));
+    ang[t*3]=aA; ang[t*3+1]=aB; ang[t*3+2]=Math.max(0,Math.PI-aA-aB);
+  }
+  // caras por posicion (CSR)
+  const cnt = new Int32Array(nu+1);
+  for(let i=0;i<nt*3;i++) cnt[remap[todos[i]]+1]++;
+  for(let p=0;p<nu;p++) cnt[p+1] += cnt[p];
+  const lista = new Int32Array(nt*3), fill = cnt.slice(0, nu);
+  for(let i=0;i<nt*3;i++){ const p = remap[todos[i]]; lista[fill[p]++] = i; }   // esquinas por posicion
+  const cosLim = Math.cos(anguloDeg*Math.PI/180), out = new Float32Array(nt*9);
+  for(let i=0;i<nt*3;i++){
+    const t = (i/3)|0, p = remap[todos[i]];
+    const nx = fn[t*3], ny = fn[t*3+1], nz = fn[t*3+2];
+    let sx=0, sy=0, sz=0;
+    for(let j=cnt[p]; j<cnt[p+1]; j++){
+      const k = lista[j], f = (k/3)|0;
+      if(fn[f*3]*nx + fn[f*3+1]*ny + fn[f*3+2]*nz >= cosLim){ const w = ang[k]; sx += fn[f*3]*w; sy += fn[f*3+1]*w; sz += fn[f*3+2]*w; }
+    }
+    const l = Math.hypot(sx,sy,sz);
+    if(l > 1e-12){ out[i*3]=sx/l; out[i*3+1]=sy/l; out[i*3+2]=sz/l; } else { out[i*3]=nx; out[i*3+1]=ny; out[i*3+2]=nz; }
+  }
+  return out;
+}
+
 function calcularAristas(vs, todos, anguloDeg, tope){
   const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
   if(!nt || !nv) return null;
@@ -1195,7 +1248,9 @@ async function parseOBJ(txt, avance, mtl){
     g.addGroup(nOp, todos.length - nOp, 1);
     g.userData.hayVidrio = true;
   }
-  g.computeVertexNormals();
+  // SOMBREADO SUAVE (curvas lisas, cantos vivos planos); si algo falla, el plano de antes.
+  let nrmSuaves = null; try{ nrmSuaves = normalesSuaves(vs, todos, 24); }catch(e){}
+  if(nrmSuaves) g.setAttribute('normal', new THREE.BufferAttribute(nrmSuaves, 3)); else g.computeVertexNormals();
   // ARISTAS del archivo: si el modelo se simplifico aca dentro, los indices ya
   // no corresponden y se descartan (se recae en el calculo del visor).
   if(aristas.length && !_seSimplifico){
@@ -5555,4 +5610,4 @@ window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bi
               cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, reiniciarPlanoFijo, refrescarHUD, DEMO, VERSION,
               construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote,
-              fotoDelVisor, entregarImagen, calcularAristas };
+              fotoDelVisor, entregarImagen, calcularAristas, normalesSuaves };

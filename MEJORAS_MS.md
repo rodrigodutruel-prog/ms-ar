@@ -1,3 +1,19 @@
+MS AR y 3DDUT AR 4.19.0
+
+Abrir archivos con un toque desde otras aplicaciones y volcar el modelo en la vista AR, sobre la base 4.18.0. Se conservan Ubicar, Ajustar y Fijar, el pasaje binario, las aristas, las sombras, las texturas, la oclusión y la foto.
+
+- Abrir con / Compartir. Un OBJ, STL, JSON o MTL recibido por WhatsApp, guardado en Archivos o adjunto en un correo se abre en la aplicación con un toque: al tocar el archivo, Android ofrece la app en "Abrir con" (elegir "Siempre" para que no vuelva a preguntar). También aparece en la hoja de Compartir, incluso con varios archivos a la vez (OBJ + MTL). Ya no hace falta guardarlo en una carpeta y buscarlo desde Seleccionar archivo. La app copia el archivo a su caché, lo abre igual que desde el selector y avisa "Modelo recibido". Los tipos que no son modelo se rechazan con un aviso.
+- Volcar y Ladear en la vista AR. Junto a Giro, dos ejes nuevos: Volcar inclina la pieza hacia adelante o atrás (sobre el eje que la cámara ve como derecha) y Ladear la inclina a los costados (sobre el eje adelante). Pasos de 15° o, con Paso fino, de 1°. Volcar 90° para una pieza que el archivo trae acostada de un toque. Los ejes siguen a la cámara: se vuelca respecto de cómo se está mirando.
+- Al volcar, la pieza se vuelve a apoyar: su punto más bajo queda sobre la superficie o la hoja, no enterrado ni flotando. La sombra se recalcula con la pieza volcada (sin sombra durante la fracción de segundo que tarda). Girar 90° y los gestos siguen igual; Ubicar descarta el volcado.
+- Sombreado suave. Los OBJ de Inventor se dibujaban con una normal por cara, así que toda superficie curva (tanques, conos, tubos) se veía como un poliedro, en el visor y en la vista AR. Ahora cada esquina promedia las caras vecinas que comparten la posición hasta un quiebre de 24°, ponderadas por el ángulo de la esquina: las curvas quedan lisas y los cantos vivos siguen planos, con el mismo criterio con el que se dibujan las aristas negras. Vale también para los modelos que la app reduce al abrir. Subir el detalle en el .bat no arreglaba esto; la resolución de exportación de Inventor sí sigue mandando en el tamaño de las facetas.
+
+Uso: recibir el archivo → tocar → la app lo abre. En AR: Ajustar → Volcar 90° si está acostada → Fijar.
+
+Verificación: 64 comprobaciones del volcado y el bloqueo, 41 regresiones del núcleo y service worker (una nueva del sombreado), 42 comprobaciones del puente nativo (cuatro nuevas del archivo recibido), compilación debug y release de ambas marcas. El "Abrir con" desde WhatsApp y el volcado con la cámara real quedan para el teléfono.
+
+Instalar cada APK 4.19.0 sobre la anterior, sin desinstalar, para conservar la biblioteca. Mantiene el identificador y la firma de cada aplicación.
+
+
 MS AR y 3DDUT AR 4.18.0
 
 Controles Ubicar, Ajustar y Fijar dentro de la cámara AR de las dos APK, sobre la base 4.17.0. Se conservan el pasaje binario, las aristas, las sombras, las texturas y la foto a la galería.

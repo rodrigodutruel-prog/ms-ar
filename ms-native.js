@@ -161,6 +161,19 @@
   function release(){active=false;if(S._iniciando==='native-paper')S._iniciando=null;AR.revisarSoporte();}
   window.addEventListener('native-paper-closed',release);
   window.addEventListener('native-paper-error',e=>{release();UI.estado(e.detail?.message||String(e.detail||'No se pudo iniciar la cámara AR.'),'err');});
+  // ARCHIVOS RECIBIDOS desde otra app (WhatsApp, Archivos, correo): la APK los copió a su caché y avisa con
+  // 'native-files' {files:[{name,url}]}. Se bajan por la misma origen y entran por cargarArchivos, como del selector.
+  window.addEventListener('native-files',async e=>{
+    const items=Array.isArray(e.detail?.files)?e.detail.files:[];if(!items.length)return;
+    const nombres=items.map(i=>i.name).join(', ');
+    try{
+      UI.estado('Recibiendo '+nombres+'…','ok');
+      const files=[];
+      for(const it of items){let r=null;try{r=await fetch(it.url,{cache:'no-store'});}catch(_){}if(!r||!r.ok)throw new Error('No se pudo leer '+it.name+'. Volvé a compartirlo o abrilo con Seleccionar archivo.');files.push(new File([await r.blob()],it.name));}
+      const ok=await AR.cargarArchivos(files);
+      if(ok)UI.estado('Modelo recibido: '+nombres+'. Ya podés fijarlo en AR.','ok');
+    }catch(x){UI.estado('Archivo recibido: '+(x.message||x),'err');}
+  });
   window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,get active(){return active;}};
   if(available()){
     document.documentElement.dataset.nativePaper='true';
@@ -169,10 +182,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.18 incorpora Ubicar, Ajustar y Fijar en ambas marcas, ajuste fino sobre la hoja y bloqueo de movimientos accidentales. Conserva sombras, texturas, oclusión y Foto. ';
+    card.textContent='La APK 4.19 abre un OBJ, STL o JSON con un toque desde WhatsApp, Archivos o el correo, y suma Volcar y Ladear en la vista AR para parar una pieza acostada. Conserva Ubicar, Ajustar, Fijar, sombras, texturas, oclusión y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.18';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.18.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.18.0.apk';
+    link.textContent='Descargar APK 4.19';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();
