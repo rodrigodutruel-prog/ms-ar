@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.19.2
+
+Corrección de calidad visual a partir de la foto de la maqueta (figura del operario y conducto).
+
+- Aristas negras con presupuesto. En un CAD limpio las aristas de quiebre son unos pocos por ciento de las caras, pero en una malla densa u orgánica (la figura del operario, un tanque mal teselado) entre el 30 y el 50 % de los bordes supera los 24° y el modelo se llenaba de garabatos negros. Ahora se dibujan como máximo el 10 % de las caras (nunca menos de 2.000 aristas, nunca más de 45.000) y quedan las más vivas: cantos de 90°, bordes y uniones de piezas. Un cubo o una brida conservan todas sus aristas. El preparador de la PC aplica el mismo presupuesto al escribir el archivo, y si un archivo viejo trae de más, la app las recalcula con el presupuesto.
+
+Verificación: 42 regresiones del núcleo y service worker (una nueva con una malla orgánica de 51.000 caras y un cubo), puente nativo, suites de navegador, preparador, compilación de ambas marcas.
+
+Instalar cada APK 4.19.2 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.1
 
 Corrección sobre 4.19.0 a partir de la primera prueba en el teléfono.

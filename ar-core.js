@@ -1253,7 +1253,12 @@ async function parseOBJ(txt, avance, mtl){
   if(nrmSuaves) g.setAttribute('normal', new THREE.BufferAttribute(nrmSuaves, 3)); else g.computeVertexNormals();
   // ARISTAS del archivo: si el modelo se simplifico aca dentro, los indices ya
   // no corresponden y se descartan (se recae en el calculo del visor).
-  if(aristas.length && !_seSimplifico){
+  // PRESUPUESTO de aristas: en un CAD limpio las aristas de quiebre son unos pocos % de las caras; en una
+  // malla densa u organica (la figura del operario, un tanque mal teselado) el 30-50 % de los bordes pasa
+  // los 24 grados y el modelo se llena de garabatos negros (foto de Rodrigo, 22-sep). Se dibujan como
+  // maximo un 10 % de las caras (nunca menos de 2.000, nunca mas del tope), y sobran las MAS VIVAS.
+  const presupuestoAristas = Math.min(AR_TOPE_ARISTAS, Math.max(2000, Math.round(todos.length/3*0.10)));
+  if(aristas.length && !_seSimplifico && aristas.length/2 <= presupuestoAristas){
     try{
       const ap = new Float32Array(aristas.length*3);
       for(let i=0;i<aristas.length;i++){
@@ -1265,12 +1270,13 @@ async function parseOBJ(txt, avance, mtl){
       g.userData.aristasGeo = ga;
     }catch(e){}
   }
-  // Si el archivo no las trae (o se descartaron al simplificar), se calculan aca
-  // sobre la malla final, a cualquier tamano y con tope. Asi el visor y la AR
-  // nativa muestran siempre las aristas negras del sombreado de Inventor.
+  // Si el archivo no las trae (o se descartaron al simplificar, o trae mas que el
+  // presupuesto), se calculan aca sobre la malla final, con el presupuesto y
+  // quedandose con las mas vivas. Asi el visor y la AR nativa muestran siempre
+  // las aristas negras del sombreado de Inventor, sin garabatos.
   if(!g.userData.aristasGeo){
     try{
-      const ga = calcularAristas(vs, todos, 24, AR_TOPE_ARISTAS);
+      const ga = calcularAristas(vs, todos, 24, presupuestoAristas);
       if(ga) g.userData.aristasGeo = ga;
     }catch(e){}
   }
