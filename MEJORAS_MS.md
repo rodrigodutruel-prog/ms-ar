@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.19.4
+
+Herramientas para ver por qué el modelo cae fuera del plano impreso (fotos del 22-sep).
+
+- Marco del QR en la vista AR. Sobre plano impreso, la app dibuja un cuadrado celeste del tamaño exacto del marcador donde cree que está la hoja. Si el cuadrado cae sobre el QR impreso, el anclaje está bien y lo que hay que revisar es la posición del modelo respecto del marcador (los dx/dy del archivo); si cae en otro lado, el problema es el anclaje.
+- Bitácora de la vista AR en el Diagnóstico. Al salir de la vista AR queda anotado cómo se ancló (por la imagen completa con ARCore o por reconstrucción del QR), el tamaño del marcador usado, dónde quedó el ancla respecto de la cámara y hacia dónde apuntan sus ejes en el mundo. Con eso se puede diagnosticar a distancia.
+- La consulta de versión se hace una sola vez por apertura (antes se anotaba dos veces).
+
+Instalar cada APK 4.19.4 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.3
 
 Corrección a partir de la captura "No se pudo abrir Operario.stl".
