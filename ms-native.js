@@ -131,7 +131,10 @@
       const group=motor.construirGrupo(tz);
       try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;return {schema:2,placement:'surface',title:tz.obra||'Modelo',meshes:buildMeshes(group,new T.Vector3(),factor)};}finally{motor.liberarObjeto(group,tz.geo);}
     }
-    const factor=S.factorImpresion||1,scale=Number(mk.escala),width=Number(mk.lado_mm)*.001*factor;
+    // Resolve the ruler measurement against THIS file, including measurements entered before loading it.
+    const measured=document.getElementById('qrMedido'),raw=measured?.value.trim()||'';
+    if(raw&&(!Number.isFinite(Number(raw))||Number(raw)<=10||Number(raw)>2000))throw new Error('Revisá la medida del marco completo: debe ser mayor a 10 mm y no superar 2000 mm.');
+    const factor=raw?Number(raw)/Number(mk.lado_mm):(S.factorImpresion||1),scale=Number(mk.escala),width=Number(mk.lado_mm)*.001*factor;
     if(!(scale>0&&Number.isFinite(scale)&&width>=.01&&width<=2&&factor>0))throw new Error('El archivo no indica una escala y un tamaño de marcador válidos.');
     const geometry=await MSPaper.embeddedMarker(mk),center=motor.centroMarcador(tz,mk);
     const group=motor.construirGrupo(tz);
@@ -166,10 +169,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.17 incorpora ubicación automática por QR, seguimiento espacial al mover el teléfono, ajuste con gestos y botones, oclusión por paredes y el botón Foto. ';
+    card.textContent='La APK 4.18 incorpora Ubicar, Ajustar y Fijar en ambas marcas, ajuste fino sobre la hoja y bloqueo de movimientos accidentales. Conserva sombras, texturas, oclusión y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.17';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.17.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.17.0.apk';
+    link.textContent='Descargar APK 4.18';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.18.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.18.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

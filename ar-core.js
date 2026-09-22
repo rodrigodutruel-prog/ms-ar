@@ -5469,7 +5469,7 @@ $('inpArchivo').addEventListener('change', ev => {
 });
 
 const _selImp = document.getElementById('selImpreso');
-if(_selImp) _selImp.addEventListener('change', () => { S.factorImpresion = parseFloat(_selImp.value) || 0; S._facMedido = 0; S._facPlano = 0; S._facPlanoN = 0; });
+if(_selImp) _selImp.addEventListener('change', () => { const measured=document.getElementById('qrMedido'); if(measured)measured.value=''; S.factorImpresion = parseFloat(_selImp.value) || 0; S._facMedido = 0; S._facPlano = 0; S._facPlanoN = 0; });
 // MEDIR EL QR CON UNA REGLA: el camino infalible cuando la impresora achica la
 // hoja. Se escribe cuánto mide el cuadrado impreso y sale el factor exacto.
 const _qrMed = document.getElementById('qrMedido');
@@ -5479,7 +5479,7 @@ if(_qrMed) _qrMed.addEventListener('input', () => {
   if(v > 10 && lado > 0){
     S.factorImpresion = v / lado; S._facMedido = 0; S._facPlano = 0; S._facPlanoN = 0;
     UI.estado('QR medido: ' + v + ' mm sobre ' + lado + ' mm → la hoja está impresa al ' + Math.round(S.factorImpresion*100) + ' %.', 'ok');
-  }else if(!v){
+  }else{
     S.factorImpresion = parseFloat(_selImp && _selImp.value) || 0;
   }
 });

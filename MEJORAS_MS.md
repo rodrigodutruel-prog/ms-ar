@@ -1,3 +1,21 @@
+MS AR y 3DDUT AR 4.18.0
+
+Controles Ubicar, Ajustar y Fijar dentro de la cámara AR de las dos APK, sobre la base 4.17.0. Se conservan el pasaje binario, las aristas, las sombras, las texturas y la foto a la galería.
+
+- Ubicación por QR o sobre una superficie: la pieza queda fijada automáticamente. Los toques y arrastres no modifican la posición mientras está fijada.
+- Ajustar permite corregir posición, altura y giro. Sobre la hoja: pasos de 1 o 5 mm; sobre superficie: 1 o 10 cm. Giros de 1°, 15° y 90°. Fijar guarda la posición mostrada y cierra los ajustes; el estado Fijado aparece en verde.
+- Los ajustes conservan un único anclaje espacial. Antes se reemplazaba el anclaje con cada desplazamiento sobre una superficie. Ahora se modifican coordenadas locales; el arrastre tampoco salta a otra mesa o piso.
+- Ubicar descarta los ajustes y vuelve a buscar el QR o la superficie. Al interrumpir la cámara o perder el seguimiento, se bloquean los ajustes y se descartan gestos pendientes.
+- La medida del marco introducida con regla se calcula con las dimensiones del archivo actual, aunque se haya escrito antes de abrirlo. Las medidas inválidas muestran un aviso y elegir una reducción de impresión sustituye la medida manual.
+- Se evita usar mapas de profundidad de cuadros anteriores, que podían ocultar partes del modelo desde una posición de cámara incorrecta. Si falla una captura de foto, el botón permite reintentar.
+
+Uso: escanear → Ajustar si hace falta → Fijar. Para reconocer nuevamente la hoja, tocar Ubicar. Fijar bloquea la edición: el anclaje sigue usando la cámara y los sensores para conservar su posición en el entorno.
+
+Verificación: compilaciones debug y release de ambas marcas; 42 comprobaciones del bloqueo y los desplazamientos; 40 regresiones del núcleo y service worker; 38 comprobaciones del puente nativo; calibración física y flujos de navegador de ambas marcas. Pruebas Android con ARCore en emulador: lectura del QR, movimiento de cámara, ajustes, bloqueo y reubicación. Esto no certifica precisión milimétrica del seguimiento en un teléfono físico. El Motorola Edge 20 Pro y la oclusión Depth API requieren comprobación en el equipo; el emulador no ofrece esa API.
+
+Instalar cada APK 4.18.0 sobre la anterior, sin desinstalar, para conservar la biblioteca. Mantiene el identificador y la firma de cada aplicación.
+
+
 MS AR y 3DDUT AR 4.17.0
 
 Ajuste y oclusión en la vista AR de la APK, a pedido de la primera prueba de la 4.16.1.
