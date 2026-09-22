@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.19.5
+
+Todo formato se ve como un dibujo de Inventor (regla fija).
+
+- STL con sombreado suave y aristas negras. Un STL abierto directo, en texto o binario, entraba con normales planas o promediadas sin quiebre y sin aristas, y el visor le calculaba las aristas en el hilo principal (se trababa) y sin presupuesto (garabatos). Ahora termina igual que el OBJ: normales suaves con quiebre de 24°, aristas negras con presupuesto quedándose con las más vivas, calculadas con el mismo método rápido, y viajan a la vista AR nativa como en el OBJ. Vale también para los STL recibidos por Abrir con o Compartir y para los reducidos al abrir.
+
+Verificación: 43 regresiones del núcleo (una nueva con un prisma STL en texto y en binario: tapas planas, laterales suaves, solo los cantos como aristas), puente nativo, suites de navegador, compilación de ambas marcas.
+
+Instalar cada APK 4.19.5 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.4
 
 Herramientas para ver por qué el modelo cae fuera del plano impreso (fotos del 22-sep).

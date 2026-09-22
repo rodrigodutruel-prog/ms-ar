@@ -200,7 +200,7 @@
     card.textContent='La APK 4.19 abre un OBJ, STL o JSON con un toque desde WhatsApp, Archivos o el correo, y suma Volcar y Ladear en la vista AR para parar una pieza acostada. Conserva Ubicar, Ajustar, Fijar, sombras, texturas, oclusión y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
     link.textContent='Descargar APK 4.19';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.4/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.4.apk';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.5/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.5.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

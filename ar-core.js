@@ -165,6 +165,31 @@ function liberarObjeto(objeto, conservar){
   geometrias.forEach(g => g.dispose());
 }
 
+// TODO FORMATO SE VE COMO UN DIBUJO DE INVENTOR (regla de Rodrigo): el STL (ASCII o binario)
+// entraba con normales planas o promediadas sin quiebre y sin aristas, y el visor le calculaba
+// EdgesGeometry en el hilo principal (se trababa) y sin presupuesto (garabatos). Ahora termina
+// igual que el OBJ: geometria sin indexar, normales suaves con quiebre de 24 grados y aristas
+// negras con presupuesto (las mas vivas). parseOBJ ya lo hace y se salta esto.
+function terminarGeometria(g){
+  if(!g || !g.getAttribute('position') || (g.userData && g.userData.aristasGeo)) return g;
+  try{
+    let vs, todos;
+    if(g.index){
+      vs = g.getAttribute('position').array; todos = g.index.array;
+      const gi = g.toNonIndexed();               // una normal por esquina: hace falta sin indexar
+      gi.userData = Object.assign({}, g.userData); g.dispose && g.dispose(); g = gi;
+    }else{
+      vs = g.getAttribute('position').array; const nv = (vs.length/3)|0;
+      todos = new Int32Array(nv); for(let i=0;i<nv;i++) todos[i]=i;
+    }
+    const nrm = normalesSuaves(vs, todos, 24);
+    if(nrm) g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); else g.computeVertexNormals();
+    const presupuesto = Math.min(AR_TOPE_ARISTAS, Math.max(2000, Math.round(todos.length/3*0.10)));
+    const ga = calcularAristas(vs, todos, 24, presupuesto);
+    if(ga) g.userData.aristasGeo = ga;
+  }catch(e){ if(!g.getAttribute('normal')) g.computeVertexNormals(); }
+  return g;
+}
 function validarGeometria(g){
   const p = g && g.getAttribute('position');
   const n = g && g.index ? g.index.count : (p && p.count);
@@ -172,6 +197,7 @@ function validarGeometria(g){
   for(let i=0; i<p.array.length; i++){
     if(!Number.isFinite(p.array[i])) throw new Error('El modelo contiene coordenadas inválidas.');
   }
+  g = terminarGeometria(g);
   g.computeBoundingBox();
   if(g.boundingBox.getSize(new THREE.Vector3()).lengthSq() === 0) throw new Error('El modelo no tiene dimensiones.');
   return g;
