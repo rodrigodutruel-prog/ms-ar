@@ -1,3 +1,16 @@
+MS AR y 3DDUT AR 4.19.1
+
+Corrección sobre 4.19.0 a partir de la primera prueba en el teléfono.
+
+- Modelo fijado más quieto. Una vez tocado Fijar, la posición del ancla pasa por un filtro: los temblores y las correcciones chicas del seguimiento (por ejemplo cuando una mano pasa delante de la cámara o hay pocas referencias) se amortiguan en lugar de mostrarse cuadro a cuadro, y un salto grande de relocalización se toma entero para no deslizar el modelo por el ambiente. Mientras se ajusta, la posición va cruda para que los botones respondan al instante. Si la cámara queda tapada del todo, el seguimiento se pierde y el modelo se oculta hasta recuperarlo; al volver, la posición nueva se toma sin arrastre. El seguimiento sigue siendo el del teléfono: con la cámara tapada o en movimiento brusco puede haber una corrección al recuperarlo.
+- STL desde WhatsApp. Algunas aplicaciones entregan el archivo con un tipo MIME poco común o sin nombre: ahora la extensión se infiere también por el tipo del archivo y, si tampoco, por su contenido (STL ASCII o binario, OBJ, MTL, JSON). Se aceptan más tipos MIME de STL y OBJ en "Abrir con", y Compartir ofrece la app para cualquier archivo, validando al recibirlo. Si "Abrir con" no ofrece la app, usar Compartir.
+- Aviso de versión nueva. La APK trae la web adentro y no se actualiza sola: el botón "Actualizar aplicación" de Más opciones es de la versión web instalada desde el navegador, no de la APK. Ahora, al abrir, la app consulta el último release de su marca y, si es más nuevo que el instalado, muestra arriba "Hay una versión nueva" con el link para bajar la APK. Se instala encima, sin desinstalar, y conserva la biblioteca. Sin conexión no avisa y no molesta.
+
+Verificación: 64 comprobaciones del volcado y el bloqueo, 22 del filtro de pose, 10 de comparación de versiones, 41 regresiones del núcleo y service worker, 48 del puente nativo (STL recibido y aviso de versión incluidos), compilación debug y release de ambas marcas y prueba en emulador del "Abrir con" con STL sin extensión. La amortiguación con cámara real queda para el teléfono.
+
+Instalar cada APK 4.19.1 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.0
 
 Abrir archivos con un toque desde otras aplicaciones y volcar el modelo en la vista AR, sobre la base 4.18.0. Se conservan Ubicar, Ajustar y Fijar, el pasaje binario, las aristas, las sombras, las texturas, la oclusión y la foto.
