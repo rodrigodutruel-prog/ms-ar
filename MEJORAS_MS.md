@@ -1,3 +1,16 @@
+MS AR y 3DDUT AR 4.19.3
+
+Corrección a partir de la captura "No se pudo abrir Operario.stl".
+
+- El aviso dice el motivo. Antes cualquier falla al recibir un archivo mostraba "No se pudo abrir X". Ahora dice por qué: pesa más de 150 MB (el tope de carga del teléfono; se indica el peso y que se prepare en la PC con Preparar_OBJ_para_AR.bat, que lo deja en unos 4 MB), la app que lo mandó no dio permiso de lectura (probar con Compartir), el archivo ya no está disponible, o no es un modelo. Y todo queda anotado en el Diagnóstico de Más opciones, que antes venía vacío porque la parte nativa no escribía ahí: archivo recibido, tamaño, resultado y consulta de versión.
+- Abrir con para cualquier tipo de archivo. Algunas apps entregan el STL con un tipo que no estaba en la lista y no ofrecían la app; ahora aparece siempre y valida al recibir.
+- Tarjeta de versión nueva arriba de todo. Se insertaba debajo del selector de hoja, que en la APK queda oculto, y no se veía. Ahora es la primera tarjeta de la pantalla. La consulta se repite al volver a la app, no solo al abrirla de cero.
+
+Verificación: banco del puente nativo con la tarjeta y el registro, núcleo, preparador y compilación de ambas marcas.
+
+Instalar cada APK 4.19.3 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.2
 
 Corrección de calidad visual a partir de la foto de la maqueta (figura del operario y conducto).

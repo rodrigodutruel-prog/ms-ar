@@ -167,23 +167,28 @@
     const items=Array.isArray(e.detail?.files)?e.detail.files:[];if(!items.length)return;
     const nombres=items.map(i=>i.name).join(', ');
     try{
-      UI.estado('Recibiendo '+nombres+'…','ok');
+      UI.estado('Recibiendo '+nombres+'…','ok');try{AR.registrar&&AR.registrar('archivo recibido: '+nombres);}catch(_){}
       const files=[];
       for(const it of items){let r=null;try{r=await fetch(it.url,{cache:'no-store'});}catch(_){}if(!r||!r.ok)throw new Error('No se pudo leer '+it.name+'. Volvé a compartirlo o abrilo con Seleccionar archivo.');files.push(new File([await r.blob()],it.name));}
       const ok=await AR.cargarArchivos(files);
       if(ok)UI.estado('Modelo recibido: '+nombres+'. Ya podés fijarlo en AR.','ok');
-    }catch(x){UI.estado('Archivo recibido: '+(x.message||x),'err');}
+    }catch(x){UI.estado('Archivo recibido: '+(x.message||x),'err');try{AR.registrar&&AR.registrar('archivo recibido, error: '+(x.message||x));}catch(_){}}
   });
   // VERSION NUEVA: la APK consulta el release al abrir y avisa con 'native-update' {version,url}. La tarjeta
   // va arriba, con el link a la APK; en la APK el link se abre en el navegador del teléfono y se instala encima.
   window.addEventListener('native-update',e=>{
     const v=String(e.detail?.version||''),url=String(e.detail?.url||'');if(!v||!/^https:\/\//.test(url))return;
     let card=document.getElementById('nativeUpdate');
-    if(!card){card=document.createElement('div');card.className='nota';card.id='nativeUpdate';document.getElementById('msModoPapel').after(card);}
+    // ARRIBA DE TODO (primera tarjeta de la página): debajo del selector de hoja quedaba oculta en la APK.
+    if(!card){card=document.createElement('section');card.className='card';card.id='nativeUpdate';card.style.borderColor='#30d69b';const main=document.querySelector('main')||document.body;main.insertBefore(card,main.firstElementChild);}
     card.textContent='Hay una versión nueva de la aplicación: '+v+' (instalada: '+(window.NativePaper?.version?.()||'?')+'). Se instala encima, sin desinstalar, y conserva la biblioteca. ';
     const link=document.createElement('a');link.textContent='Descargar APK '+v;link.href=url;link.target='_blank';link.rel='noopener';card.append(link);
     UI.estado('Hay una versión nueva de la aplicación ('+v+'). El link para bajarla está arriba.','ok');
+    try{AR.registrar&&AR.registrar('versión nueva publicada: '+v);}catch(_){}
   });
+  // REGISTRO: lo que pasa en la APK (archivos recibidos, consulta de versión) queda en el Diagnóstico del
+  // teléfono, que antes venía vacío porque la parte nativa no escribía ahí.
+  window.addEventListener('native-log',e=>{const t=String(e.detail?.text||'');if(!t)return;try{AR.registrar&&AR.registrar('APK: '+t);}catch(_){}if(e.detail?.error)UI.estado(t,'err');});
   window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,get active(){return active;}};
   if(available()){
     document.documentElement.dataset.nativePaper='true';
@@ -195,7 +200,7 @@
     card.textContent='La APK 4.19 abre un OBJ, STL o JSON con un toque desde WhatsApp, Archivos o el correo, y suma Volcar y Ladear en la vista AR para parar una pieza acostada. Conserva Ubicar, Ajustar, Fijar, sombras, texturas, oclusión y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
     link.textContent='Descargar APK 4.19';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.2/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.2.apk';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.3/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.3.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

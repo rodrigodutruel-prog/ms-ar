@@ -5616,4 +5616,4 @@ window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bi
               cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, reiniciarPlanoFijo, refrescarHUD, DEMO, VERSION,
               construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote,
-              fotoDelVisor, entregarImagen, calcularAristas, normalesSuaves };
+              fotoDelVisor, entregarImagen, calcularAristas, normalesSuaves, registrar };
