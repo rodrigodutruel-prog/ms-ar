@@ -299,7 +299,43 @@ function etiqueta(texto, color){
 
 function construirGrupo(tz){
   const grupo=construirGrupoBase(tz);
+  // ARISTAS NEGRAS DE LA RED (regla: todo formato como dibujo de Inventor). El modelo de la
+  // Calculadora se arma pieza por pieza y no pasaba por parseOBJ/validarGeometria: se calculan
+  // aca, sobre las piezas ya armadas, con el mismo metodo rapido y el mismo presupuesto.
+  if(!(tz && tz.esModelo)) try{ agregarAristasRed(grupo); }catch(e){}
   return window.MSVisual ? MSVisual.prepare(grupo,tz) : grupo;
+}
+// Junta la geometria de las piezas solidas del grupo (tubos, codos, bridas, valvulas, cajas
+// solidas; NO grilla, etiquetas, referencia, replanteo, alambres ni lineas) en un solo arreglo
+// y le calcula las aristas con calcularAristas. Una unica LineSegments negra, rol 'aristas'.
+function agregarAristasRed(grupo){
+  const excluidos = ['grilla','etiquetas','referencia','replanteo','pivote','aristas','sombra'];
+  grupo.updateMatrixWorld(true);
+  const vsL = [], todosL = []; let base = 0;
+  const p = new THREE.Vector3(), m4 = new THREE.Matrix4(), inst = new THREE.Matrix4();
+  (function visitar(o){
+    if(!o.visible || excluidos.includes(o.userData && o.userData.rol)) return;
+    if(o.isMesh && o.geometry && o.geometry.getAttribute('position') && !(o.material && o.material.wireframe)){
+      const g = o.geometry, pos = g.getAttribute('position'), idx = g.index, n = o.isInstancedMesh ? o.count : 1;
+      for(let j=0;j<n;j++){
+        m4.copy(o.matrixWorld); if(o.isInstancedMesh){ o.getMatrixAt(j, inst); m4.multiply(inst); }
+        for(let i=0;i<pos.count;i++){ p.fromBufferAttribute(pos, i).applyMatrix4(m4); vsL.push(p.x, p.y, p.z); }
+        if(idx){ for(let i=0;i<idx.count;i++) todosL.push(base + idx.getX(i)); }
+        else { for(let i=0;i<pos.count;i++) todosL.push(base + i); }
+        base += pos.count;
+      }
+    }
+    if(o.children) for(const c of o.children) visitar(c);
+  })(grupo);
+  if(!todosL.length) return null;
+  const vs = new Float32Array(vsL), todos = new Int32Array(todosL);
+  const presupuesto = Math.min(AR_TOPE_ARISTAS, Math.max(2000, Math.round(todos.length/3*0.10)));
+  const ga = calcularAristas(vs, todos, 24, presupuesto);
+  if(!ga) return null;
+  const lineas = new THREE.LineSegments(ga, new THREE.LineBasicMaterial({ color:AR_COLOR_ARISTAS, transparent:true, opacity:.9 }));
+  lineas.userData.rol = 'aristas'; lineas.renderOrder = 2;
+  grupo.add(lineas); grupo.userData.grpAristas = lineas;
+  return lineas;
 }
 function construirGrupoBase(tz){
   if(tz && tz.esModelo) return construirGrupoModelo(tz);

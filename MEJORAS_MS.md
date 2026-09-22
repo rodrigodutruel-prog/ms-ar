@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.19.6
+
+El modelo de la Calculadora también se ve como un dibujo de Inventor.
+
+- Aristas negras en la red de conductería. El JSON de la Calculadora se arma pieza por pieza (tubos, codos, bridas, válvulas, cajas) y no pasaba por el mismo camino que el OBJ y el STL, así que salía sin aristas. Ahora, al armar la red, se calculan las aristas sobre las piezas ya armadas con el mismo método rápido y el mismo presupuesto (24°, hasta el 10 % de las caras, las más vivas): quedan marcados los bordes de bridas, codos, reducciones, válvulas y máquinas. Viajan a la vista AR nativa como líneas negras, igual que en el OBJ. La grilla, las etiquetas, la referencia y las cajas de alambre no suman aristas.
+
+Verificación: 44 regresiones del núcleo (nueva: la red de demostración trae aristas negras dentro del presupuesto), 54 del puente nativo (nueva: las aristas de la red llegan al nativo como lotes de líneas negras), suites de navegador y compilación de ambas marcas.
+
+Instalar cada APK 4.19.6 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.5
 
 Todo formato se ve como un dibujo de Inventor (regla fija).
