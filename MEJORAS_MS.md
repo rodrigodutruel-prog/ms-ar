@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.17.0
+
+Ajuste y oclusión en la vista AR de la APK, a pedido de la primera prueba de la 4.16.1.
+
+- Botones de ajuste, como el panel Ajustar de la web, cuando el modelo está apoyado sobre una superficie: ◀ izq / der ▶ y ▲ lejos / ▼ cerca lo mueven respecto de hacia dónde se mira, ↑ subir / ↓ bajar cambian la altura y ⟲ ⟳ lo giran. Pasos de 10 cm y 15°; con Fino: ON, de 1 cm y 1°. Siguen los gestos (1 dedo mueve, 2 dedos giran, un toque re-apoya) y Girar 90°.
+- Paredes (oclusión): con la Depth API de ARCore el modelo se esconde detrás de paredes, columnas, máquinas y personas que quedan delante, como en la realidad. Se apaga y prende con el botón Paredes. En teléfonos sin Depth API el botón queda inactivo y todo lo demás sigue igual.
+
+Pruebas: puente nativo en las dos marcas (38 comprobaciones), regresión del núcleo y del service worker (40), suites de navegador (6), compilación de las dos marcas, y la vista AR nativa probada en un emulador Android 13 con ARCore 1.56 y GPU real: detección de la superficie, apoyar con un toque, los botones (10 cm y 15°, 1 cm y 1° en fino), Girar y la foto a la galería. La oclusión no se puede probar en el emulador (no tiene Depth API): queda para el teléfono.
+
+Instalar la APK 4.17.0 de cada marca sobre la anterior. Conserva los modelos importados en la biblioteca.
+
 MS AR y 3DDUT AR 4.16.1
 
 Corrección sobre 4.15.0 pensada para los modelos reales (maquetas de Inventor de 100.000 caras o más). Conserva el diseño, los materiales, las texturas y las sombras.
