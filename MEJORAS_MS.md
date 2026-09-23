@@ -1,3 +1,17 @@
+MS AR y 3DDUT AR 4.23.0
+
+Corrección a partir del video del 23-sep ("se mueve todo"): el modelo fijado a la hoja quedaba corrido y a la deriva después de que el teléfono perdiera el seguimiento.
+
+- El anclaje sobre la hoja queda pegado a la imagen impresa. Al ubicar por el QR, ARCore reconoce la hoja entera y el anclaje del modelo se crea sobre esa imagen, no sobre un punto suelto del mundo, y la app sigue rastreando la imagen con el modelo ya fijado (hasta ahora se apagaba al fijar, para ahorrar trabajo). Si el seguimiento se pierde, por ejemplo al acercar la cámara a 10 cm de una mesa lisa, y vuelve en un marco corrido, basta con volver a mirar el QR: ARCore realinea el anclaje solo y el modelo vuelve a la hoja. En el video, a los 41 s la app recuperó el seguimiento con el QR a la vista pero ya no lo miraba, y el modelo se fue deslizando fuera de la hoja.
+- Si la hoja se había ubicado por la reconstrucción del QR (cuando ARCore no reconoce la imagen) y más tarde ARCore la reconoce de lleno, el anclaje pasa a la imagen en ese momento, conservando los ajustes hechos.
+- El mensaje mientras se recupera el anclaje sobre la hoja ahora dice qué hacer: "Apuntá al QR de la hoja para volver a alinearla".
+- La bitácora del Diagnóstico anota cuándo el anclaje pasa a la imagen y cada corrección de más de 2 cm que ARCore le aplique (a lo sumo una por 2 s), para ver en el teléfono cuánto se corrigió y cuándo.
+
+Verificación: compilación y baterías Java del módulo nativo, puente nativo, regresiones del núcleo, suites de navegador y, en el emulador, la vista AR sobre la hoja abierta con el plano de la Calculadora (base de imágenes activa en las dos configuraciones). El realineo con la hoja real queda para el teléfono: perder el seguimiento a propósito acercándose a la mesa y volver a mirar el QR.
+
+Instalar cada APK 4.23.0 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.22.0
 
 A partir del Diagnóstico del teléfono del 23-sep: el STL grande recibido por WhatsApp se abre igual, y la bitácora dice hacia dónde apunta la hoja en pantalla.
