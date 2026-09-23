@@ -228,10 +228,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.23 vuelve a alinear el modelo con la hoja al mirar el QR de nuevo tras perder el seguimiento, sobre la 4.22: STL grande reducido en el teléfono, oclusión con bordes suaves, sombra según la luz real, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
+    card.textContent='La APK 4.23.1 mantiene el modelo firme sobre la hoja: lo dibuja con la posición real de cada cuadro, lo oculta si el teléfono pierde el seguimiento hasta volver a ver la hoja y lo realinea al mirar el QR, sobre la 4.22: STL grande reducido en el teléfono, oclusión con bordes suaves, sombra según la luz real, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.23';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.23.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.23.0.apk';
+    link.textContent='Descargar APK 4.23.1';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.23.1/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.23.1.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

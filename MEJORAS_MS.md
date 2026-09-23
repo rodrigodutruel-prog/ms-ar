@@ -1,3 +1,19 @@
+MS AR y 3DDUT AR 4.23.1
+
+Revisión a fondo del anclaje sobre la hoja, a partir del video del 23-sep ("se mueve todo"): el modelo tiene que quedar pegado a la hoja y no mostrarse nunca en un lugar equivocado.
+
+- El modelo se dibuja con la posición real del anclaje en cada cuadro. Hasta la 4.23.0 un filtro suavizaba la posición del anclaje pero no la de la cámara: cuando ARCore corregía su mapa, el modelo se quedaba atrás y parecía deslizarse (una corrección de 10 cm dejaba 8,8 cm de error visible).
+- Si el teléfono pierde el seguimiento (cámara tapada, muy cerca de una mesa lisa, movimiento brusco) o la app se pausa, el modelo se oculta y la app pide volver a mostrar la hoja: "Verificando la hoja. Mostrá el QR y parte de la mesa". Recuperar el seguimiento no alcanza; el modelo vuelve recién cuando la hoja se vio de nuevo y quedó comprobada, y conserva los ajustes hechos con Ajustar (desplazamientos, giro y volcado).
+- Con el modelo pegado a la imagen impresa, la lectura del QR ya no lo mueve: antes las dos mediciones podían turnarse para corregirlo y el modelo iba y venía unos milímetros. El QR se usa para ubicar, para recuperar la hoja tras una pérdida y cuando ARCore no reconoce la imagen. Si la hoja se ubicó por el QR y después ARCore reconoce la imagen de lleno, el anclaje se pega a la imagen aunque la diferencia sea chica.
+- Al fijar ya no se reconfigura la sesión de ARCore, lo que podía reiniciar el reconocimiento de la hoja justo al pegar el anclaje.
+- Un fallo puntual de ARCore al leer la hoja ya no cierra la vista AR: se pierde ese cuadro y sigue.
+- El botón Fijar se ve apagado mientras no hay nada fijado (antes parecía activo y no respondía).
+- El estado distingue "Fijado a la hoja · referencia visible" de "Fijado · seguimiento del entorno". La bitácora del Diagnóstico anota las pérdidas y recuperaciones y, mientras busca la hoja, cada 5 s si ARCore reconoce la imagen, el tamaño del QR y por qué todavía no hay posición.
+
+Verificación: baterías Java del módulo nativo (registro de la hoja con cambios del mapa, pérdida y recuperación, y qué medición manda), reconstrucción del QR, shaders, regresiones del núcleo, puente nativo y compilación release de las dos marcas. En el emulador la app lee el QR de la hoja sobre una mesa virtual, pero el emulador no sostiene el seguimiento de ARCore; la prueba de perder el seguimiento y volver a la hoja se hace en el teléfono.
+
+Instalar cada APK 4.23.1 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.23.0
 
 Corrección a partir del video del 23-sep ("se mueve todo"): el modelo fijado a la hoja quedaba corrido y a la deriva después de que el teléfono perdiera el seguimiento.
