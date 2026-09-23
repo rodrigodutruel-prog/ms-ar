@@ -218,7 +218,8 @@
   });
   // REGISTRO: lo que pasa en la APK (archivos recibidos, consulta de versión) queda en el Diagnóstico del
   // teléfono, que antes venía vacío porque la parte nativa no escribía ahí.
-  window.addEventListener('native-log',e=>{const t=String(e.detail?.text||'');if(!t)return;try{AR.registrar&&AR.registrar('APK: '+t);}catch(_){}if(e.detail?.error)UI.estado(t,'err');});
+  // con estado:true también se muestra en la línea de estado (avance de un STL grande que se reduce en el teléfono, v4.22)
+  window.addEventListener('native-log',e=>{const t=String(e.detail?.text||'');if(!t)return;try{AR.registrar&&AR.registrar('APK: '+t);}catch(_){}if(e.detail?.error)UI.estado(t,'err');else if(e.detail?.estado)UI.estado(t,'ok');});
   window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,STRIDE,get active(){return active;}};
   if(available()){
     document.documentElement.dataset.nativePaper='true';
@@ -227,10 +228,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.21 suma oclusión por paredes con bordes suaves, sombra según la luz real del lugar y aristas con grosor según la pantalla, sobre la 4.20: vista AR a la resolución de la pantalla con antialias de 4 muestras y luz del ambiente, modelos grandes en la mitad de tiempo, Abrir con desde WhatsApp, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
+    card.textContent='La APK 4.22 abre un STL grande recibido por WhatsApp reduciéndolo en el teléfono (sin pasar por la PC), sobre la 4.21: oclusión con bordes suaves, sombra según la luz real, aristas con grosor de pantalla, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.21';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.21.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.21.0.apk';
+    link.textContent='Descargar APK 4.22';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.22.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.22.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

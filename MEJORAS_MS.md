@@ -1,3 +1,15 @@
+MS AR y 3DDUT AR 4.22.0
+
+A partir del Diagnóstico del teléfono del 23-sep: el STL grande recibido por WhatsApp se abre igual, y la bitácora dice hacia dónde apunta la hoja en pantalla.
+
+- STL grande reducido en el teléfono. Un STL de más de 40 MB recibido por Abrir con o Compartir (la figura del operario pesa 327 MB) ya no se rechaza: la app lo lee por pasadas desde la aplicación que lo mandó, sin copiarlo entero, agrupa los vértices por celda de una rejilla como hace Preparar_OBJ_para_AR en la PC y abre el resultado de unas 110.000 caras con sombreado suave y aristas negras. El avance se ve en la línea de estado ("pasada 2: 84.000 caras") y el resultado queda en el Diagnóstico. Vale para STL binario y de texto. Sin colores (un STL no los trae); un OBJ de más de 150 MB sigue pidiendo la PC.
+- Ejes de la hoja en pantalla. Al anclar sobre el plano impreso, la bitácora de la vista AR anota además hacia dónde apuntan en pantalla el +X y el +Z de la hoja (derecha y arriba). Con el teléfono sobre la hoja en posición de lectura se espera +X hacia la derecha y +Z hacia abajo; si sale al revés, el corrimiento del modelo sobre el plano está en el anclaje y no en el archivo.
+
+Verificación: 9 baterías Java del módulo nativo (nueva: STL binario de 320.000 triángulos reducido a menos de 110.000 caras en pocas pasadas, tope chico, tamaño desconocido, STL de texto entero, archivos truncados o vacíos rechazados), 44 regresiones del núcleo y service worker, 56 comprobaciones del puente nativo, suites de navegador, compilación de ambas marcas y, en el emulador, un STL de 60 MB recibido por Abrir con, reducido y abierto.
+
+Instalar cada APK 4.22.0 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.21.0
 
 Segunda vuelta de calidad sobre la 4.20.0 (probada en el teléfono): oclusión más limpia, sombra según la luz real, aristas con grosor de pantalla y el preparador de la PC más rápido.
