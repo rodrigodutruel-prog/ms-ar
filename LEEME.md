@@ -17,3 +17,4 @@
 Commit + push a `main` (GitHub Pages desde /(root)). La URL no cambia:
 https://rodrigodutruel-prog.github.io/ms-ar/
 En el celu: Chrome → menú ⋮ → Instalar aplicación.
+APK: proyecto en ..\ms-ar-apk (WebView con esta web adentro + vista AR nativa con ARCore). Se recompila y publica con cada versión; el detalle está en ..\..\LEEME_AR.md.

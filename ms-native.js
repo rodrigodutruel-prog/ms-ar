@@ -5,27 +5,29 @@
    de texto en un JSON (positions/normals/colors): con la maqueta de FITECMA
    (108.000 caras después de decimar) eran 23 MB de JSON que el visor armaba con
    326 MB de memoria, y que del lado Java se parseaban DOS veces en objetos Double.
-   Ahora cada lote es un Float32Array intercalado (posición, normal, color = 9
-   floats por vértice), en base64 little-endian: 4 bytes por número en vez de ~9
-   caracteres, y Java lo copia derecho a un buffer de GL sin parsear nada.
-   Schema 2. La APK 4.16 lo lee; la 4.15 no (avisa "formato no compatible").
-   Las aristas negras del modelo (LineSegments del visor) viajan como lotes de lineas. */
+   v4.20 — ESQUEMA 3. Cada vértice ocupa 20 bytes (posición float32, normal y color
+   en bytes) en vez de 36, y el blob no viaja dentro del JSON: se pasa por tandas a
+   un archivo de la APK (NativePaper.open/append) y recién después se manda el
+   encabezado chico con NativePaper.start. Java lee el archivo derecho a un buffer
+   de GL: no parsea ningún JSON grande ni decodifica 20 MB de base64 de una vez.
+   Las aristas negras del modelo (LineSegments del visor) viajan como lotes de líneas. */
 (() => {
   'use strict';
   const {S,UI,motor}=AR,T=THREE;
   const available=()=>!!(window.NativePaper && typeof NativePaper.start==='function');
-  const MAX_TRIANGULOS=250000;
+  const MAX_TRIANGULOS=250000,STRIDE=20,TANDA=768*1024;   // bytes por vértice; bytes binarios por tanda (1 MB en base64)
   let active=false;
-
-  // base64 de un Float32Array, por tandas (String.fromCharCode con millones de
+  // base64 de un arreglo de bytes, por tandas (String.fromCharCode con millones de
   // argumentos revienta la pila).
-  function base64(f32){
-    const bytes=new Uint8Array(f32.buffer,f32.byteOffset,f32.byteLength);
+  function base64(bytes){
+    if(!(bytes instanceof Uint8Array))bytes=new Uint8Array(bytes.buffer,bytes.byteOffset,bytes.byteLength);
     const partes=[];
     for(let i=0;i<bytes.length;i+=0x8000)partes.push(String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)));
     return btoa(partes.join(''));
   }
+  const clamp01=v=>v<0?0:v>1?1:v;
   function buildMeshes(group,center,scale){
+    if(new Uint8Array(new Uint16Array([1]).buffer)[0]!==1)throw new Error('Este dispositivo no es little-endian.');
     const p=new T.Vector3(),n=new T.Vector3(),mat4=new T.Matrix4(),instance=new T.Matrix4(),normal=new T.Matrix3();
     const excluidos=['grilla','etiquetas','referencia','replanteo'];
     group.updateMatrixWorld(true);
@@ -81,25 +83,34 @@
     });
     if(!total)throw new Error('El archivo no contiene superficies 3D visibles.');
     if(total/3>MAX_TRIANGULOS)throw new Error('El modelo supera '+MAX_TRIANGULOS.toLocaleString('es-AR')+' triángulos. Exportá una copia simplificada para AR.');
-    const meshes=[];
+    const meshes=[],blobs=[];let offset=0;
     for(const lote of lotes.values()){
       const wire=lote.lines||!!lote.material.wireframe,porVertice=(wire&&!lote.lines)?2:1;   // alambre: cada triángulo son 3 segmentos = 6 vértices; las aristas ya vienen de a pares
-      const col=lote.material.color||new T.Color(1,1,1);
-      lote.data=new Float32Array(lote.count*porVertice*9);lote.at=0;lote.wire=wire;
-      lote.out={vertices:'',count:lote.count*porVertice,color:[col.r,col.g,col.b],opacity:lote.material.transparent?lote.material.opacity:1,
+      const col=lote.material.color||new T.Color(1,1,1),count=lote.count*porVertice,buf=new ArrayBuffer(count*STRIDE);
+      lote.f32=new Float32Array(buf);lote.i8=new Int8Array(buf);lote.u8=new Uint8Array(buf);lote.at=0;lote.wire=wire;
+      lote.tint=[col.r,col.g,col.b];
+      lote.out={offset,count,color:[col.r,col.g,col.b],opacity:lote.material.transparent?lote.material.opacity:1,
                 roughness:lote.material.roughness??.65,metalness:lote.material.metalness??0,wireframe:wire};
-      meshes.push(lote.out);
+      meshes.push(lote.out);blobs.push(lote.u8);offset+=count*STRIDE;
     }
     const esquina=[new Float32Array(9),new Float32Array(9),new Float32Array(9)];
     const ORDEN_TRI=[0,1,2],ORDEN_LINEAS=[0,1,1,2,2,0];
+    // un vértice del blob: xyz float32, normal en bytes con signo (+1 de relleno), color en bytes (+1 de relleno)
+    function poner(lote,x,y,z,nx,ny,nz,r,g,b){
+      const at=lote.at,w=at>>2,f32=lote.f32,i8=lote.i8,u8=lote.u8,tint=lote.tint;
+      f32[w]=x;f32[w+1]=y;f32[w+2]=z;
+      i8[at+12]=Math.round(nx*127);i8[at+13]=Math.round(ny*127);i8[at+14]=Math.round(nz*127);i8[at+15]=0;
+      u8[at+16]=Math.round(clamp01(r*tint[0])*255);u8[at+17]=Math.round(clamp01(g*tint[1])*255);u8[at+18]=Math.round(clamp01(b*tint[2])*255);u8[at+19]=255;
+      lote.at=at+STRIDE;
+    }
     recorrer((material,vertexColors,start,count,idx,pos,ns,colors,lines)=>{
-      const lote=lotes.get(claveDe(material,vertexColors,lines)),d=lote.data,orden=lote.wire?ORDEN_LINEAS:ORDEN_TRI;
+      const lote=lotes.get(claveDe(material,vertexColors,lines)),orden=lote.wire?ORDEN_LINEAS:ORDEN_TRI;
       if(lines){
         for(let k=start;k<start+count;k++){
           const at=idx?idx.getX(k):k;
           p.fromBufferAttribute(pos,at).applyMatrix4(mat4).sub(center).multiplyScalar(scale);
           if(!(Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.z)))throw new Error('El modelo contiene coordenadas inválidas.');
-          d[lote.at]=p.x;d[lote.at+1]=p.y;d[lote.at+2]=p.z;d[lote.at+3]=0;d[lote.at+4]=1;d[lote.at+5]=0;d[lote.at+6]=d[lote.at+7]=d[lote.at+8]=1;lote.at+=9;
+          poner(lote,p.x,p.y,p.z,0,1,0,1,1,1);
         }
         return;
       }
@@ -112,15 +123,17 @@
           c[0]=p.x;c[1]=p.y;c[2]=p.z;c[3]=n.x;c[4]=n.y;c[5]=n.z;
           if(vertexColors){c[6]=colors.getX(at);c[7]=colors.getY(at);c[8]=colors.getZ(at);}else{c[6]=c[7]=c[8]=1;}
         }
-        for(const t of orden){d.set(esquina[t],lote.at);lote.at+=9;}
+        for(const t of orden){const c=esquina[t];poner(lote,c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[7],c[8]);}
       }
     });
-    for(const lote of lotes.values()){lote.out.vertices=base64(lote.data);lote.data=null;}
-    return meshes;
+    for(const lote of lotes.values()){if(lote.at!==lote.count*(lote.wire&&!lote.lines?2:1)*STRIDE)throw new Error('El modelo contiene una malla incompleta.');lote.f32=lote.i8=null;}
+    return {meshes,blobs};
   }
   // Sobre plano impreso SOLO si el archivo trae su hoja con QR; si no, se apoya
   // sobre una superficie (antes: error "Abrí el JSON..." con cualquier OBJ suelto).
   function sobreHoja(){return !!(S.modoPapel&&S.trazado?.marcador?.png);}
+  // el encabezado lleva los blobs colgados en una propiedad NO enumerable: JSON.stringify no los incluye
+  function conBlobs(header,blobs){Object.defineProperty(header,'_blobs',{value:blobs,enumerable:false});return header;}
   async function payload(){
     const tz=S.trazado,mk=tz?.marcador;
     if(!tz)throw new Error('Primero abrí un modelo.');
@@ -129,7 +142,9 @@
       const max=Math.max(tz.medidas.x,tz.medidas.y,tz.medidas.z,.001);
       if(S.escala>1)factor=Math.max(.30/max,Math.min(2/max,factor));
       const group=motor.construirGrupo(tz);
-      try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;return {schema:2,placement:'surface',title:tz.obra||'Modelo',meshes:buildMeshes(group,new T.Vector3(),factor)};}finally{motor.liberarObjeto(group,tz.geo);}
+      try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
+        const {meshes,blobs}=buildMeshes(group,new T.Vector3(),factor);
+        return conBlobs({schema:3,placement:'surface',title:tz.obra||'Modelo',meshes},blobs);}finally{motor.liberarObjeto(group,tz.geo);}
     }
     // Resolve the ruler measurement against THIS file, including measurements entered before loading it.
     const measured=document.getElementById('qrMedido'),raw=measured?.value.trim()||'';
@@ -142,7 +157,8 @@
       for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
       if(group.userData.grpMaq)group.userData.grpMaq.visible=S.verMaquinas!==false;
       // Native tracks the full bitmap: the QR offset belongs only to the QR locator.
-      return {schema:2,title:tz.nombre||'Modelo sobre la hoja',marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes:buildMeshes(group,center,factor/scale)};
+      const {meshes,blobs}=buildMeshes(group,center,factor/scale);
+      return conBlobs({schema:3,title:tz.nombre||'Modelo sobre la hoja',marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes},blobs);
     }finally{motor.liberarObjeto(group,tz.geo);}
   }
   async function start(){
@@ -150,13 +166,27 @@
     active=true;S._iniciando='native-paper';document.getElementById('btnAR').disabled=true;
     UI.estado(sobreHoja()?'Preparando el modelo para reconocer su QR y fijarlo sobre la hoja…':
       (S.modoPapel?'Este modelo no trae la hoja con QR: se apoya sobre una superficie. Preparando…':'Preparando el modelo para apoyarlo sobre una superficie…'),'ok');
+    let token='';
     try{
       // Yield so the preparing message is drawn before exporting a complex model.
       await new Promise(resolve=>setTimeout(resolve,30));
-      const data=JSON.stringify(await payload());
-      if(data.length>64*1024*1024)throw new Error('El modelo es demasiado grande para esta vista. Exportá una copia simplificada.');
-      NativePaper.start(data);return true;
-    }catch(e){release();UI.estado(e.message||'No se pudo preparar el modelo.','err');return false;}
+      const header=await payload(),blobs=header._blobs;
+      const total=blobs.reduce((s,b)=>s+b.byteLength,0);
+      if(total>60*1024*1024)throw new Error('El modelo es demasiado grande para esta vista. Exportá una copia simplificada.');
+      // TRANSFERENCIA por tandas al archivo de la APK; una APK anterior a 4.20 no tiene open()
+      if(typeof NativePaper.open!=='function')throw new Error('Esta versión necesita la APK 4.20 o posterior. Bajala desde el link de arriba o de Más opciones.');
+      token=String(NativePaper.open()||'');
+      if(!token)throw new Error('No se pudo preparar el modelo para la vista AR. Cerrá y volvé a abrir la aplicación.');
+      let enviados=0;
+      for(const b of blobs)for(let i=0;i<b.byteLength;i+=TANDA){
+        if(!NativePaper.append(token,base64(b.subarray(i,i+TANDA))))throw new Error('No se pudo transferir el modelo a la vista AR. Probá de nuevo.');
+        enviados+=Math.min(TANDA,b.byteLength-i);
+        if(total>4*TANDA){UI.estado('Pasando el modelo a la vista AR… '+Math.round(enviados/total*100)+' %','ok');await new Promise(r=>setTimeout(r,0));}
+      }
+      header.blob=token;
+      NativePaper.start(JSON.stringify(header));
+      return true;
+    }catch(e){if(token){try{NativePaper.abort(token);}catch(_){}}release();UI.estado(e.message||'No se pudo preparar el modelo.','err');return false;}
   }
   function release(){active=false;if(S._iniciando==='native-paper')S._iniciando=null;AR.revisarSoporte();}
   window.addEventListener('native-paper-closed',release);
@@ -189,7 +219,7 @@
   // REGISTRO: lo que pasa en la APK (archivos recibidos, consulta de versión) queda en el Diagnóstico del
   // teléfono, que antes venía vacío porque la parte nativa no escribía ahí.
   window.addEventListener('native-log',e=>{const t=String(e.detail?.text||'');if(!t)return;try{AR.registrar&&AR.registrar('APK: '+t);}catch(_){}if(e.detail?.error)UI.estado(t,'err');});
-  window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,get active(){return active;}};
+  window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,STRIDE,get active(){return active;}};
   if(available()){
     document.documentElement.dataset.nativePaper='true';
     const select=document.getElementById('msModoPapel');select.value='automatico';
@@ -197,10 +227,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.19 abre un OBJ, STL o JSON con un toque desde WhatsApp, Archivos o el correo, y suma Volcar y Ladear en la vista AR para parar una pieza acostada. Conserva Ubicar, Ajustar, Fijar, sombras, texturas, oclusión y Foto. ';
+    card.textContent='La APK 4.21 suma oclusión por paredes con bordes suaves, sombra según la luz real del lugar y aristas con grosor según la pantalla, sobre la 4.20: vista AR a la resolución de la pantalla con antialias de 4 muestras y luz del ambiente, modelos grandes en la mitad de tiempo, Abrir con desde WhatsApp, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.19';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.19.6/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.19.6.apk';
+    link.textContent='Descargar APK 4.21';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.21.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.21.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

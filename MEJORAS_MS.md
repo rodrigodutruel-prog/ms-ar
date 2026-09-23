@@ -1,3 +1,33 @@
+MS AR y 3DDUT AR 4.21.0
+
+Segunda vuelta de calidad sobre la 4.20.0 (probada en el teléfono): oclusión más limpia, sombra según la luz real, aristas con grosor de pantalla y el preparador de la PC más rápido.
+
+- Oclusión por paredes con bordes suaves. La visibilidad de cada punto del modelo se promedia en cinco muestras del mapa de profundidad y se aplica como transparencia gradual en vez de un corte seco: el borde del modelo contra una pared, una columna o una persona deja de verse a bloques. Solo actúa con Paredes: ON.
+- Sombra según la luz real. Con la estimación de luz de ARCore, la sombra se proyecta del lado opuesto a la luz principal del lugar (no siempre hacia el mismo lado) y es más marcada cuanto más contraste tiene el ambiente (sol de ventana) y más tenue si la luz es difusa. Se recalcula a lo sumo cada 1,5 s y solo si la luz giró más de unos 7°, sin sacar la sombra anterior mientras tanto. Sin estimación de luz, la sombra de siempre.
+- Aristas con grosor según la pantalla. Las líneas negras se dibujan de unos 2 píxeles físicos en cualquier teléfono (antes 1,5 píxeles del buffer, que a resolución completa quedaban finas). Si la GPU solo dibuja líneas de 1 píxel queda en 1; el grosor elegido se anota en el Diagnóstico.
+- Preparar_OBJ_para_AR.bat lee los archivos grandes una sola vez. Un ensamble de Inventor de más de 60 MB se reducía releyendo el archivo entero en cada intento (hasta 14 pasadas sobre un OBJ de 1 GB). Ahora se lee una vez y se reduce en memoria con numpy (ya está en el Python de la PC de Innovación; sin numpy sigue el camino anterior). Un OBJ de 288.000 caras: de 4,4 a 1,7 s; en archivos de 1 GB la diferencia es de minutos.
+
+Verificación: 44 regresiones del núcleo y service worker, 56 comprobaciones del puente nativo, 8 baterías Java del módulo nativo (9.000 aserciones), 18 pruebas del preparador (nueva: los dos caminos del archivo grande dan las mismas caras, materiales y vidrios), shaders compilados y enlazados en WebGL, compilación de ambas marcas y la vista AR nativa abierta en el emulador con ARCore. La oclusión suave, la sombra según la luz y el grosor de aristas con cámara real quedan para el teléfono.
+
+Instalar cada APK 4.21.0 sobre la anterior, sin desinstalar.
+
+
+MS AR y 3DDUT AR 4.20.0
+
+Revisión de calidad y velocidad de la vista AR nativa y de la carga de modelos, sobre la base 4.19.6. Se conservan Abrir con, Volcar y Ladear, Ubicar, Ajustar y Fijar, aristas negras, sombras, texturas, oclusión y Foto.
+
+- Vista AR a la resolución de la pantalla. La cámara y el modelo se dibujaban en una superficie fija de 1,2 millones de píxeles (en una pantalla de 1080x2400 es menos de la mitad) y se veían borrosos. Ahora arranca a la resolución real (hasta 2,6 Mpx). Si el teléfono no sostiene los cuadros con el modelo puesto (más de 42 ms por cuadro durante 3 s), baja sola un escalón (1,8 y después 1,2 Mpx) y lo anota en el Diagnóstico. Las fotos de la vista AR salen a esa resolución.
+- Antialias de 4 muestras (antes 2): las aristas negras y los contornos dejan de verse dentados. Si la GPU no lo ofrece, cae a 2.
+- Luz del ambiente real. ARCore estima la dirección de la luz principal, su tinte, el ambiente y el contraste del lugar, y el modelo se sombrea con eso: los brillos y las sombras del sombreado caen del lado de donde viene la luz, un galpón con ventanas al sol tiene más contraste que una oficina difusa, y el tinte de la luz (cálido o frío) se traslada al modelo, acotado. El brillo total es el mismo de antes, así que un ambiente oscuro no apaga el modelo, y la estimación se suaviza para que no titile. En teléfonos sin estimación de luz todo sigue como en 4.19.
+- El modelo pasa a la vista AR con la mitad de datos y sin parsear. Cada vértice viaja en 20 bytes en vez de 36 (normal y color en bytes) y el bloque binario va por tandas a un archivo de la aplicación antes de abrir la vista; la vista lo lee derecho al motor gráfico. Antes el modelo entero era un JSON de hasta 20 MB que Android copiaba y parseaba varias veces justo al abrir la cámara. Con maquetas grandes la vista abre antes, con menos memoria y menos riesgo de que el sistema cierre la aplicación. La web de esta versión necesita la APK 4.20 (avisa si la APK instalada es anterior).
+- Carga de OBJ y STL grandes de 2 a 4 veces más rápida. Las tres pasadas pesadas (agrupar vértices al simplificar, normales suaves y aristas) identificaban cada punto con un texto "x,y,z" en un mapa; ahora usan una tabla de enteros. El lector de OBJ ya no parte cada línea con expresiones regulares, los decimales simples se convierten sin crear texto y las normales evitan las funciones trigonométricas lentas. Medido en la PC con un ensamble sintético como los de Inventor (node tests/bench_carga.cjs): 800.000 caras de 1,7 a 0,4 s, 300.000 de 0,7 a 0,3 s y 100.000 de 0,33 a 0,15 s; en el teléfono la proporción es la misma.
+- ARCore recibe la geometría de pantalla solo cuando cambia (antes en cada cuadro) y la app borra al abrir los archivos de modelo que hayan quedado de una sesión cortada.
+
+Verificación: 44 regresiones del núcleo y service worker, 56 comprobaciones del puente nativo con el esquema nuevo (blob por tandas, normales y colores en bytes, tinte horneado), 8 baterías Java del módulo nativo (9.000 aserciones), los shaders nuevos compilados y enlazados en WebGL, suites de navegador, compilación de ambas marcas y la vista AR nativa abierta en el emulador con ARCore (transferencia por archivo, luz del ambiente configurada, sin errores de GL). La nitidez, el antialias y la luz del ambiente con cámara real quedan para el teléfono.
+
+Instalar cada APK 4.20.0 sobre la anterior, sin desinstalar.
+
+
 MS AR y 3DDUT AR 4.19.6
 
 El modelo de la Calculadora también se ve como un dibujo de Inventor.

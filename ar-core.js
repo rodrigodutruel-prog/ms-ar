@@ -1013,7 +1013,9 @@ async function parseSTLBinGrande(buf, n, avance){
   }
   const diag = Math.hypot(maxx-minx, maxy-miny, maxz-minz) || 1;
   const celda = diag/1400;   // en unidades del archivo
-  const map = new Map(), vx=[], vy=[], vz=[];
+  // celdas por tabla de enteros (v4.20): antes era un Map con un string por vertice de cada triangulo
+  const tabla = new TablaPos(Math.min(n*3, 1<<20));
+  let vpos = new Float32Array(3*Math.min(Math.max(1024, n), 1<<18)), nvu = 0;
   const tIdx = new Uint32Array(n*3);
   let nIdx = 0, tri = 0;
   await new Promise((done, fail) => {
@@ -1026,10 +1028,9 @@ async function parseSTLBinGrande(buf, n, avance){
         for(let v2=0; v2<3; v2++){
           const x=dv.getFloat32(off,true), y=dv.getFloat32(off+4,true), z=dv.getFloat32(off+8,true);
           off += 12;
-          if(![x,y,z].every(Number.isFinite)) throw new Error('STL contiene coordenadas inv?lidas.');
-          const key = Math.round((x-minx)/celda) + ',' + Math.round((y-miny)/celda) + ',' + Math.round((z-minz)/celda);
-          let id = map.get(key);
-          if(id === undefined){ id = vx.length; map.set(key, id); vx.push(x); vy.push(y); vz.push(z); }
+          if(!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) throw new Error('STL contiene coordenadas inválidas.');
+          const id = tabla.id(Math.round((x-minx)/celda)|0, Math.round((y-miny)/celda)|0, Math.round((z-minz)/celda)|0);
+          if(id === nvu){ if(nvu*3+3 > vpos.length) vpos = crecerTipado(vpos, nvu*3+3); vpos[nvu*3]=x; vpos[nvu*3+1]=y; vpos[nvu*3+2]=z; nvu++; }
           if(v2===0) i0=id; else if(v2===1) i1=id; else i2=id;
         }
         if(i0===i1 || i1===i2 || i0===i2) continue;   // colapsó: no es cara
@@ -1041,10 +1042,8 @@ async function parseSTLBinGrande(buf, n, avance){
     }
     lote();
   });
-  const pos = new Float32Array(vx.length*3);
-  for(let i=0;i<vx.length;i++){ pos[i*3]=vx[i]; pos[i*3+1]=vy[i]; pos[i*3+2]=vz[i]; }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('position', new THREE.BufferAttribute(vpos.slice(0, nvu*3), 3));
   g.setIndex(new THREE.BufferAttribute(tIdx.slice(0, nIdx), 1));
   g.computeVertexNormals();
   return validarGeometria(g);
@@ -1078,36 +1077,91 @@ function parseMTL(txt){
 // mismo que EdgesGeometry con Map de enteros sobre los indices ya unificados:
 // 100.000 caras en ~0,2 s. Criterio: borde (una sola cara) o diedro >= angulo.
 // Si sobran, se quedan las mas vivas hasta el tope.
+/* ------------------------------------------------------------
+   TABLA DE POSICIONES — un id por punto del espacio, sin claves de texto.
+   Las tres pasadas pesadas de la carga (agrupar vertices al simplificar, normales
+   suaves y aristas) identificaban cada punto con un string "x,y,z" en un Map: en un
+   ensamble de Inventor de 800.000 caras son millones de strings y el recolector de
+   basura se llevaba la mitad del tiempo. Esta tabla guarda las coordenadas
+   cuantizadas como enteros y busca por direccionamiento abierto: mismo resultado,
+   varias veces mas rapido y sin basura. (v4.20)
+   ------------------------------------------------------------ */
+class TablaPos {
+  constructor(estimado){
+    let cap = 1024; while(cap < (estimado|0)*2) cap *= 2;
+    this._armar(cap);
+  }
+  _armar(cap){
+    this.cap = cap; this.mask = cap-1; this.n = 0;
+    this.tabla = new Int32Array(cap).fill(-1);
+    const m = cap >>> 1;
+    this.qx = new Int32Array(m); this.qy = new Int32Array(m); this.qz = new Int32Array(m);
+  }
+  // x,y,z enteros (ya cuantizados). Devuelve el id (0..n-1); un punto nuevo recibe el siguiente id.
+  id(x, y, z){
+    // mezcla final: sin ella, los puntos de una grilla regular (piezas repetidas) caen en cadenas largas
+    let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791);
+    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b); h = (h ^ (h >>> 13)) & this.mask;
+    const T = this.tabla, qx = this.qx, qy = this.qy, qz = this.qz;
+    for(;;){
+      const j = T[h];
+      if(j < 0){
+        if(this.n >= qx.length){ this._crecer(); return this.id(x, y, z); }
+        const id = this.n++; T[h] = id; qx[id] = x; qy[id] = y; qz[id] = z; return id;
+      }
+      if(qx[j] === x && qy[j] === y && qz[j] === z) return j;
+      h = (h+1) & this.mask;
+    }
+  }
+  _crecer(){
+    const ox = this.qx, oy = this.qy, oz = this.qz, n = this.n;
+    this._armar(this.cap*2);
+    for(let i=0;i<n;i++) this.id(ox[i], oy[i], oz[i]);   // mismo orden de alta → mismos ids
+  }
+}
+// acos con la aproximacion 4.4.45 de Abramowitz-Stegun (error maximo 7e-5 rad): Math.acos era el
+// 35 % del tiempo de las normales suaves y el peso de una esquina no necesita mas precision.
+function acosRapido(x){
+  const a = x < 0 ? -x : x;
+  const r = (((-0.0187293*a + 0.0742610)*a - 0.2121144)*a + 1.5707288) * Math.sqrt(1 - a);
+  return x < 0 ? Math.PI - r : r;
+}
+// Un id por posicion en una malla plana (vs = xyz por vertice, cuantizado a 0,01 como siempre):
+// remap[i] = id del vertice i, rep[id] = primer vertice con esa posicion.
+function unificarPosiciones(vs, nv){
+  const tabla = new TablaPos(nv), remap = new Int32Array(nv), rep = new Int32Array(nv);
+  let nu = 0;
+  for(let i=0;i<nv;i++){
+    const id = tabla.id(Math.round(vs[i*3]*100)|0, Math.round(vs[i*3+1]*100)|0, Math.round(vs[i*3+2]*100)|0);
+    remap[i] = id; if(id === nu) rep[nu++] = i;
+  }
+  return { remap, rep: rep.subarray(0, nu), nu };
+}
+// Arreglo tipado que crece (al doble, hasta cubrir `minimo`), conservando lo cargado.
+function crecerTipado(arr, minimo){
+  let cap = Math.max(16, arr.length*2); while(cap < minimo) cap *= 2;
+  const nuevo = new arr.constructor(cap); nuevo.set(arr); return nuevo;
+}
+
 // SOMBREADO SUAVE con angulo de quiebre. parseOBJ arma la malla sin indexar, asi que
-// computeVertexNormals() da UNA normal por cara y toda superficie curva se ve como un
-// poliedro (Rodrigo: "se ve de muy baja calidad"). Esto promedia, en cada esquina, las
-// normales de las caras que comparten la POSICION (el OBJ repite puntos) y cuyo diedro
-// con la cara es menor que el angulo: las curvas quedan lisas y los cantos vivos siguen
-// planos, con el mismo criterio (24 grados) con el que se dibujan las aristas negras.
+// cada esquina promedia las caras vecinas que comparten la POSICION (no el indice)
+// hasta el angulo de quiebre, pesadas por el angulo de la esquina.
 function normalesSuaves(vs, todos, anguloDeg){
   const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
   if(!nt || !nv) return null;
-  const remap = new Int32Array(nv), claves = new Map();
-  let nu = 0;
-  for(let i=0;i<nv;i++){
-    const k = Math.round(vs[i*3]*100) + ',' + Math.round(vs[i*3+1]*100) + ',' + Math.round(vs[i*3+2]*100);
-    let id = claves.get(k);
-    if(id === undefined){ id = nu++; claves.set(k, id); }
-    remap[i] = id;
-  }
-  claves.clear();
+  const { remap, nu } = unificarPosiciones(vs, nv);
   // normal de cada cara y ANGULO de cada esquina: el peso por angulo hace que el resultado no
   // dependa de como Inventor corto cada cuadrilatero en triangulos (por area se desbalancea).
   const fn = new Float32Array(nt*3), ang = new Float32Array(nt*3);
   for(let t=0;t<nt;t++){
     const a = todos[t*3]*3, b = todos[t*3+1]*3, c = todos[t*3+2]*3;
     const ux=vs[b]-vs[a], uy=vs[b+1]-vs[a+1], uz=vs[b+2]-vs[a+2], wx=vs[c]-vs[a], wy=vs[c+1]-vs[a+1], wz=vs[c+2]-vs[a+2];
-    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.hypot(x,y,z)||1;
+    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.sqrt(x*x+y*y+z*z)||1;
     fn[t*3]=x/l; fn[t*3+1]=y/l; fn[t*3+2]=z/l;
-    const lu=Math.hypot(ux,uy,uz)||1, lw=Math.hypot(wx,wy,wz)||1;
-    const vx=vs[c]-vs[b], vy=vs[c+1]-vs[b+1], vz=vs[c+2]-vs[b+2], lv=Math.hypot(vx,vy,vz)||1;
-    const aA = Math.acos(Math.max(-1,Math.min(1,(ux*wx+uy*wy+uz*wz)/(lu*lw))));
-    const aB = Math.acos(Math.max(-1,Math.min(1,(-ux*vx-uy*vy-uz*vz)/(lu*lv))));
+    const lu=Math.sqrt(ux*ux+uy*uy+uz*uz)||1, lw=Math.sqrt(wx*wx+wy*wy+wz*wz)||1;
+    const vx=vs[c]-vs[b], vy=vs[c+1]-vs[b+1], vz=vs[c+2]-vs[b+2], lv=Math.sqrt(vx*vx+vy*vy+vz*vz)||1;
+    const aA = acosRapido(Math.max(-1,Math.min(1,(ux*wx+uy*wy+uz*wz)/(lu*lw))));
+    const aB = acosRapido(Math.max(-1,Math.min(1,(-ux*vx-uy*vy-uz*vz)/(lu*lv))));
     ang[t*3]=aA; ang[t*3+1]=aB; ang[t*3+2]=Math.max(0,Math.PI-aA-aB);
   }
   // caras por posicion (CSR)
@@ -1116,79 +1170,109 @@ function normalesSuaves(vs, todos, anguloDeg){
   for(let p=0;p<nu;p++) cnt[p+1] += cnt[p];
   const lista = new Int32Array(nt*3), fill = cnt.slice(0, nu);
   for(let i=0;i<nt*3;i++){ const p = remap[todos[i]]; lista[fill[p]++] = i; }   // esquinas por posicion
+  // La normal y el peso de cada esquina se copian EN EL ORDEN DE LA LISTA: el bucle de promedio lee
+  // memoria seguida en vez de saltar por todo el arreglo de caras (eran fallos de cache: 3 veces mas lento).
+  const ln = new Float32Array(nt*9), lw = new Float32Array(nt*3);
+  for(let j=0;j<nt*3;j++){ const k = lista[j], f = (k/3)|0; ln[j*3]=fn[f*3]; ln[j*3+1]=fn[f*3+1]; ln[j*3+2]=fn[f*3+2]; lw[j]=ang[k]; }
   const cosLim = Math.cos(anguloDeg*Math.PI/180), out = new Float32Array(nt*9);
   for(let i=0;i<nt*3;i++){
     const t = (i/3)|0, p = remap[todos[i]];
     const nx = fn[t*3], ny = fn[t*3+1], nz = fn[t*3+2];
     let sx=0, sy=0, sz=0;
-    for(let j=cnt[p]; j<cnt[p+1]; j++){
-      const k = lista[j], f = (k/3)|0;
-      if(fn[f*3]*nx + fn[f*3+1]*ny + fn[f*3+2]*nz >= cosLim){ const w = ang[k]; sx += fn[f*3]*w; sy += fn[f*3+1]*w; sz += fn[f*3+2]*w; }
+    for(let j=cnt[p], fin=cnt[p+1]; j<fin; j++){
+      const fx = ln[j*3], fy = ln[j*3+1], fz = ln[j*3+2];
+      if(fx*nx + fy*ny + fz*nz >= cosLim){ const w = lw[j]; sx += fx*w; sy += fy*w; sz += fz*w; }
     }
-    const l = Math.hypot(sx,sy,sz);
+    const l = Math.sqrt(sx*sx+sy*sy+sz*sz);
     if(l > 1e-12){ out[i*3]=sx/l; out[i*3+1]=sy/l; out[i*3+2]=sz/l; } else { out[i*3]=nx; out[i*3+1]=ny; out[i*3+2]=nz; }
   }
   return out;
 }
 
+// ARISTAS NEGRAS con presupuesto: las de quiebre (mas de anguloDeg entre las dos caras) y
+// los bordes abiertos. Se queda con las `tope` mas vivas. Sin Map: las aristas se agrupan
+// por su vertice menor (CSR) y las dos caras que comparten una arista quedan juntas al
+// ordenar cada grupo; el presupuesto se resuelve con un histograma, sin ordenar todo.
 function calcularAristas(vs, todos, anguloDeg, tope){
   const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
   if(!nt || !nv) return null;
   // 1) un id por posicion (el OBJ puede repetir el mismo punto)
-  const remap = new Int32Array(nv), rep = [], claves = new Map();
-  for(let i=0;i<nv;i++){
-    const k = Math.round(vs[i*3]*100) + ',' + Math.round(vs[i*3+1]*100) + ',' + Math.round(vs[i*3+2]*100);
-    let id = claves.get(k);
-    if(id === undefined){ id = rep.length; claves.set(k, id); rep.push(i); }
-    remap[i] = id;
-  }
-  claves.clear();
-  const nu = rep.length;
+  const { remap, rep, nu } = unificarPosiciones(vs, nv);
   // 2) normal de cada cara
   const fn = new Float32Array(nt*3);
   for(let t=0;t<nt;t++){
     const a = todos[t*3]*3, b = todos[t*3+1]*3, c = todos[t*3+2]*3;
     const ux=vs[b]-vs[a], uy=vs[b+1]-vs[a+1], uz=vs[b+2]-vs[a+2], wx=vs[c]-vs[a], wy=vs[c+1]-vs[a+1], wz=vs[c+2]-vs[a+2];
-    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.hypot(x,y,z)||1;
+    const x=uy*wz-uz*wy, y=uz*wx-ux*wz, z=ux*wy-uy*wx, l=Math.sqrt(x*x+y*y+z*z)||1;
     fn[t*3]=x/l; fn[t*3+1]=y/l; fn[t*3+2]=z/l;
   }
-  // 3) cada arista (par de ids) → la primera cara; con la segunda se decide
-  const vistos = new Map(), ea = [], eb = [], eang = [];
+  // 3) cada arista (p<q) va al grupo de su vertice menor (CSR)
+  const cnt = new Int32Array(nu+1);
+  for(let t=0;t<nt;t++) for(let e=0;e<3;e++){
+    const p = remap[todos[t*3+e]], q = remap[todos[t*3+(e+1)%3]];
+    if(p === q) continue;
+    cnt[(p < q ? p : q)+1]++;
+  }
+  for(let p=0;p<nu;p++) cnt[p+1] += cnt[p];
+  const total = cnt[nu], eq = new Int32Array(total), et = new Int32Array(total), fill = cnt.slice(0, nu);
+  for(let t=0;t<nt;t++) for(let e=0;e<3;e++){
+    let p = remap[todos[t*3+e]], q = remap[todos[t*3+(e+1)%3]];
+    if(p === q) continue;
+    if(p > q){ const s=p; p=q; q=s; }
+    const k = fill[p]++; eq[k] = q; et[k] = t;
+  }
+  // 4) por grupo: orden por q (grupos chicos: insercion) y decision por arista.
+  //    d = |cos| entre las dos caras (da lo mismo el sentido de giro); un borde sin
+  //    segunda cara vale -1: la arista mas viva de todas. Con tres o mas caras en la
+  //    misma arista deciden las dos primeras, como antes.
   const cosLim = Math.cos(anguloDeg*Math.PI/180);
-  for(let t=0;t<nt;t++){
-    for(let e=0;e<3;e++){
-      let p = remap[todos[t*3+e]], q = remap[todos[t*3+(e+1)%3]];
-      if(p === q) continue;
-      if(p > q){ const s=p; p=q; q=s; }
-      const k = p*nu + q;
-      const prev = vistos.get(k);
-      if(prev === undefined) vistos.set(k, t);
-      else if(prev >= 0){
-        // |cos|: da lo mismo el sentido de giro de cada cara
-        const d = Math.abs(fn[prev*3]*fn[t*3] + fn[prev*3+1]*fn[t*3+1] + fn[prev*3+2]*fn[t*3+2]);
-        if(d <= cosLim){ ea.push(p); eb.push(q); eang.push(Math.acos(Math.min(1,d))); }
-        vistos.set(k, -1);
+  const ea = new Int32Array(total), eb = new Int32Array(total), ed = new Float32Array(total);
+  let n = 0;
+  for(let p=0;p<nu;p++){
+    const a = cnt[p], b = cnt[p+1];
+    for(let i=a+1;i<b;i++){
+      const q = eq[i], t = et[i]; let j = i-1;
+      while(j >= a && eq[j] > q){ eq[j+1] = eq[j]; et[j+1] = et[j]; j--; }
+      eq[j+1] = q; et[j+1] = t;
+    }
+    for(let i=a;i<b;){
+      let j = i+1; while(j < b && eq[j] === eq[i]) j++;
+      if(j-i === 1){ ea[n]=p; eb[n]=eq[i]; ed[n]=-1; n++; }
+      else{
+        const t1 = et[i]*3, t2 = et[i+1]*3;
+        const d = Math.abs(fn[t1]*fn[t2] + fn[t1+1]*fn[t2+1] + fn[t1+2]*fn[t2+2]);
+        if(d <= cosLim){ ea[n]=p; eb[n]=eq[i]; ed[n]=d; n++; }
       }
+      i = j;
     }
   }
-  for(const [k,t] of vistos){ if(t >= 0){ const p=Math.floor(k/nu); ea.push(p); eb.push(k-p*nu); eang.push(Math.PI); } }
-  vistos.clear();
-  let orden = null;
-  if(ea.length > tope){
-    orden = new Int32Array(ea.length); for(let i=0;i<ea.length;i++) orden[i]=i;
-    orden.sort((i,j) => eang[j]-eang[i]);
-    orden = orden.subarray(0, tope);
+  const candidatas = n;
+  // 5) PRESUPUESTO: quedan las mas vivas (menor |cos|). Histograma de 1024 cajas en vez de ordenar.
+  let elegir = null;
+  if(n > tope){
+    const CAJAS = 1024, hist = new Int32Array(CAJAS+1);
+    const caja = d => d < 0 ? 0 : 1 + Math.min(CAJAS-1, (d*CAJAS)|0);
+    for(let i=0;i<n;i++) hist[caja(ed[i])]++;
+    let acum = 0, corte = 0;
+    while(corte <= CAJAS && acum + hist[corte] <= tope){ acum += hist[corte]; corte++; }
+    let resto = tope - acum;
+    elegir = new Int32Array(tope); let m = 0;
+    for(let i=0;i<n;i++){
+      const c = caja(ed[i]);
+      if(c < corte) elegir[m++] = i;
+      else if(c === corte && resto > 0){ elegir[m++] = i; resto--; }
+    }
+    n = m;
   }
-  const n = orden ? orden.length : ea.length;
   if(!n) return null;
   const ap = new Float32Array(n*6);
   for(let i=0;i<n;i++){
-    const e = orden ? orden[i] : i, a = rep[ea[e]]*3, b = rep[eb[e]]*3;
+    const e = elegir ? elegir[i] : i, a = rep[ea[e]]*3, b = rep[eb[e]]*3;
     ap[i*6]=vs[a]; ap[i*6+1]=vs[a+1]; ap[i*6+2]=vs[a+2]; ap[i*6+3]=vs[b]; ap[i*6+4]=vs[b+1]; ap[i*6+5]=vs[b+2];
   }
   const ga = new THREE.BufferGeometry();
   ga.setAttribute('position', new THREE.BufferAttribute(ap,3));
-  ga.userData.calculadas = true; ga.userData.total = ea.length;
+  ga.userData.calculadas = true; ga.userData.total = candidatas;
   return ga;
 }
 
@@ -1199,47 +1283,102 @@ function calcularAristas(vs, todos, anguloDeg, tope){
 //    si se cargó, si no un tono estable por nombre)
 //  · "o vidrio" / materiales con opacidad < .9 → grupo translúcido
 async function parseOBJ(txt, avance, mtl){
-  let vs = [], cols = [];
+  // Vertices, colores y caras en arreglos tipados que crecen: sin arreglos de numeros
+  // sueltos, sin split ni expresiones regulares por linea. Un OBJ de 30 MB se lee en
+  // la mitad del tiempo que antes y con mucha menos memoria (v4.20).
+  let vs = new Float64Array(3*4096), cols = new Float32Array(3*4096), nvs = 0;
+  let tris = new Int32Array(3*4096), ntris = 0, trisVid = new Int32Array(3*256), ntrisVid = 0;
+  let triMat = new Int32Array(4096), triMatVid = new Int32Array(256);
   const aristas = [];                 // pares de indices de las lineas 'l' (aristas ya calculadas)
-  const tris = [], trisVid = [], triMat = [], triMatVid = [];
   const matNombres = []; const matIdx = Object.create(null);
   let hayColor = false, enVidrio = false, matAct = -1, hayMat = false, hojaEmb = null;
   const lineas = txt.split('\n'); txt = null;
   const N = lineas.length;
   const LOTE = 25000;
+  const num = new Float64Array(8), idx = new Int32Array(64);
+  const POW10 = [1,10,100,1e3,1e4,1e5,1e6,1e7,1e8,1e9,1e10,1e11,1e12,1e13,1e14,1e15];
+  // Lee hasta 8 numeros desde la posicion k (espacios o tabs entre medio; '#' corta la linea).
+  // Devuelve cuantos leyo; si un token no es un numero finito devuelve -1-(los leidos hasta ahi).
+  // CAMINO RAPIDO para "[-+]digitos[.digitos]" de hasta 15 digitos (lo que escribe Inventor): entero
+  // exacto dividido por una potencia de 10 exacta = el mismo double que Number(), sin crear strings.
+  // Cualquier otra cosa (exponente, texto) va por Number() del token completo.
+  function leerNumeros(l, k){
+    let n = 0; const L = l.length;
+    while(k < L){
+      let c = l.charCodeAt(k);
+      if(c === 32 || c === 9 || c === 13){ k++; continue; }
+      if(c === 35) break;
+      const s = k;
+      let neg = false; if(c === 45 || c === 43){ neg = c === 45; k++; c = k < L ? l.charCodeAt(k) : 0; }
+      let mant = 0, dig = 0, dec = 0;
+      while(c >= 48 && c <= 57){ mant = mant*10 + (c-48); dig++; k++; c = k < L ? l.charCodeAt(k) : 0; }
+      if(c === 46){ k++; c = k < L ? l.charCodeAt(k) : 0; while(c >= 48 && c <= 57){ mant = mant*10 + (c-48); dig++; dec++; k++; c = k < L ? l.charCodeAt(k) : 0; } }
+      let v;
+      if(dig && dig <= 15 && (k >= L || c === 32 || c === 9 || c === 13 || c === 35)) v = neg ? -mant/POW10[dec] : mant/POW10[dec];
+      else{ while(k < L){ c = l.charCodeAt(k); if(c === 32 || c === 9 || c === 13 || c === 35) break; k++; } v = Number(l.substring(s, k)); }
+      if(n >= 8) return -1-n;
+      if(!Number.isFinite(v)) return -1-n;
+      num[n++] = v;
+    }
+    return n;
+  }
+  // Lee los indices de una cara o linea ("a", "a/b", "a//c", "a/b/c"; negativos desde el final).
+  // Devuelve cuantos, o -1 si alguno es invalido (0, fuera de rango, no numerico).
+  function leerCara(l, k, nvAct){
+    let n = 0; const L = l.length;
+    while(k < L){
+      let c = l.charCodeAt(k);
+      if(c === 32 || c === 9 || c === 13){ k++; continue; }
+      if(c === 35) break;
+      let neg = false;
+      if(c === 45){ neg = true; k++; c = k < L ? l.charCodeAt(k) : 0; }
+      let v = 0, dig = 0;
+      while(c >= 48 && c <= 57){ v = v*10 + (c-48); dig++; k++; c = k < L ? l.charCodeAt(k) : 0; }
+      if(!dig) return -1;
+      if(c === 47){ while(k < L){ c = l.charCodeAt(k); if(c === 32 || c === 9 || c === 13 || c === 35) break; k++; } }
+      else if(k < L && !(c === 32 || c === 9 || c === 13 || c === 35)) return -1;
+      const i = neg ? nvAct - v : v - 1;
+      if(i < 0 || i >= nvAct || n >= 64) return -1;
+      idx[n++] = i;
+    }
+    return n;
+  }
   for(let i0=0; i0<N; i0+=LOTE){
     const fin = Math.min(N, i0+LOTE);
     for(let i=i0;i<fin;i++){
-      const l = lineas[i].trimStart().replace(/\t/g, ' ');
-      const c0 = l.charCodeAt(0), c1 = l.charCodeAt(1);
-      if(c0===118 && c1===32){          // "v "
-        const p = l.trim().split(/\s+/);
-        if(p.length < 4 || !p.slice(1,4).every(v => Number.isFinite(Number(v)))) throw new Error('OBJ: vértice inválido en línea ' + (i+1));
-        vs.push(+p[1], +p[2], +p[3]);
-        if(p.length >= 7){ if(!p.slice(4,7).every(v => Number.isFinite(Number(v)))) throw new Error('OBJ: color inválido en línea ' + (i+1)); cols.push(...p.slice(4,7).map(v => Math.max(0,Math.min(1,Number(v))))); hayColor = true; }
-        else cols.push(1, 1, 1);
-      }else if(c0===102 && c1===32){    // "f "
-        const p = l.split('#')[0].trim().split(/\s+/).slice(1)
-          .map(t => { const token = t.split('/')[0]; const k = /^-?\d+$/.test(token) ? Number(token) : NaN; return k<0 ? vs.length/3 + k : k-1; });
-        if(p.length < 3 || p.some(k => !Number.isInteger(k) || k < 0 || k >= vs.length/3)) throw new Error('OBJ: cara con índice inválido en línea ' + (i+1));
+      const l = lineas[i], L = l.length;
+      let k = 0; while(k < L){ const c = l.charCodeAt(k); if(c === 32 || c === 9) k++; else break; }
+      const c0 = l.charCodeAt(k), c1 = l.charCodeAt(k+1), sep = (c1 === 32 || c1 === 9);
+      if(c0===118 && sep){              // "v "
+        const r = leerNumeros(l, k+2);
+        if(r < 3) throw new Error('OBJ: ' + ((r < 0 && -r-1 >= 3) ? 'color' : 'vértice') + ' inválido en línea ' + (i+1));
+        if(nvs*3+3 > vs.length){ vs = crecerTipado(vs, nvs*3+3); cols = crecerTipado(cols, nvs*3+3); }
+        const o = nvs*3; vs[o]=num[0]; vs[o+1]=num[1]; vs[o+2]=num[2];
+        if(r >= 6){ cols[o]=Math.max(0,Math.min(1,num[3])); cols[o+1]=Math.max(0,Math.min(1,num[4])); cols[o+2]=Math.max(0,Math.min(1,num[5])); hayColor = true; }
+        else { cols[o]=cols[o+1]=cols[o+2]=1; }
+        nvs++;
+      }else if(c0===102 && sep){        // "f "
+        const n = leerCara(l, k+2, nvs);
+        if(n < 3) throw new Error('OBJ: cara con índice inválido en línea ' + (i+1));
         const vid = enVidrio || (matAct >= 0 && mtl && mtl[matNombres[matAct]] && mtl[matNombres[matAct]].d < .9);
-        const dest = vid ? trisVid : tris, dm = vid ? triMatVid : triMat;
-        for(let j=2;j<p.length;j++){ dest.push(p[0], p[j-1], p[j]); dm.push(matAct); }
-      }else if(c0===108 && c1===32){    // "l " — aristas ya calculadas por el preparador
-        const p = l.trim().split(/\s+/);
-        const nv = vs.length/3;
-        for(let k=1;k+1<p.length;k++){
-          const ia = parseInt(p[k],10), ib = parseInt(p[k+1],10);
-          const a=ia<0?nv+ia:ia-1,b=ib<0?nv+ib:ib-1;
-          if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a>=nv||b>=nv)throw new Error('El OBJ contiene una arista con índices inválidos.');
-          aristas.push(a,b);
+        const nuevos = (n-2)*3;         // triangulos del abanico
+        if(vid){
+          if(ntrisVid + nuevos > trisVid.length){ trisVid = crecerTipado(trisVid, ntrisVid + nuevos); triMatVid = crecerTipado(triMatVid, (ntrisVid + nuevos)/3); }
+          for(let j=2;j<n;j++){ trisVid[ntrisVid]=idx[0]; trisVid[ntrisVid+1]=idx[j-1]; trisVid[ntrisVid+2]=idx[j]; triMatVid[ntrisVid/3]=matAct; ntrisVid+=3; }
+        }else{
+          if(ntris + nuevos > tris.length){ tris = crecerTipado(tris, ntris + nuevos); triMat = crecerTipado(triMat, (ntris + nuevos)/3); }
+          for(let j=2;j<n;j++){ tris[ntris]=idx[0]; tris[ntris+1]=idx[j-1]; tris[ntris+2]=idx[j]; triMat[ntris/3]=matAct; ntris+=3; }
         }
-      }else if(c0===111 && c1===32){    // "o "
+      }else if(c0===108 && sep){        // "l " — aristas ya calculadas por el preparador
+        const n = leerCara(l, k+2, nvs);
+        if(n < 0) throw new Error('El OBJ contiene una arista con índices inválidos.');
+        for(let j=1;j<n;j++) aristas.push(idx[j-1], idx[j]);
+      }else if(c0===111 && sep){        // "o "
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
-      }else if(c0===35 && l.startsWith('# MSAR_HOJA ')){   // la hoja impresa (Plano_AR_desde_OBJ)
-        try{ hojaEmb = JSON.parse(l.slice(12)); }catch(e){}
-      }else if(c0===117 && l.startsWith('usemtl')){
-        const nom = l.slice(6).trim();
+      }else if(c0===35 && l.startsWith('# MSAR_HOJA ', k)){   // la hoja impresa (Plano_AR_desde_OBJ)
+        try{ hojaEmb = JSON.parse(l.slice(k+12)); }catch(e){}
+      }else if(c0===117 && l.startsWith('usemtl', k)){
+        const nom = l.slice(k+6).trim();
         if(matIdx[nom] === undefined){ matIdx[nom] = matNombres.length; matNombres.push(nom); }
         matAct = matIdx[nom]; hayMat = true;
       }
@@ -1247,10 +1386,12 @@ async function parseOBJ(txt, avance, mtl){
     if(avance) avance(fin / N);
     if(fin < N) await new Promise(r => setTimeout(r, 0));
   }
-  if(!tris.length && !trisVid.length) throw new Error('OBJ sin caras legibles.');
-  let nOp = tris.length;
-  let todos = tris.concat(trisVid);
-  let mats = triMat.concat(triMatVid);      // material de cada TRIÁNGULO (por índice de vértice-esquina /3)
+  if(!ntris && !ntrisVid) throw new Error('OBJ sin caras legibles.');
+  let nOp = ntris;
+  let todos = new Int32Array(ntris + ntrisVid); todos.set(tris.subarray(0, ntris)); todos.set(trisVid.subarray(0, ntrisVid), ntris);
+  let mats = new Int32Array((ntris + ntrisVid)/3); mats.set(triMat.subarray(0, ntris/3)); mats.set(triMatVid.subarray(0, ntrisVid/3), ntris/3);   // material de cada TRIANGULO
+  tris = trisVid = triMat = triMatVid = null;
+  vs = vs.subarray(0, nvs*3); cols = cols.subarray(0, nvs*3);
   // MODELO GIGANTE (galpón entero de Inventor): un celular no mueve millones de
   // caras. Se simplifica acá mismo con una rejilla de agrupamiento de vértices
   // (lo mismo que hace Preparar_OBJ_para_AR en la PC) — no hace falta prepararlo.
@@ -1264,32 +1405,26 @@ async function parseOBJ(txt, avance, mtl){
     let factor = 1200;
     for(let intento=0; intento<6; intento++){
       const celda = diag / factor;
-      const map = new Map(), remap = new Int32Array(vs.length/3);
-      let nv = 0;
-      for(let i=0;i<vs.length/3;i++){
-        const key = Math.round((vs[i*3]-minx)/celda) + ',' + Math.round((vs[i*3+1]-miny)/celda) + ',' + Math.round((vs[i*3+2]-minz)/celda);
-        let id = map.get(key);
-        if(id === undefined){ id = nv++; map.set(key, id); }
-        remap[i] = id;
-      }
-      const t2 = [], m2 = []; let nOp2 = 0;
+      const tabla = new TablaPos(Math.min(nvs, 1<<20)), remap = new Int32Array(nvs);
+      for(let i=0;i<nvs;i++) remap[i] = tabla.id(Math.round((vs[i*3]-minx)/celda)|0, Math.round((vs[i*3+1]-miny)/celda)|0, Math.round((vs[i*3+2]-minz)/celda)|0);
+      const nv = tabla.n;
+      const t2 = new Int32Array(todos.length), m2 = new Int32Array(mats.length); let n2 = 0, nOp2 = 0;
       for(let t=0; t<todos.length; t+=3){
         const a = remap[todos[t]], b = remap[todos[t+1]], c = remap[todos[t+2]];
         if(a===b || b===c || a===c) continue;
-        t2.push(a, b, c); m2.push(mats[t/3]);
+        t2[n2]=a; t2[n2+1]=b; t2[n2+2]=c; m2[n2/3]=mats[t/3]; n2+=3;
         if(t < nOp) nOp2 += 3;
       }
-      if(t2.length/3 <= MAX_CARAS || intento === 5){
+      if(n2/3 <= MAX_CARAS || intento === 5){
         // vértices y colores remapeados (el primero de cada celda representa a la celda)
-        const vs2 = new Array(nv*3), cols2 = new Array(nv*3);
-        const visto = new Uint8Array(nv);
-        for(let i=0;i<vs.length/3;i++){
+        const vs2 = new Float64Array(nv*3), cols2 = new Float32Array(nv*3), visto = new Uint8Array(nv);
+        for(let i=0;i<nvs;i++){
           const id = remap[i]; if(visto[id]) continue; visto[id] = 1;
           vs2[id*3]=vs[i*3]; vs2[id*3+1]=vs[i*3+1]; vs2[id*3+2]=vs[i*3+2];
           cols2[id*3]=cols[i*3]; cols2[id*3+1]=cols[i*3+1]; cols2[id*3+2]=cols[i*3+2];
         }
-        vs = vs2; cols = cols2;
-        todos = t2; mats = m2; nOp = nOp2;
+        vs = vs2; cols = cols2; nvs = nv;
+        todos = t2.subarray(0, n2); mats = m2.subarray(0, n2/3); nOp = nOp2;
         break;
       }
       factor *= 0.7;
