@@ -243,15 +243,33 @@
   // 'native-files' {files:[{name,url}]}. Se bajan por la misma origen y entran por cargarArchivos, como del selector.
   window.addEventListener('native-files',async e=>{
     const items=Array.isArray(e.detail?.files)?e.detail.files:[];if(!items.length)return;
-    const nombres=items.map(i=>i.name).join(', ');
+    const nombres=items.map(i=>i.name).join(', ');recibiendo=true;
     try{
       UI.estado('Recibiendo '+nombres+'…','ok');try{AR.registrar&&AR.registrar('archivo recibido: '+nombres);}catch(_){}
       const files=[];
       for(const it of items){let r=null;try{r=await fetch(it.url,{cache:'no-store'});}catch(_){}if(!r||!r.ok)throw new Error('No se pudo leer '+it.name+'. Volvé a compartirlo o abrilo con Seleccionar archivo.');files.push(new File([await r.blob()],it.name));}
       const ok=await AR.cargarArchivos(files);
-      if(ok)UI.estado('Modelo recibido: '+nombres+'. Ya podés fijarlo en AR.','ok');
+      if(ok){UI.estado('Modelo recibido: '+nombres+'. Ya podés fijarlo en AR.','ok');barraRecibido(items);}
     }catch(x){UI.estado('Archivo recibido: '+(x.message||x),'err');try{AR.registrar&&AR.registrar('archivo recibido, error: '+(x.message||x));}catch(_){}}
+    finally{recibiendo=false;}
   });
+  let recibiendo=false;   // mientras se abre lo recibido, sus eventos de carga no sacan la barra de guardar/compartir
+  // GUARDAR / COMPARTIR EL MODELO RECIBIDO (v4.28): lo que llegó a la app (de la PC con Inventor, de WhatsApp…) ya está
+  // preparado para la app; se guarda en Descargas del teléfono o se manda a otra persona, que lo abre directo con la app.
+  // La APK usa el archivo tal cual lo recibió (no pasa de nuevo por la web). Otro modelo abierto saca la barra.
+  function barraRecibido(items){
+    let bar=document.getElementById('msRecibido');
+    if(!window.NativePaper||typeof NativePaper.guardarRecibido!=='function'||typeof NativePaper.compartirRecibido!=='function'){if(bar)bar.remove();return;}
+    if(!bar){bar=document.createElement('div');bar.id='msRecibido';bar.className='fila';bar.style.cssText='margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+      const est=document.getElementById('estadoAR');if(est)est.after(bar);else return;}
+    const urls=JSON.stringify(items.map(i=>String(i.url))),nombre=(items.find(i=>/\.(obj|stl|json)$/i.test(i.name))||items[0]).name;
+    const g=document.createElement('button');g.type='button';g.className='mini';g.id='msGuardarRecibido';g.textContent='Guardar en el teléfono';
+    g.title='Una copia de '+nombre+' en Descargas del teléfono, lista para abrir con la app';g.onclick=()=>NativePaper.guardarRecibido(urls);
+    const c=document.createElement('button');c.type='button';c.className='mini';c.id='msCompartirRecibido';c.textContent='Compartir';
+    c.title='Mandar '+nombre+' por WhatsApp, correo o Drive: del otro lado se abre directo con la app';c.onclick=()=>NativePaper.compartirRecibido(urls);
+    bar.replaceChildren(g,c);bar.dataset.urls=urls;
+  }
+  for(const ev of ['ar:files-loaded','ar:model-loaded'])window.addEventListener(ev,()=>{if(recibiendo)return;const b=document.getElementById('msRecibido');if(b)b.remove();});
   // VERSION NUEVA: la APK consulta el release al abrir y avisa con 'native-update' {version,url}. La tarjeta
   // va arriba, con el link a la APK; en la APK el link se abre en el navegador del teléfono y se instala encima.
   window.addEventListener('native-update',e=>{
@@ -276,10 +294,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.27 suma HERRAMIENTAS en la vista AR: lo que choca con lo real se marca en rojo (cualquier modelo), cinta métrica, ficha de cada pieza al tocarla, el aire en los conductos, plano de corte, rayos X y grabar video; y el ingeniero de 1,75 m esquiva paredes y equipos reales. Sobre la 4.26: la persona que inspecciona la pieza (obedece «alto», «caminá», «chau» y «vení»), piezas de Inventor leídas por la PC, modelo quieto donde lo apoyás, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
+    card.textContent='La APK 4.28 suma guardar en el teléfono y compartir el modelo que llega de la PC (o de WhatsApp), listo para abrir en la app, y una persona que recorre el mapa de lo real de a poco (sin tironcitos); sobre la 4.27: herramientas en la vista AR (choques en rojo, cinta métrica, ficha, aire en los conductos, corte, rayos X y video), el ingeniero que esquiva paredes y equipos reales, replanteo en obra a tamaño real y colores de Inventor. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.27';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.27.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.27.0.apk';
+    link.textContent='Descargar APK 4.28';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.28.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.28.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

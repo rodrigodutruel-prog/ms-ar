@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.28.0
+
+- Guardar y compartir el modelo que llega a la app: cuando un modelo llega de la PC («Ver en MS AR» con el QR, o un .ipt compartido) o desde WhatsApp, debajo de «Modelo recibido» aparecen «Guardar en el teléfono» (queda en Descargas › MS AR o 3DDUT AR) y «Compartir» (WhatsApp, correo, Drive…). Se manda el archivo tal cual está preparado para la app, con sus colores y sus aristas; quien lo recibe lo toca y lo abre con la app.
+- La persona revisa lo real de a poco: la 4.27 miraba todo alrededor de la pieza de un saque cada 0,3 s, en el mismo hilo que dibuja la cámara, y en un modelo grande podía dar tironcitos al caminar. Ahora lo reparte cuadro a cuadro.
+- Colores de Inventor cara por cara (en la PC): un ensamble guardado como pieza llega con el color de cada componente.
+- El Diagnóstico ya no se llena con avisos repetidos de la persona.
+
+Verificación: en el emulador, un modelo recibido se guardó en Descargas con su nombre y tamaño exactos, y compartido desde MS AR lo abrió 3DDUT AR con sus 30.732 triángulos y sus colores; puente web → vista nativa (88), web y navegador de las dos marcas, pruebas nativas completas.
+
+Instalar cada APK 4.28.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.27.0
 
 HERRAMIENTAS en la vista AR: un botón «Herramientas» abre un panel. Todo arranca apagado; si no se toca, la vista hace lo mismo que antes.
