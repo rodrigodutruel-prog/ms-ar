@@ -133,6 +133,52 @@
   // sobre una superficie (antes: error "Abrí el JSON..." con cualquier OBJ suelto).
   function sobreHoja(){return !!(S.modoPapel&&S.trazado?.marcador?.png);}
   // el encabezado lleva los blobs colgados en una propiedad NO enumerable: JSON.stringify no los incluye
+  // HERRAMIENTAS (v4.27): los tramos del sistema para la FICHA al tocar y el AIRE en los conductos, en el mismo
+  // sistema que las mallas (matrixWorld - centro, por la escala). a -> b = sentido del aire: de las captaciones hacia
+  // el equipo (la punta libre mas cercana al equipo de la planta, o el ventilador del trazado; si no hay, la punta
+  // del caño mas gordo). Paquete MS: Ø, velocidad y largo tal como los calculo la Calculadora; trazado simple: Ø.
+  function ductosDe(tz,group,center,scale){
+    if(!tz)return null;const M=group.matrixWorld,lista=[];let raiz=null,cerca=null;
+    const W=v=>v.clone().applyMatrix4(M).sub(center).multiplyScalar(scale);
+    if(tz.esMS&&tz.paq&&Array.isArray(tz.paq.tramos)){
+      const paq=tz.paq,cx=tz.cx,cz=tz.cz,V=p=>new T.Vector3(p.x-cx,(p.z||0),p.y-cz);
+      const clave=p=>[p.x,p.y,p.z||0].map(v=>Math.round(v*1000)).join(',');
+      for(const t of paq.tramos){if(!t||!t.a||!t.b||!(t.d_mm>0))continue;
+        lista.push({id:t.id,tipo:t.tipo,A:V(t.a),B:V(t.b),d:t.d_mm/1000,v:t.v_ms,largo:t.largo_m,ka:t.nodo_a||clave(t.a),kb:t.nodo_b||clave(t.b)});}
+      const eq=(paq.planta||[]).find(pl=>pl&&pl.tipo==='equipo'&&pl.x!=null);
+      if(eq)cerca=new T.Vector3(eq.x-cx,0,eq.y-cz);
+    }else if(tz.nodos&&Array.isArray(tz.tramos)){
+      tz.tramos.forEach((t,i)=>{const A=tz.nodos[t.de],B=tz.nodos[t.a];if(A&&B&&t.d>0)lista.push({id:'T'+(i+1),tipo:t.tipo,A,B,d:t.d,v:0,largo:null,ka:t.de,kb:t.a});});
+      raiz=tz.ventilador;
+    }
+    const tramos=lista.filter(e=>e.A.distanceTo(e.B)>=.003);if(!tramos.length)return null;
+    const ady=new Map(),pos=new Map();
+    for(const e of tramos)for(const [k,p] of [[e.ka,e.A],[e.kb,e.B]]){if(!ady.has(k)){ady.set(k,[]);pos.set(k,p);}ady.get(k).push(e);}
+    const hojas=[...ady.keys()].filter(k=>ady.get(k).length===1),dist=k=>Math.hypot(pos.get(k).x-cerca.x,pos.get(k).z-cerca.z);
+    hojas.sort(cerca?(a,b)=>dist(a)-dist(b):(a,b)=>ady.get(b)[0].d-ady.get(a)[0].d);
+    const raices=(raiz&&ady.has(raiz)?[raiz]:[]).concat(hojas,[...ady.keys()]),abajo=new Map(),visto=new Set();
+    for(const r of raices){if(visto.has(r))continue;visto.add(r);const cola=[r];
+      for(let i=0;i<cola.length;i++){const k=cola[i];for(const e of ady.get(k)){if(abajo.has(e))continue;abajo.set(e,k);const o=e.ka===k?e.kb:e.ka;if(!visto.has(o)){visto.add(o);cola.push(o);}}}}
+    const r5=x=>Math.round(x*1e5)/1e5;
+    return tramos.map(e=>{
+      const haciaA=abajo.get(e)===e.ka&&e.ka!==e.kb,A=W(haciaA?e.B:e.A),B=W(haciaA?e.A:e.B),v=Number(e.v),L=Number(e.largo);
+      return {id:String(e.id||''),tipo:String(e.tipo||''),a:[r5(A.x),r5(A.y),r5(A.z)],b:[r5(B.x),r5(B.y),r5(B.z)],d:e.d,
+              v:Number.isFinite(v)&&v>0?v:0,largo:Number.isFinite(L)&&L>0?L:Math.round(e.A.distanceTo(e.B)*1000)/1000};
+    });
+  }
+  /** Lo que las herramientas de la vista nativa necesitan del archivo: tramos, velocidad de diseño y chapa. */
+  function extrasHerramientas(tz,group,center,scale){
+    const out={};
+    try{const d=ductosDe(tz,group,center,scale);if(d&&d.length)out.ductos=d;}catch(e){console.warn('AR: sin tramos para las herramientas',e);}
+    const paq=tz&&tz.esMS?tz.paq:null;
+    if(paq){
+      const vd=Number(paq.material?.vel_transporte_ms??paq.vel_transporte_diseno_ms);if(Number.isFinite(vd)&&vd>0)out.velDiseno=vd;
+      if(paq.chapa?.nombre)out.chapa=String(paq.chapa.nombre);
+      const e=paq.chapa?.espesores_mm||{},t=[[400,e.hasta_400_mm],[1000,e.hasta_1000_mm],[1e9,e.mayor_1000_mm]].map(f=>[f[0],Number(f[1])]).filter(f=>Number.isFinite(f[1])&&f[1]>0);
+      if(t.length)out.espesores=t;
+    }
+    return out;
+  }
   function conBlobs(header,blobs){Object.defineProperty(header,'_blobs',{value:blobs,enumerable:false});return header;}
   async function payload(){
     const tz=S.trazado,mk=tz?.marcador;
@@ -144,7 +190,7 @@
       const group=motor.construirGrupo(tz);
       try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
         const {meshes,blobs}=buildMeshes(group,new T.Vector3(),factor);
-        return conBlobs({schema:3,placement:'surface',title:tz.obra||'Modelo',realScale:factor,meshes},blobs);}finally{motor.liberarObjeto(group,tz.geo);}
+        return conBlobs(Object.assign({schema:3,placement:'surface',title:tz.obra||'Modelo',realScale:factor,meshes},extrasHerramientas(tz,group,new T.Vector3(),factor)),blobs);}finally{motor.liberarObjeto(group,tz.geo);}
     }
     // Resolve the ruler measurement against THIS file, including measurements entered before loading it.
     const measured=document.getElementById('qrMedido'),raw=measured?.value.trim()||'';
@@ -157,8 +203,10 @@
       for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
       if(group.userData.grpMaq)group.userData.grpMaq.visible=S.verMaquinas!==false;
       // Native tracks the full bitmap: the QR offset belongs only to the QR locator.
-      const {meshes,blobs}=buildMeshes(group,center,factor/scale);
-      return conBlobs({schema:3,title:tz.nombre||'Modelo sobre la hoja',realScale:factor/scale,marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes},blobs);
+      // REPLANTEO EN OBRA (v4.27): el modelo va SIEMPRE a tamaño real; una marca impresa reducida solo cambia su ancho
+      const esc=mk.replanteo?1:factor/scale;
+      const {meshes,blobs}=buildMeshes(group,center,esc);
+      return conBlobs(Object.assign({schema:3,title:mk.replanteo?(tz.obra||tz.nombre||'Replanteo'):(tz.nombre||'Modelo sobre la hoja'),realScale:esc,marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes},extrasHerramientas(tz,group,center,esc)),blobs);
     }finally{motor.liberarObjeto(group,tz.geo);}
   }
   async function start(){
@@ -220,7 +268,7 @@
   // teléfono, que antes venía vacío porque la parte nativa no escribía ahí.
   // con estado:true también se muestra en la línea de estado (avance de un STL grande que se reduce en el teléfono, v4.22)
   window.addEventListener('native-log',e=>{const t=String(e.detail?.text||'');if(!t)return;try{AR.registrar&&AR.registrar('APK: '+t);}catch(_){}if(e.detail?.error)UI.estado(t,'err');else if(e.detail?.estado)UI.estado(t,'ok');});
-  window.MSNative={available,start,payload,buildMeshes,base64,sobreHoja,STRIDE,get active(){return active;}};
+  window.MSNative={available,start,payload,buildMeshes,ductosDe,extrasHerramientas,base64,sobreHoja,STRIDE,get active(){return active;}};
   if(available()){
     document.documentElement.dataset.nativePaper='true';
     const select=document.getElementById('msModoPapel');select.value='automatico';
@@ -228,10 +276,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.26 suma un ingeniero de obra de 1,75 m (casco, chaleco, planilla) que inspecciona la pieza a su escala (obedece «alto», «caminá», «chau» y «vení»), abre piezas de Inventor leídas por la PC, deja el modelo quieto donde lo apoyás y ya no lo desvanece de lejos: lo dibuja con la posición real de cada cuadro, lo oculta si el teléfono pierde el seguimiento hasta volver a ver la hoja y lo realinea al mirar el QR, sobre la 4.22: STL grande reducido en el teléfono, oclusión con bordes suaves, sombra según la luz real, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
+    card.textContent='La APK 4.27 suma HERRAMIENTAS en la vista AR: lo que choca con lo real se marca en rojo (cualquier modelo), cinta métrica, ficha de cada pieza al tocarla, el aire en los conductos, plano de corte, rayos X y grabar video; y el ingeniero de 1,75 m esquiva paredes y equipos reales. Sobre la 4.26: la persona que inspecciona la pieza (obedece «alto», «caminá», «chau» y «vení»), piezas de Inventor leídas por la PC, modelo quieto donde lo apoyás, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.26';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.26.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.26.0.apk';
+    link.textContent='Descargar APK 4.27';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.27.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.27.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

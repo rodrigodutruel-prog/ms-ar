@@ -3450,6 +3450,179 @@ async function generarHojaEnApp(hojaNom){
 }
 
 /* ------------------------------------------------------------
+   5c. REPLANTEO EN OBRA (v4.27) — el modelo A TAMAÑO REAL en su lugar
+   Una marca con QR de 170 mm (hoja A4) que se pega en el PISO de la obra
+   sobre un punto conocido del plano: la esquina 0,0 del galpón, la boca de
+   una máquina, la entrada al equipo, o la esquina / el centro de la pieza
+   (con un corrimiento opcional). Es la misma tubería del plano con QR, a
+   escala 1:1 y con el centro de la marca en ese punto (marcador.centro_m,
+   en el sistema del modelo): la vista AR pone el modelo donde va de verdad.
+   La flecha ↑ de la hoja es el "arriba" del plano (el −Z del modelo).
+   ------------------------------------------------------------ */
+const REPLANTEO_LADO_MM = 170;
+const REPLANTEO_EXCLUIDOS = ['grilla','etiquetas','referencia','replanteo','sombra','pivote'];
+// los puntos que se pueden replantear, el contorno del modelo y sus trazos en planta (para el dibujo de la hoja)
+function puntosReplanteo(tz){
+  const g = construirGrupo(tz), pts = [], trazos = [];
+  const box = new THREE.Box3(), tmp = new THREE.Box3();
+  try{
+    g.updateMatrixWorld(true);
+    const deco = [g.userData.grpPiso, g.userData.grpSombra, g.userData.grpEtiq, g.userData.grpRef];
+    (function visitar(o){
+      if(o.visible === false || REPLANTEO_EXCLUIDOS.includes(o.userData.rol) || deco.includes(o)) return;
+      if(o.isMesh && o.geometry){
+        if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        tmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); box.union(tmp);
+      }
+      o.children.forEach(visitar);
+    })(g);
+    (g.userData.puntosRef || []).forEach(r => pts.push({ nombre: r.nombre, x: r.p.x, z: r.p.z }));
+    if(tz.esMS && tz.paq){
+      const V = p => ({ x: p.x - tz.cx, z: p.y - tz.cz });
+      (tz.paq.tramos || []).forEach(t => { if(t && t.a && t.b) trazos.push([V(t.a), V(t.b)]); });
+    }else if(tz.nodos && Array.isArray(tz.tramos)){
+      tz.tramos.forEach(t => { const A = tz.nodos[t.de], B = tz.nodos[t.a]; if(A && B) trazos.push([{ x: A.x, z: A.z }, { x: B.x, z: B.z }]); });
+    }
+  }finally{ liberarObjeto(g, tz.geo); }
+  if(!box.isEmpty()){
+    pts.push({ nombre: 'Esquina de la pieza (arriba a la izquierda en el plano)', x: box.min.x, z: box.min.z });
+    pts.push({ nombre: 'Centro de la pieza', x: (box.min.x + box.max.x)/2, z: (box.min.z + box.max.z)/2 });
+  }
+  return { pts, box, trazos };
+}
+// el marcador de replanteo y su hoja A4 (PDF). opc: { punto (índice), dx_cm (hacia la flecha X), dy_cm (hacia la flecha ↑) }
+function marcaReplanteo(tz, opc){
+  const { pts, box, trazos } = puntosReplanteo(tz);
+  const p = pts[opc && opc.punto != null ? opc.punto : 0];
+  if(!p) throw new Error('Este modelo no tiene puntos para replantear.');
+  const dx = (Number(opc && opc.dx_cm) || 0)/100, dy = (Number(opc && opc.dy_cm) || 0)/100;
+  const cx = p.x + dx, cz = p.z - dy;                               // la flecha ↑ es el −Z del modelo
+  const nombre = String(tz.obra || tz.nombre || 'Modelo').replace(/\.(obj|stl|json)$/i, '');
+  const texto = (CFG.marca === 'MS' ? 'MS AR' : '3DDUT AR') + ' | replanteo 1:1 | ' + nombre.slice(0, 36);
+  const qrCv = marcadorCompuesto(qrCanvas(texto, 12), 1000);
+  const marcador = { patron:'QR2', lado_mm:REPLANTEO_LADO_MM, escala:1, texto:texto, png:qrCv.toDataURL('image/png'),
+                     centro_m:{ x:cx, z:cz }, replanteo:true, punto:p.nombre, corrimiento_cm:[Math.round(dx*100), Math.round(dy*100)] };
+  // ── la hoja A4 vertical ──
+  const W = 210, H = 297, DPI = 200, px = mm => mm/25.4*DPI;
+  const cv = document.createElement('canvas'); cv.width = Math.round(px(W)); cv.height = Math.round(px(H));
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  const L = REPLANTEO_LADO_MM, mx = (W - L)/2, my = 30, rojo = '#e0292a';
+  g.fillStyle = '#111'; g.font = 'bold ' + Math.round(px(5)) + 'px sans-serif';
+  g.fillText('REPLANTEO EN OBRA · ' + nombre.slice(0, 40), px(mx), px(13));
+  g.fillStyle = '#333'; g.font = Math.round(px(3.2)) + 'px sans-serif';
+  g.fillText('Escala 1:1 · pegar en el PISO · imprimir al 100 % (sin "ajustar a página") · ' + new Date().toLocaleDateString('es-AR'), px(mx), px(19.5));
+  g.imageSmoothingEnabled = false; g.drawImage(qrCv, px(mx), px(my), px(L), px(L)); g.imageSmoothingEnabled = true;
+  // marcas del CENTRO (rojas, afuera del cuadrado): el centro va sobre el punto del piso
+  g.strokeStyle = rojo; g.lineWidth = Math.max(2, px(.6));
+  const c0x = mx + L/2, c0y = my + L/2;
+  [[c0x, my - 7, c0x, my - 1], [c0x, my + L + 1, c0x, my + L + 7], [mx - 7, c0y, mx - 1, c0y], [mx + L + 1, c0y, mx + L + 7, c0y]]
+    .forEach(([a, b, c, d]) => { g.beginPath(); g.moveTo(px(a), px(b)); g.lineTo(px(c), px(d)); g.stroke(); });
+  // flechas: ↑ arriba del plano, → eje X
+  const flecha = (x1, y1, x2, y2, rot) => {
+    g.strokeStyle = '#111'; g.fillStyle = '#111'; g.lineWidth = Math.max(2, px(.7));
+    g.beginPath(); g.moveTo(px(x1), px(y1)); g.lineTo(px(x2), px(y2)); g.stroke();
+    const a = Math.atan2(y2 - y1, x2 - x1), k = 3.2;
+    g.beginPath(); g.moveTo(px(x2), px(y2)); g.lineTo(px(x2 - k*Math.cos(a - .45)), px(y2 - k*Math.sin(a - .45))); g.lineTo(px(x2 - k*Math.cos(a + .45)), px(y2 - k*Math.sin(a + .45))); g.closePath(); g.fill();
+  };
+  // orientación: ↑ arriba del plano (encima del cuadrado, a la izquierda) y X → (debajo, a la derecha)
+  flecha(mx + 3, my - 1.5, mx + 3, my - 8.5);
+  g.font = 'bold ' + Math.round(px(3.4)) + 'px sans-serif'; g.fillStyle = '#111';
+  g.fillText('ARRIBA DEL PLANO', px(mx + 6), px(my - 2.6));
+  flecha(mx + L - 16, my + L + 5, mx + L - 2, my + L + 5);
+  g.textAlign = 'right'; g.fillText('X', px(mx + L - 18), px(my + L + 6.2)); g.textAlign = 'left';
+  // instrucciones, a todo el ancho
+  const yb = my + L + 14;
+  const lineas = [
+    '1. El cuadrado negro tiene que medir ' + L + ' mm. Si mide otra cosa, anotá la medida en la app (Medida del marco).',
+    '2. Pegá la hoja en el piso con su CENTRO (las marcas rojas) sobre:',
+    '    ' + p.nombre + (dx || dy ? ', corrida ' + Math.round(dx*100) + ' cm hacia X y ' + Math.round(dy*100) + ' cm hacia arriba.' : '.'),
+    '3. Girala para que ARRIBA DEL PLANO apunte como en el dibujo de abajo.',
+    '4. En la app: este mismo modelo, modo "Sobre plano impreso", AR, y apuntá a la hoja desde 1 a 2 m:',
+    '    el modelo aparece A TAMAÑO REAL en su lugar. Recorrelo sin pisar la hoja.'
+  ];
+  g.fillStyle = '#222'; g.font = Math.round(px(2.8)) + 'px sans-serif';
+  // una línea larga se parte en la última palabra que entra (nada se sale de la hoja)
+  let yl = yb;
+  lineas.forEach(t => {
+    const sangria = t.length - t.trimStart().length, pal = t.trimStart().split(' '); let lin = '', x0 = mx + sangria*1.2;
+    pal.forEach(w => { const prueba = lin ? lin + ' ' + w : w; if(g.measureText(prueba).width > px(L - (x0 - mx)) && lin){ g.fillText(lin, px(x0), px(yl)); yl += 4.4; x0 = mx + 4.8; lin = w; } else lin = prueba; });
+    g.fillText(lin, px(x0), px(yl)); yl += 4.6;
+  });
+  // dibujo en planta (↑ = arriba del plano): el contorno, los tramos y dónde va la hoja
+  const zx = mx, zy = yl + 1, zw = L, zh = Math.max(24, H - zy - 12);
+  const bx0 = Math.min(box.isEmpty() ? cx : box.min.x, cx), bx1 = Math.max(box.isEmpty() ? cx : box.max.x, cx);
+  const bz0 = Math.min(box.isEmpty() ? cz : box.min.z, cz), bz1 = Math.max(box.isEmpty() ? cz : box.max.z, cz);
+  const k = Math.min(zw/Math.max(.01, bx1 - bx0), zh/Math.max(.01, bz1 - bz0))*.9;
+  const ox = zx + (zw - (bx1 - bx0)*k)/2, oz = zy + (zh - (bz1 - bz0)*k)/2;
+  const X = x => px(ox + (x - bx0)*k), Z = z => px(oz + (z - bz0)*k);
+  g.strokeStyle = '#c9ced4'; g.lineWidth = Math.max(1, px(.3)); g.strokeRect(px(zx), px(zy), px(zw), px(zh));
+  if(!box.isEmpty()){ g.fillStyle = '#eef1f4'; g.fillRect(X(box.min.x), Z(box.min.z), X(box.max.x) - X(box.min.x), Z(box.max.z) - Z(box.min.z)); g.strokeStyle = '#8a95a3'; g.strokeRect(X(box.min.x), Z(box.min.z), X(box.max.x) - X(box.min.x), Z(box.max.z) - Z(box.min.z)); }
+  g.strokeStyle = '#1a2432'; g.lineWidth = Math.max(1, px(.45));
+  trazos.slice(0, 4000).forEach(([a, b]) => { g.beginPath(); g.moveTo(X(a.x), Z(a.z)); g.lineTo(X(b.x), Z(b.z)); g.stroke(); });
+  const s = Math.max(2.2, Math.min(8, L/1000*k));
+  g.fillStyle = rojo; g.fillRect(X(cx) - px(s/2), Z(cz) - px(s/2), px(s), px(s));
+  g.font = 'bold ' + Math.round(px(2.6)) + 'px sans-serif';
+  { const tw = g.measureText('la hoja').width, lx = X(cx) + px(s/2 + 1), ly = Z(cz) + px(1);
+    g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(lx - px(.6), ly - px(2.4), tw + px(1.2), px(3.2)); g.fillStyle = rojo; g.fillText('la hoja', lx, ly); }
+  flecha(zx + 4, zy + 12, zx + 4, zy + 4); g.fillStyle = '#111'; g.font = Math.round(px(2.4)) + 'px sans-serif'; g.fillText('arriba del plano', px(zx + 6), px(zy + 7));
+  g.fillStyle = '#666'; g.font = Math.round(px(2.5)) + 'px sans-serif';
+  g.fillText((CFG.marca === 'MS' ? 'Metalúrgica Sarmiento · Depto. Innovación y Desarrollo' : '3DDUT Digital Craft') + ' · generado en la app', px(mx), px(H - 6));
+  const pdf = pdfConJPEG(cv.toDataURL('image/jpeg', .92), W, H, cv.width, cv.height);
+  return { marcador, pdf: new File([pdf], nombre + '_replanteo_A4.pdf', { type: 'application/pdf' }), punto: p, puntos: pts };
+}
+// aplica la marca al modelo abierto (queda en modo "Sobre plano impreso") y entrega el PDF
+async function generarReplanteo(opc){
+  const tz = S.trazado;
+  if(!tz){ UI.estado('Primero abrí un modelo: la marca de replanteo se genera para ese modelo.', 'err'); return null; }
+  try{
+    const r = marcaReplanteo(tz, opc || {});
+    tz.marcador = r.marcador;
+    const measured = document.getElementById('qrMedido'); if(measured) measured.value = '';
+    const rP = document.querySelector('input[name="modo"][value="papel"]'); if(rP){ rP.checked = true; rP.dispatchEvent(new Event('change')); }
+    S.modoPapel = true;
+    const como = (opc && opc.sinEntregar) ? 'listo' : await entregarArchivos([r.pdf]);
+    UI.estado('Marca de replanteo lista (' + r.pdf.name + (como === 'compartido' ? ', compartida' : como === 'descargado' ? ', descargada' : '') + '): imprimila en A4 al 100 %, pegala en el piso sobre "' + r.punto.nombre + '" y abrí AR. El modelo aparece a tamaño real en su lugar. Para volver a la maqueta, abrí el archivo de nuevo.', 'ok');
+    registrar('replanteo 1:1 sobre ' + r.punto.nombre + ' (' + r.marcador.corrimiento_cm.join(', ') + ' cm)');
+    return r;
+  }catch(e){
+    UI.estado('No se pudo generar la marca de replanteo: ' + (e.message || e), 'err');
+    registrar('ERROR replanteo: ' + (e.message || e));
+    return null;
+  }
+}
+// el cuadro para elegir el punto y el corrimiento
+function abrirReplanteo(){
+  const tz = S.trazado;
+  if(!tz){ UI.estado('Primero abrí un modelo: la marca de replanteo se genera para ese modelo.', 'err'); return; }
+  let pts;
+  try{ pts = puntosReplanteo(tz).pts; }catch(e){ UI.estado('No se pudieron leer los puntos del modelo: ' + (e.message || e), 'err'); return; }
+  if(!pts.length){ UI.estado('Este modelo no tiene puntos para replantear.', 'err'); return; }
+  const fondo = document.createElement('div');
+  fondo.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const caja = document.createElement('div');
+  caja.style.cssText = 'background:#1b2532;color:#fff;border-radius:12px;padding:16px;max-width:420px;width:100%;font:15px system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+  const h = document.createElement('div'); h.textContent = 'Replanteo en obra (tamaño real)'; h.style.cssText = 'font-weight:700;font-size:17px;margin-bottom:6px';
+  const p = document.createElement('div'); p.textContent = 'Se imprime una marca A4 que se pega en el piso sobre un punto conocido del plano; el modelo aparece en su lugar, a escala 1:1.'; p.style.cssText = 'opacity:.85;margin-bottom:10px;line-height:1.35';
+  const sel = document.createElement('select'); sel.id = 'replanteoPunto'; sel.style.cssText = 'width:100%;margin:4px 0 10px;padding:8px;font-size:15px';
+  pts.forEach((q, i) => { const o = document.createElement('option'); o.value = i; o.textContent = q.nombre; sel.append(o); });
+  const fila = document.createElement('div'); fila.style.cssText = 'display:flex;gap:8px;margin-bottom:12px';
+  const campo = (id, rotulo) => { const l = document.createElement('label'); l.style.cssText = 'flex:1;font-size:13px;opacity:.9';
+    l.textContent = rotulo; const i = document.createElement('input'); i.type = 'number'; i.id = id; i.value = '0'; i.step = '1';
+    i.style.cssText = 'width:100%;padding:8px;font-size:15px;margin-top:3px;box-sizing:border-box'; l.append(i); fila.append(l); return i; };
+  const ix = campo('replanteoDx', 'Corrida hacia X (cm)'), iy = campo('replanteoDy', 'Corrida hacia ↑ (cm)');
+  const botones = document.createElement('div'); botones.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+  const cancelar = document.createElement('button'); cancelar.className = 'mini'; cancelar.textContent = 'Cancelar';
+  const ok = document.createElement('button'); ok.className = 'mini'; ok.id = 'replanteoOk'; ok.textContent = 'Generar la marca (PDF)'; ok.style.cssText = 'border-color:var(--rojo, #e0292a);color:#fff';
+  botones.append(cancelar, ok);
+  const et = document.createElement('div'); et.textContent = 'Punto del plano donde va el centro de la hoja'; et.style.cssText = 'font-size:13px;opacity:.9';
+  caja.append(h, p, et, sel, fila, botones); fondo.append(caja); document.body.append(fondo);
+  const cerrar = () => fondo.remove();
+  cancelar.addEventListener('click', cerrar);
+  fondo.addEventListener('click', e => { if(e.target === fondo) cerrar(); });
+  ok.addEventListener('click', async () => { const opc = { punto: Number(sel.value), dx_cm: Number(ix.value) || 0, dy_cm: Number(iy.value) || 0 }; cerrar(); await generarReplanteo(opc); });
+}
+
+/* ------------------------------------------------------------
    6b. MARCADOR DEL PLANO IMPRESO — la imagen que rastrea WebXR
    Es el cuadrado con patrón que la Calculadora imprime junto a la
    cruz 1. Se dibuja acá con EL MISMO algoritmo (LCG 9×9) para que
@@ -3470,6 +3643,7 @@ function patronMarcador(){
    quat = orientación de la imagen · medido = measuredWidthInMeters
    ------------------------------------------------------------ */
 function centroMarcador(tz,mk){
+  if(mk.centro_m && numeroValido(mk.centro_m.x) && numeroValido(mk.centro_m.z)) return new THREE.Vector3(mk.centro_m.x,0,mk.centro_m.z);   // replanteo en obra (v4.27)
   if(mk.x_file_mm != null && tz.refOrigen){
     const F=tz.fUnid || .001,O=tz.refOrigen;
     return new THREE.Vector3(O.x+mk.x_file_mm*F,0,O.z-mk.y_file_mm*F);
@@ -5760,6 +5934,9 @@ document.querySelectorAll('input[name="modo"]').forEach(r => {
 
 $('btnAR').addEventListener('click', iniciarAR);
 $('btnHoja').addEventListener('click', () => { const sel = document.getElementById('selHojaApp'); generarHojaEnApp(sel ? sel.value : 'a3'); });
+// REPLANTEO EN OBRA (v4.27): el botón va al lado de "Plano con QR" en las dos marcas
+{ const bh = $('btnHoja'); if(bh && !document.getElementById('btnReplanteo')){ const b = document.createElement('button'); b.id = 'btnReplanteo'; b.className = 'mini'; b.textContent = 'Replanteo en obra';
+  b.title = 'Marca A4 para pegar en el piso de la obra sobre un punto del plano: el modelo aparece a tamaño real en su lugar'; bh.after(b); b.addEventListener('click', abrirReplanteo); } }
 $('btnSensor').addEventListener('click', () => {
   iniciarARSensor().catch(e => mostrarError('AR sensores: ' + (e.message || e)));
 });
@@ -5812,5 +5989,5 @@ if(location.hash === '#compartido-error') UI.estado('No se pudo guardar el archi
 window.AR = { motor:{construirGrupo,nuevaEscena,obtenerRenderer,liberarObjeto,bitmapMarcador,centroMarcador}, S, CFG, PAL, UI, cargar, cargarModelo3D, cargarMTL, cargarArchivos, generarHojaEnApp, qrCanvas, pdfConJPEG, iniciarAR, iniciar3D, iniciarARSensor,
               cerrar3D, salirAR,
               revisarSoporte, traerAca, fijarModelo, tapPantalla, reiniciarPlanoFijo, refrescarHUD, DEMO, VERSION,
-              construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, mostrarListaPivote, cancelarPivote,
+              construirGrupoMS, girarRed, marcadorCompuesto, pasoMarcador, qrCanvas, generarHojaEnApp, generarReplanteo, marcaReplanteo, puntosReplanteo, abrirReplanteo, mostrarListaPivote, cancelarPivote,
               fotoDelVisor, entregarImagen, calcularAristas, normalesSuaves, registrar };

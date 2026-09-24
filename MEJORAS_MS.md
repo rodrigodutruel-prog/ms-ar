@@ -1,3 +1,23 @@
+MS AR y 3DDUT AR 4.27.0
+
+HERRAMIENTAS en la vista AR: un botón «Herramientas» abre un panel. Todo arranca apagado; si no se toca, la vista hace lo mismo que antes.
+- Choques con lo real: lo que el modelo toca o atraviesa de verdad (una pared, una columna, una máquina, el techo) se pinta en ROJO, y lo que queda a menos de 10 cm, en NARANJA. Vale para cualquier modelo que se inserte (OBJ, STL, Inventor, red de la Calculadora). Usa la profundidad del teléfono, hasta unos 5 m; si el teléfono no la tiene, el botón lo avisa.
+- Medir: se tocan dos puntos, sobre la pieza o sobre lo real (piso, pared, una máquina), y aparece la distancia; entre dos puntos de un plano a escala dice los metros reales. Hasta 6 medidas, con «Borrar medidas».
+- Ficha al tocar: con el modelo fijado, tocar una pieza muestra su ficha. En una red de la Calculadora, el tramo: tipo, Ø, largo, velocidad (bien / baja / alta respecto de la de diseño), caudal y chapa. En cualquier otro modelo, sus medidas reales y la altura del punto tocado.
+- Aire: en una red de la Calculadora, partículas que corren por dentro de los caños, de las captaciones hacia el equipo, a su velocidad: azul lento, verde la de diseño, rojo rápido. El modelo se vuelve semitransparente para verlas.
+- Corte: un plano que corta el modelo en X, en altura o en Z, con una barra para moverlo; lo cortado se ve por dentro.
+- Rayos X: el modelo al 60, 35 o 15 % para ver lo que tiene adentro o detrás.
+- Grabar video: la vista AR (cámara, modelo y medidas, sin los botones) a la galería, en Películas › MS AR / 3DDUT AR. La foto también sale con las medidas y la ficha.
+
+- La persona esquiva lo real: con la profundidad del teléfono, el ingeniero ve paredes, máquinas, columnas y gente. Si algo se le cruza, se abre de costado para rodearlo y vuelve a su recorrido; si no hay paso, se da vuelta. No atraviesa nada. Funciona a escala real o casi (en un plano 1:40 mide 4 cm y la profundidad no alcanza para eso).
+- Replanteo en obra a tamaño real: botón «Replanteo en obra», al lado de «Plano con QR». Se elige un punto del plano (la esquina del galpón, la boca de una máquina, la entrada al equipo, o la esquina o el centro de la pieza, con un corrimiento opcional) y la app genera una hoja A4 con una marca de 170 mm para pegar en el piso ahí. Al apuntarla, el modelo aparece a escala 1:1 en su lugar. Si la hoja se imprimió reducida, el modelo igual sale a tamaño real.
+- Colores de Inventor: las piezas y ensambles que lee la PC («Ver en MS AR» o compartir un .ipt) llegan con sus colores de Inventor, el de cada pieza y el que el ensamble le sobrescribe. El aluminio y la chapa, que Inventor guarda como blanco, salen gris metálico.
+- Detalles: las fotos y los videos ya no llevan «.obj» en el nombre; los botones de la vista AR quedan alineados y en un renglón.
+
+Verificación: pruebas nativas de las herramientas (29) y del esquive (47: rodea una columna en 6 recorridos distintos, se da vuelta ante una pared, encerrado entre dos no atraviesa ninguna), más todas las anteriores sin cambios; los 6 programas gráficos compilados; puente web → vista nativa (82: tramos, sentido del aire, replanteo 1:1); web y navegador de las dos marcas; conversor de Inventor con colores (un ensamble real con 4 colores) y servidor de la PC. En el emulador: el panel, la grabación de video y las dos marcas. Sin probar en un teléfono: choques, medir, ficha, aire, corte, rayos X y el esquive, que necesitan la cámara y la profundidad reales.
+
+Instalar cada APK 4.27.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.26.0
 
 Reúne todo lo probado en el teléfono y en el taller desde la 4.23.1 (las 4.23.2, 4.24 y 4.25 se probaron como APK sueltas y no se publicaron).
