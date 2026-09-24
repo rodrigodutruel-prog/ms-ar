@@ -29,6 +29,13 @@ const AR_TOPE_CARAS = CFG.maxCaras || 110000;
 // tildaba al colocar un modelo de 91.000 caras. La malla puede ser grande; las
 // aristas no. (La solucion de fondo es traerlas ya calculadas en el archivo.)
 const AR_TOPE_ARISTAS = CFG.maxAristas || 45000;
+// CANTOS VIVOS (v4.30, "no se ven las aristas negras en algunos dibujos"): en una pieza de CAD cada caja tiene tantos
+// cantos como triangulos, y el presupuesto del 10 % de las caras dejaba sin dibujar mas de la mitad (el Organizador
+// Hogi: 8.169 cantos de 90 grados en 16.580 caras, se dibujaban 2.000). Si los cantos A ESCUADRA (88 a 92 grados) son
+// el 4 % de las caras o mas, el modelo es de CAD y van todas hasta el tope (las piezas de Rodrigo: 6,5-50 %); la figura
+// del operario tiene 0,3-0,5 % y una superficie de ruido al azar 2,5 %: siguen con el 10 %. El mismo criterio que
+// presupuesto_aristas() de Preparar_OBJ_para_AR.py: si se cambia uno, cambiar el otro.
+const AR_PROPORCION_CAD = 0.04, AR_COS_NITIDA = Math.sin(2*Math.PI/180);
 // Aristas negras, como el sombreado con aristas de Inventor. Iban blancas
 // porque el visor de MS tenia fondo oscuro; ahora el fondo es claro.
 // NEGRAS. Estuvieron en 0x1a2432 (navy muy oscuro) y Rodrigo lo marco: las
@@ -185,7 +192,7 @@ function terminarGeometria(g){
     const nrm = normalesSuaves(vs, todos, 24);
     if(nrm) g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); else g.computeVertexNormals();
     const presupuesto = Math.min(AR_TOPE_ARISTAS, Math.max(2000, Math.round(todos.length/3*0.10)));
-    const ga = calcularAristas(vs, todos, 24, presupuesto);
+    const ga = calcularAristas(vs, todos, 24, presupuesto, AR_TOPE_ARISTAS);
     if(ga) g.userData.aristasGeo = ga;
   }catch(e){ if(!g.getAttribute('normal')) g.computeVertexNormals(); }
   return g;
@@ -1193,7 +1200,8 @@ function normalesSuaves(vs, todos, anguloDeg){
 // los bordes abiertos. Se queda con las `tope` mas vivas. Sin Map: las aristas se agrupan
 // por su vertice menor (CSR) y las dos caras que comparten una arista quedan juntas al
 // ordenar cada grupo; el presupuesto se resuelve con un histograma, sin ordenar todo.
-function calcularAristas(vs, todos, anguloDeg, tope){
+// topeCAD (v4.30): si el modelo es de CAD (cantos vivos >= AR_PROPORCION_CAD de las caras) el tope sube a este.
+function calcularAristas(vs, todos, anguloDeg, tope, topeCAD){
   const nv = (vs.length/3)|0, nt = (todos.length/3)|0;
   if(!nt || !nv) return null;
   // 1) un id por posicion (el OBJ puede repetir el mismo punto)
@@ -1227,7 +1235,7 @@ function calcularAristas(vs, todos, anguloDeg, tope){
   //    misma arista deciden las dos primeras, como antes.
   const cosLim = Math.cos(anguloDeg*Math.PI/180);
   const ea = new Int32Array(total), eb = new Int32Array(total), ed = new Float32Array(total);
-  let n = 0;
+  let n = 0, nitidas = 0;
   for(let p=0;p<nu;p++){
     const a = cnt[p], b = cnt[p+1];
     for(let i=a+1;i<b;i++){
@@ -1241,12 +1249,13 @@ function calcularAristas(vs, todos, anguloDeg, tope){
       else{
         const t1 = et[i]*3, t2 = et[i+1]*3;
         const d = Math.abs(fn[t1]*fn[t2] + fn[t1+1]*fn[t2+1] + fn[t1+2]*fn[t2+2]);
-        if(d <= cosLim){ ea[n]=p; eb[n]=eq[i]; ed[n]=d; n++; }
+        if(d <= cosLim){ ea[n]=p; eb[n]=eq[i]; ed[n]=d; n++; if(d < AR_COS_NITIDA) nitidas++; }
       }
       i = j;
     }
   }
   const candidatas = n;
+  if(topeCAD && nt && nitidas >= AR_PROPORCION_CAD*nt) tope = Math.max(tope, topeCAD);
   // 5) PRESUPUESTO: quedan las mas vivas (menor |cos|). Histograma de 1024 cajas en vez de ordenar.
   let elegir = null;
   if(n > tope){
@@ -1292,6 +1301,7 @@ async function parseOBJ(txt, avance, mtl){
   const aristas = [];                 // pares de indices de las lineas 'l' (aristas ya calculadas)
   const matNombres = []; const matIdx = Object.create(null);
   let hayColor = false, enVidrio = false, matAct = -1, hayMat = false, hojaEmb = null;
+  let aristasPos = false;             // v4.30: el preparador ya las calcula por posicion y con el presupuesto de CAD
   const lineas = txt.split('\n'); txt = null;
   const N = lineas.length;
   const LOTE = 25000;
@@ -1377,6 +1387,8 @@ async function parseOBJ(txt, avance, mtl){
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
       }else if(c0===35 && l.startsWith('# MSAR_HOJA ', k)){   // la hoja impresa (Plano_AR_desde_OBJ)
         try{ hojaEmb = JSON.parse(l.slice(k+12)); }catch(e){}
+      }else if(c0===35 && l.startsWith('# MSAR_ARISTAS_POS', k)){
+        aristasPos = true;
       }else if(c0===117 && l.startsWith('usemtl', k)){
         const nom = l.slice(k+6).trim();
         if(matIdx[nom] === undefined){ matIdx[nom] = matNombres.length; matNombres.push(nom); }
@@ -1455,7 +1467,13 @@ async function parseOBJ(txt, avance, mtl){
   // los 24 grados y el modelo se llena de garabatos negros (foto de Rodrigo, 22-sep). Se dibujan como
   // maximo un 10 % de las caras (nunca menos de 2.000, nunca mas del tope), y sobran las MAS VIVAS.
   const presupuestoAristas = Math.min(AR_TOPE_ARISTAS, Math.max(2000, Math.round(todos.length/3*0.10)));
-  if(aristas.length && !_seSimplifico && aristas.length/2 <= presupuestoAristas){
+  // v4.30: las de un preparador anterior se armaban por NUMERO de vertice; en un modelo que repite el mismo punto en
+  // cada cara (STL, OBJ de Inventor, pieza leida cara por cara) eran unas cualquiera y las de verdad no se veian. Esas
+  // se descartan y se calculan aca por posicion. Las nuevas (MSAR_ARISTAS_POS) ya traen el presupuesto de CAD.
+  let usarArchivo = aristas.length > 0 && !_seSimplifico;
+  if(usarArchivo) usarArchivo = aristasPos ? aristas.length/2 <= AR_TOPE_ARISTAS
+    : (aristas.length/2 <= presupuestoAristas && unificarPosiciones(vs, nvs).nu >= 0.9*nvs);
+  if(usarArchivo){
     try{
       const ap = new Float32Array(aristas.length*3);
       for(let i=0;i<aristas.length;i++){
@@ -1473,7 +1491,7 @@ async function parseOBJ(txt, avance, mtl){
   // las aristas negras del sombreado de Inventor, sin garabatos.
   if(!g.userData.aristasGeo){
     try{
-      const ga = calcularAristas(vs, todos, 24, presupuestoAristas);
+      const ga = calcularAristas(vs, todos, 24, presupuestoAristas, AR_TOPE_ARISTAS);
       if(ga) g.userData.aristasGeo = ga;
     }catch(e){}
   }

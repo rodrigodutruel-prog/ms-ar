@@ -1,3 +1,16 @@
+MS AR y 3DDUT AR 4.30.0
+
+- Parado como en Inventor: con «Ver en MS AR» en la PC, el modelo llega con la vista Superior de Inventor hacia arriba (la del ViewCube de cada archivo). Los ensambles dibujados con el Superior en +Y (la mayoría de los de Leiner y Colibri, el Operario) llegaban acostados; ahora llegan parados. La PC lo lee con un Inventor aparte y oculto, en paralelo con la conversión (unos 10 s la primera vez; después queda guardado para ese archivo), y la ventana dice «Parado como en Inventor (vista Superior +Y)».
+- «Tocar la base», en Ajustar: se toca el botón y después la cara de la pieza que va apoyada en el piso, y la pieza se para sobre esa cara de un toque, se la mire desde donde se la mire. «Deshacer volcado» la deja como vino.
+- La app recuerda cómo se paró cada modelo: si se volcó (con «Tocar la base» o con Volcar) y se fijó, la próxima vez que se abre ese mismo modelo vuelve parado igual.
+- Aristas negras en todos los dibujos: en los modelos que repiten el mismo punto en cada cara (ensambles del servidor, piezas leídas cara por cara, STL) las aristas se armaban mal y casi no se veían; ahora se reconocen por posición. Además, una pieza de CAD dibuja todos sus cantos (el Organizador Hogi pasó de 2.000 a 9.390), y una figura orgánica como el operario sigue con el límite de siempre para que no se llene de rayas. Los modelos ya guardados en el teléfono se corrigen solos al abrirlos.
+- Ensambles del servidor (Z:) con más detalle: Inventor los exporta en resolución media o alta (el Ventilador Gatti pasó de 6.116 a 95.178 triángulos: caños redondos, sin facetas) y el archivo pesa la mitad.
+- El ingeniero ya no atraviesa: su recorrido rodea la pieza como quedó después de volcarla (antes rodeaba la planta sin volcar y cruzaba el equipo), y lo que la cámara ya vio (paredes, máquinas) queda fijo en el lugar: mover, girar, volcar o escalar el modelo con Ajustar ya no lo borra.
+
+Verificación: pruebas nativas (19 baterías, entre ellas colocación 107 con «Tocar la base», obstáculos 59 con la memoria fija al lugar y herramientas 33), web (26 de regresión con la nueva de aristas de CAD, flujo, seguimiento y service worker), preparador (11), colores y orientación (20), servidor de punta a punta y puente web → vista nativa (90). En la PC, la vista Superior leída de Inventor: Operario +Y, Carro +Z (sin cambio), Brida TN y Ventilador Gatti +Y. En el emulador, las dos APK abren la 4.30.0, recalculan las aristas de un modelo viejo (3.073 → 15.164) y muestran «Tocar la base» y «Deshacer volcado» en Ajustar; el toque sobre la pieza con ARCore queda para probar en el teléfono (el emulador no encontró el piso).
+
+Instalar cada APK 4.30.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.29.0
 
 - Escala regulable: con el modelo apoyado, «Ajustar» muestra arriba una fila con «−», una barra y «+», y la escala del modelo («1:20»). La barra agranda o achica el modelo en su lugar, sin despegarlo de la mesa, y se imanta a las escalas comunes (1:10, 1:15, 1:20, 1:25, 1:50…); «−» y «+» saltan a la escala común siguiente. La persona de referencia, la cinta métrica y el aire siguen la escala nueva. Sobre la hoja impresa la escala la fija el plano y no se ofrece.
