@@ -1,3 +1,13 @@
+MS AR y 3DDUT AR 4.31.0
+
+- Replanteo en obra SIN HOJA: en «Replanteo en obra» está el botón «Sin hoja: marcar 2 puntos en la pared». Se abre la cámara a tamaño real; se apunta el ⊕ al pie de la pared y se toca (punto 1), y después otro punto lejos, al pie de la misma pared (punto 2); mientras tanto se ve la línea amarilla de la pared. El modelo queda con la espalda contra esa línea, empezando en el punto 1 y del lado de la pared donde uno está parado.
+- «Girar 90°» con la pared marcada pone otra cara del modelo contra la pared, sin perder la alineación.
+- «Alinear a pared», en Ajustar: lo mismo con cualquier modelo apoyado en el piso, para ponerlo contra una pared en cualquier momento.
+
+Verificación: pruebas de la alineación (22: pared derecha y en diagonal, de un lado y del otro, las cuatro caras, modelo no centrado), todas las nativas (20 baterías), puente web → vista nativa (94, con «Sin hoja» en las dos marcas y la AR siguiente otra vez normal) y web completa; en el emulador, las dos APK abren la 4.31.0 y «Sin hoja» abre la cámara a tamaño real pidiendo el punto 1. Marcar los dos puntos sobre un piso real queda para probar en el teléfono (el emulador no detecta el piso).
+
+Instalar cada APK 4.31.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.30.0
 
 - Parado como en Inventor: con «Ver en MS AR» en la PC, el modelo llega con la vista Superior de Inventor hacia arriba (la del ViewCube de cada archivo). Los ensambles dibujados con el Superior en +Y (la mayoría de los de Leiner y Colibri, el Operario) llegaban acostados; ahora llegan parados. La PC lo lee con un Inventor aparte y oculto, en paralelo con la conversión (unos 10 s la primera vez; después queda guardado para ese archivo), y la ventana dice «Parado como en Inventor (vista Superior +Y)».

@@ -190,7 +190,8 @@
       const group=motor.construirGrupo(tz);
       try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
         const {meshes,blobs}=buildMeshes(group,new T.Vector3(),factor);
-        return conBlobs(Object.assign({schema:3,placement:'surface',title:tz.obra||'Modelo',realScale:factor,meshes},extrasHerramientas(tz,group,new T.Vector3(),factor)),blobs);}finally{motor.liberarObjeto(group,tz.geo);}
+        // alinear (v4.31): REPLANTEO SIN HOJA, la vista empieza marcando dos puntos al pie de la pared
+        return conBlobs(Object.assign({schema:3,placement:'surface',title:tz.obra||'Modelo',realScale:factor,meshes,alinear:!!S.alinearPared},extrasHerramientas(tz,group,new T.Vector3(),factor)),blobs);}finally{motor.liberarObjeto(group,tz.geo);}
     }
     // Resolve the ruler measurement against THIS file, including measurements entered before loading it.
     const measured=document.getElementById('qrMedido'),raw=measured?.value.trim()||'';
@@ -233,10 +234,11 @@
       }
       header.blob=token;
       NativePaper.start(JSON.stringify(header));
+      S.alinearPared=false;   // el replanteo sin hoja es para esta vez; la proxima AR vuelve a apoyar con un toque
       return true;
-    }catch(e){if(token){try{NativePaper.abort(token);}catch(_){}}release();UI.estado(e.message||'No se pudo preparar el modelo.','err');return false;}
+    }catch(e){S.alinearPared=false;if(token){try{NativePaper.abort(token);}catch(_){}}release();UI.estado(e.message||'No se pudo preparar el modelo.','err');return false;}
   }
-  function release(){active=false;if(S._iniciando==='native-paper')S._iniciando=null;AR.revisarSoporte();}
+  function release(){active=false;S.alinearPared=false;if(S._iniciando==='native-paper')S._iniciando=null;AR.revisarSoporte();}
   window.addEventListener('native-paper-closed',release);
   window.addEventListener('native-paper-error',e=>{release();UI.estado(e.detail?.message||String(e.detail||'No se pudo iniciar la cámara AR.'),'err');});
   // ARCHIVOS RECIBIDOS desde otra app (WhatsApp, Archivos, correo): la APK los copió a su caché y avisa con
@@ -306,7 +308,7 @@
     card.textContent='La APK 4.29 suma una barra para cambiar la escala del modelo en la vista AR (Ajustar: −, barra y +, imantada a 1:10, 1:20, 1:25, 1:50…); ya traía guardar en el teléfono y compartir el modelo que llega de la PC (o de WhatsApp), listo para abrir en la app (una tarjeta arriba de todo al recibirlo), y una persona que recorre el mapa de lo real de a poco (sin tironcitos); sobre la 4.27: herramientas en la vista AR (choques en rojo, cinta métrica, ficha, aire en los conductos, corte, rayos X y video), el ingeniero que esquiva paredes y equipos reales, replanteo en obra a tamaño real y colores de Inventor. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
     link.textContent='Descargar APK 4.29';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.30.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.30.0.apk';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.31.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.31.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

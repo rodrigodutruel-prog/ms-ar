@@ -3608,6 +3608,21 @@ async function generarReplanteo(opc){
     return null;
   }
 }
+// REPLANTEO SIN HOJA (v4.31): a tamaño real, apoyado en el piso, y la vista AR de la APK empieza pidiendo los dos puntos
+// de la pared (PaperAlinear). En el navegador no hay vista nativa: se avisa.
+function replanteoSinHoja(){
+  const tz = S.trazado;
+  if(!tz){ UI.estado('Primero abrí un modelo: el replanteo se hace con ese modelo.', 'err'); return false; }
+  if(!(window.NativePaper && typeof NativePaper.start === 'function')){
+    UI.estado('El replanteo sin hoja es de la aplicación MS AR / 3DDUT AR del teléfono (APK): abrí el modelo ahí.', 'err'); return false; }
+  const r1 = document.querySelector('input[name="modo"][value="1"]');
+  if(r1){ r1.checked = true; r1.dispatchEvent(new Event('change')); }
+  S.modoPapel = false; S.escala = 1; S.alinearPared = true;
+  registrar('replanteo sin hoja: marcar 2 puntos al pie de la pared');
+  UI.estado('Replanteo sin hoja: en la cámara apuntá el ⊕ al pie de la pared y tocá (punto 1); después otro punto lejos, sobre la misma pared.', 'ok');
+  const b = $('btnAR'); if(b) b.click();
+  return true;
+}
 // el cuadro para elegir el punto y el corrimiento
 function abrirReplanteo(){
   const tz = S.trazado;
@@ -3632,10 +3647,16 @@ function abrirReplanteo(){
   const cancelar = document.createElement('button'); cancelar.className = 'mini'; cancelar.textContent = 'Cancelar';
   const ok = document.createElement('button'); ok.className = 'mini'; ok.id = 'replanteoOk'; ok.textContent = 'Generar la marca (PDF)'; ok.style.cssText = 'border-color:var(--rojo, #e0292a);color:#fff';
   botones.append(cancelar, ok);
+  // SIN HOJA (v4.31, pedido de Rodrigo): en la cámara se marcan dos puntos al pie de la pared y el modelo queda contra ella
+  const sinHoja = document.createElement('div'); sinHoja.style.cssText = 'border-top:1px solid rgba(255,255,255,.18);margin-top:14px;padding-top:12px';
+  const sh = document.createElement('div'); sh.textContent = 'Sin hoja impresa: en la cámara marcás dos puntos del piso al pie de la pared y el modelo queda a tamaño real contra ella, desde el primer punto.'; sh.style.cssText = 'opacity:.85;margin-bottom:8px;line-height:1.35;font-size:14px';
+  const bSin = document.createElement('button'); bSin.className = 'mini'; bSin.id = 'replanteoSinHoja'; bSin.textContent = 'Sin hoja: marcar 2 puntos en la pared'; bSin.style.cssText = 'width:100%;border-color:var(--verde, #16a34a);color:#fff';
+  sinHoja.append(sh, bSin);
   const et = document.createElement('div'); et.textContent = 'Punto del plano donde va el centro de la hoja'; et.style.cssText = 'font-size:13px;opacity:.9';
-  caja.append(h, p, et, sel, fila, botones); fondo.append(caja); document.body.append(fondo);
+  caja.append(h, p, et, sel, fila, botones, sinHoja); fondo.append(caja); document.body.append(fondo);
   const cerrar = () => fondo.remove();
   cancelar.addEventListener('click', cerrar);
+  bSin.addEventListener('click', () => { cerrar(); replanteoSinHoja(); });
   fondo.addEventListener('click', e => { if(e.target === fondo) cerrar(); });
   ok.addEventListener('click', async () => { const opc = { punto: Number(sel.value), dx_cm: Number(ix.value) || 0, dy_cm: Number(iy.value) || 0 }; cerrar(); await generarReplanteo(opc); });
 }
