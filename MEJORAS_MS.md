@@ -1,3 +1,14 @@
+MS AR y 3DDUT AR 4.29.0
+
+- Escala regulable: con el modelo apoyado, «Ajustar» muestra arriba una fila con «−», una barra y «+», y la escala del modelo («1:20»). La barra agranda o achica el modelo en su lugar, sin despegarlo de la mesa, y se imanta a las escalas comunes (1:10, 1:15, 1:20, 1:25, 1:50…); «−» y «+» saltan a la escala común siguiente. La persona de referencia, la cinta métrica y el aire siguen la escala nueva. Sobre la hoja impresa la escala la fija el plano y no se ofrece.
+- La escala que se ve es la real del modelo: si la web agrandó una maqueta que quedaba de menos de 30 cm, la barra lo dice (por ejemplo 1:11) y se puede llevar a 1:20.
+- «Paredes: n/d» ya no se parte en dos renglones.
+- En la PC (Ver en MS AR): un .ipt grande (una sala, un stand, ~150 MB) ya no traba el servidor. Lo exporta un Inventor aparte, oculto, con sus colores, en unos 2 minutos; la ventana avisa que tarda. Una pieza sin caja ya no se factea a 0,03 mm. Cada archivo tiene 8 minutos como máximo y, si se pasa, se corta con aviso sin frenar a los que siguen.
+
+Verificación: pruebas de la escala (15) y todas las nativas; en el emulador, «−» y «+» (1:11 → 1:15 → 1:20) y la barra (de 1:1,2 a 1:60); en la PC, la sala de reuniones (2 min, 29 colores), el stand FITECMA (2 min, 23 colores) y el organizador (4 s) por el servidor real; puente web → vista nativa (90), web y navegador de las dos marcas.
+
+Instalar cada APK 4.29.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.28.1
 
 - Guardar y compartir, a la vista: cuando llega un modelo desde la PC (el QR de «Ver en MS AR») o desde WhatsApp, aparece una tarjeta ARRIBA DE TODO con su nombre y los botones «Guardar en el teléfono» y «Compartir». En la 4.28 estaban debajo de «Modelo recibido», más abajo en la página, y no se veían sin bajar.
