@@ -1,3 +1,65 @@
+MS AR y 3DDUT AR 4.26.0
+
+Reúne todo lo probado en el teléfono y en el taller desde la 4.23.1 (las 4.23.2, 4.24 y 4.25 se probaron como APK sueltas y no se publicaron).
+
+- Una persona de referencia: un ingeniero de obra de 1,75 m, a la misma escala del modelo, que INSPECCIONA la pieza: camina por afuera de ella hasta un punto, se frena, se gira hacia la pieza y la mira de lado a lado, mira hacia arriba (si la pieza es más alta que él), se agacha a mirar abajo, la señala, se queda pensando con la mano en el mentón o anota en la planilla; después va a otro punto, a veces vuelve sobre sus pasos. Lleva casco blanco, chaleco reflectivo con bandas, camisa de trabajo, botines y una planilla en la mano; parado respira y se balancea apenas, gira dando pasitos y tiene su sombra. Sobre un plano 1:40 mide 44 mm.
+- Se le habla: «alto» lo frena, «caminá» lo hace seguir, «chau» lo hace desaparecer y «vení» lo trae. Se activa con el botón «Voz» (pide el micrófono la primera vez); el reconocimiento es en el teléfono, lo que se dice no sale del equipo, y si falta el español sin internet el teléfono lo descarga. El botón «Persona» pasa por camina, quieta y oculta.
+- El modelo apoyado en una superficie queda quieto donde lo dejás: ya no sigue las re-estimaciones del piso de ARCore, que lo arrastraban de 2 a 15 cm. Si la superficie está a más de 2,5 m la app sugiere acercarse.
+- El modelo ya no se desvanece al mirarlo de medio lejos: la oclusión por paredes solo tapa lo que está claramente delante, con una tolerancia que crece con la distancia, y se apaga de a poco entre 5 y 8 m.
+- La sombra ya no se mueve al recorrer el modelo: la dirección de la luz se asienta y queda fija mientras la luz real no cambie.
+- Piezas y ensambles de Inventor sin exportar: en la PC de la oficina, clic derecho en un .ipt o .iam → «Ver en MS AR» muestra un QR y el modelo llega al teléfono; también se puede compartir un .ipt a la app y lo lee la PC. Nada sale a internet. (Requiere la PC con Inventor y el servidor de la carpeta de AR; sin colores de Inventor.)
+- Con el modelo volcado la sombra va al piso; arrastrar en Ajustar responde aunque ARCore corrija el piso; los avisos en superficie ya no hablan de "la hoja"; un fallo puntual de ARCore ya no cierra la vista AR; la bitácora del Diagnóstico ya no se llena con pérdidas de seguimiento repetidas.
+
+Verificación: pruebas del ingeniero (inspección, acciones, posturas con los pies siempre en el piso), de la voz, del enlace y la descarga desde la PC, del anclaje y de la luz; shaders, puente nativo y compilación de las dos marcas; camino completo de Inventor probado en la PC y en el emulador.
+
+Instalar cada APK 4.26.0 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.25.0
+
+De la prueba de la 4.24 ("anda muy bien"): que la persona se comporte como un ingeniero investigando la pieza, y que el 3D "va desapareciendo" cuando se lo enfoca de medio lejos.
+
+- La persona INSPECCIONA la pieza en vez de dar vueltas: camina por afuera del modelo hasta un punto, se frena, se gira hacia la pieza y hace algo: la mira de lado a lado, mira hacia arriba (solo si la pieza es más alta que ella), se agacha a mirar abajo, la señala o se queda pensando con la mano en el mentón; a veces encadena dos. Después elige otro punto: el siguiente, a veces saltea uno o vuelve sobre sus pasos. Caminando mira de reojo la pieza. Nunca la atraviesa. «alto», «caminá», «chau» y «vení» siguen funcionando igual.
+- El modelo ya no se desvanece de lejos. La función «Paredes» (oclusión por profundidad) lo tapaba por error: dejaba a medias todo lo que estaba a la misma distancia que lo real (justo donde el modelo toca el piso), usaba una tolerancia casi fija aunque el error de la profundidad crece con la distancia, y al suavizar el mapa de profundidad mezclaba medidas con puntos sin dato y fabricaba "objetos" delante del modelo. Ahora solo tapa lo que está claramente delante, con una tolerancia que crece con la distancia (6 cm a 1 m, 30 cm a 3 m, 70 cm a 5 m), y la oclusión se apaga de a poco entre 5 y 8 m, donde la profundidad del teléfono ya no sirve. Una pared de verdad delante del modelo lo sigue tapando.
+- La bitácora del Diagnóstico ya no se llena con "seguimiento perdido" repetido: se anota como mucho una vez cada 10 s.
+
+Verificación: pruebas nuevas del inspector (5 minutos simulados: visita puntos distintos, alterna caminar e inspeccionar, siempre de frente a la pieza al inspeccionar, vuelve a veces sobre sus pasos, mira arriba solo si la pieza es alta, obedece "alto", igual en un plano 1:40) y de las posturas (agachado, señalando, pensando: los pies planos en el piso, nada por debajo), más las baterías Java, shaders, puente nativo y compilación de las dos marcas.
+
+Instalar cada APK 4.25.0 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.24.0
+
+A partir del uso en el taller con el 3D de las matrices ("anda bastante bien pero el dibujo se mueve, necesito que se quede quieto en la posición que lo dejo"), del pedido de una persona para apreciar el tamaño y de poder usar archivos .ipt sin convertirlos.
+
+- El modelo apoyado en una superficie queda quieto donde lo dejás. Hasta ahora el anclaje quedaba pegado al plano que detecta ARCore, y cada vez que ARCore re-estimaba ese piso (sobre todo al acercarse) arrastraba el modelo: el Diagnóstico del taller registró correcciones de 2 a 15 cm con el modelo apoyado a 3,18 m. Ahora el anclaje queda fijo en el espacio, en el punto tocado; las re-estimaciones del piso ya no lo mueven y quedan anotadas en la bitácora ("ARCore re-estimó el piso X cm; el modelo no se movió").
+- Si la superficie está a más de 2,5 m, la app sugiere acercarse para que quede firme (se puede apoyar igual).
+- Persona de referencia: una figura de 1,75 m camina alrededor del modelo, a 60 cm de su borde y a paso normal (1,2 m/s reales), a la misma escala del modelo (sobre una hoja 1:40 mide 44 mm). Mueve piernas y brazos, pisa siempre el piso, tiene su sombra, se esconde detrás de paredes como el modelo y sale en las fotos. El botón "Persona" la muestra u oculta.
+- Piezas y ensambles de Inventor sin exportar: en la PC, clic derecho en un .ipt o .iam → "Ver en MS AR". La PC lo lee con Inventor sin abrirlo (sólidos, superficies y ensambles con cada pieza en su lugar; unos segundos) y muestra un QR; con la cámara del teléfono, en el Wi-Fi de la oficina, se abre una página con el botón "Abrir en MS AR" y el modelo llega a la app con sus aristas negras. Nada sale a internet. Los colores de Inventor no llegan (Inventor no los entrega sin abrirse): el modelo toma la terminación metálica de la app.
+- Un .ipt compartido al teléfono (WhatsApp, Archivos) se abre también: la app se lo manda a la PC de la oficina, que lo lee y se lo devuelve listo. La PC queda vinculada la primera vez que se escanea un QR de "Ver en MS AR". Un .iam compartido se rechaza explicando que se abre desde la PC (necesita todas sus piezas).
+- La persona obedece la voz: «alto» la frena (se detiene de a poco y queda parada con los dos pies en el piso), «caminá» o «seguí» la hace seguir, «chau» la hace desaparecer y «vení» la trae de nuevo como estaba. Se activa con el botón «Voz» (pide permiso de micrófono la primera vez). El reconocimiento es EN EL TELÉFONO: lo que se dice no sale del equipo; si al teléfono le falta el español para reconocer sin internet, la app pide descargarlo, y si no lo tiene, queda el botón. El botón «Persona» pasa por camina → quieta → oculta.
+- Con el modelo volcado, la sombra quedaba flotando a la altura del volcado: ahora va al piso.
+- Apoyado en una superficie, los avisos de seguimiento hablan del entorno y no de "la hoja" (antes decía "Mostrá parte de la mesa junto con la hoja" también sin hoja).
+- Arrastrar el modelo en Ajustar sigue respondiendo aunque ARCore corrija el piso unos centímetros (antes se descartaban los toques a más de 3 cm de altura del ancla; una mesa está a más de 40 cm).
+
+Verificación: pruebas nuevas de la persona (mallas, 1,75 m, pies siempre en el piso, largo del paso, recorrido sin saltos alrededor del modelo), del enlace y la descarga desde la PC (solo red local, descarga por partes que se recupera de cortes), de la lectura de Inventor en la PC (el Operario de superficies, 830.323 triángulos en 28 s; un ensamble de 38 piezas en 0,4 s) y del camino completo en el emulador (página de la PC en Chrome → botón → la app abre el ensamble; .ipt compartido → lo lee la PC); más las baterías Java, shaders, puente nativo y compilación de las dos marcas.
+
+Instalar cada APK 4.24.0 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.23.2
+
+Corrección de la prueba de la 4.23.1 en el teléfono ("anda bastante bien, la sombra se mueve mucho").
+
+- La sombra ya no sigue cada cambio de la estimación de luz de ARCore. Esa estimación depende de lo que ve la cámara y cambia al mover el teléfono aunque las luces del lugar estén quietas, y la sombra se redibujaba hacia otro lado hasta cada 1,5 s (en una simulación de un minuto con la luz quieta: 25 veces). Ahora la dirección de la luz se promedia lentamente, se asienta en los primeros segundos (mientras la app busca la hoja) y después queda fija: la sombra solo cambia si la luz real cambia más de 20° durante 4 s seguidos, o si se gira el modelo.
+- Con una luz casi horizontal (una ventana) la sombra ya no salta al lado opuesto: la app invertía la dirección entera cuando el estimado cruzaba el horizonte.
+- Si ARCore deja de estimar la luz un momento, la sombra se queda donde estaba en lugar de volver a la posición fija y saltar de nuevo.
+- La oscuridad de la sombra (según el contraste de la luz del lugar) se ajusta en unos 3 s en vez de 0,4 s, para que no pulse al mover el teléfono.
+- El sombreado del modelo usa la misma dirección estable que la sombra.
+- La bitácora del Diagnóstico anota la dirección de la luz principal cuando queda fijada.
+- Si ARCore rechaza por un instante el anclaje con el que se busca la hoja (pasa en los primeros cuadros de seguimiento), se saltea ese cuadro sin descartar las lecturas juntadas.
+
+Verificación: prueba nueva de la dirección de la luz (luz quieta con ruido, luz casi horizontal, cambio real sostenido y cambio breve, cortes de la estimación) más las baterías Java, shaders, puente nativo y compilación de las dos marcas.
+
+Instalar cada APK 4.23.2 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.23.1
 
 Revisión a fondo del anclaje sobre la hoja, a partir del video del 23-sep ("se mueve todo"): el modelo tiene que quedar pegado a la hoja y no mostrarse nunca en un lugar equivocado.

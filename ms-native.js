@@ -144,7 +144,7 @@
       const group=motor.construirGrupo(tz);
       try{for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
         const {meshes,blobs}=buildMeshes(group,new T.Vector3(),factor);
-        return conBlobs({schema:3,placement:'surface',title:tz.obra||'Modelo',meshes},blobs);}finally{motor.liberarObjeto(group,tz.geo);}
+        return conBlobs({schema:3,placement:'surface',title:tz.obra||'Modelo',realScale:factor,meshes},blobs);}finally{motor.liberarObjeto(group,tz.geo);}
     }
     // Resolve the ruler measurement against THIS file, including measurements entered before loading it.
     const measured=document.getElementById('qrMedido'),raw=measured?.value.trim()||'';
@@ -158,7 +158,7 @@
       if(group.userData.grpMaq)group.userData.grpMaq.visible=S.verMaquinas!==false;
       // Native tracks the full bitmap: the QR offset belongs only to the QR locator.
       const {meshes,blobs}=buildMeshes(group,center,factor/scale);
-      return conBlobs({schema:3,title:tz.nombre||'Modelo sobre la hoja',marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes},blobs);
+      return conBlobs({schema:3,title:tz.nombre||'Modelo sobre la hoja',realScale:factor/scale,marker:{image:mk.png,widthMeters:width,qr:{text:geometry.text,fraction:geometry.fraction,dx:geometry.dx,dy:geometry.dy}},meshes},blobs);
     }finally{motor.liberarObjeto(group,tz.geo);}
   }
   async function start(){
@@ -228,10 +228,10 @@
     AR.revisarSoporte();
   }else{
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.23.1 mantiene el modelo firme sobre la hoja: lo dibuja con la posición real de cada cuadro, lo oculta si el teléfono pierde el seguimiento hasta volver a ver la hoja y lo realinea al mirar el QR, sobre la 4.22: STL grande reducido en el teléfono, oclusión con bordes suaves, sombra según la luz real, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
+    card.textContent='La APK 4.26 suma un ingeniero de obra de 1,75 m (casco, chaleco, planilla) que inspecciona la pieza a su escala (obedece «alto», «caminá», «chau» y «vení»), abre piezas de Inventor leídas por la PC, deja el modelo quieto donde lo apoyás y ya no lo desvanece de lejos: lo dibuja con la posición real de cada cuadro, lo oculta si el teléfono pierde el seguimiento hasta volver a ver la hoja y lo realinea al mirar el QR, sobre la 4.22: STL grande reducido en el teléfono, oclusión con bordes suaves, sombra según la luz real, vista AR a resolución completa con antialias 4x y luz del ambiente, Abrir con, Volcar y Ladear, Ubicar, Ajustar, Fijar y Foto. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.23.1';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.23.1/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.23.1.apk';
+    link.textContent='Descargar APK 4.26';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.26.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.26.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();
