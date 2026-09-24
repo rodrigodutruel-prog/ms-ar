@@ -1,3 +1,11 @@
+MS AR y 3DDUT AR 4.28.1
+
+- Guardar y compartir, a la vista: cuando llega un modelo desde la PC (el QR de «Ver en MS AR») o desde WhatsApp, aparece una tarjeta ARRIBA DE TODO con su nombre y los botones «Guardar en el teléfono» y «Compartir». En la 4.28 estaban debajo de «Modelo recibido», más abajo en la página, y no se veían sin bajar.
+
+Verificación: en el emulador, con el enlace real del servidor de la PC («Organizador matriceria Hogi.ipt»): la tarjeta aparece arriba al llegar y «Guardar en el teléfono» lo deja en Descargas › MS AR con su tamaño exacto; puente web → vista nativa (90), web y navegador de las dos marcas.
+
+Instalar cada APK 4.28.1 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.28.0
 
 - Guardar y compartir el modelo que llega a la app: cuando un modelo llega de la PC («Ver en MS AR» con el QR, o un .ipt compartido) o desde WhatsApp, debajo de «Modelo recibido» aparecen «Guardar en el teléfono» (queda en Descargas › MS AR o 3DDUT AR) y «Compartir» (WhatsApp, correo, Drive…). Se manda el archivo tal cual está preparado para la app, con sus colores y sus aristas; quien lo recibe lo toca y lo abre con la app.
