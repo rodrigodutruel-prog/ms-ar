@@ -308,7 +308,7 @@
     card.textContent='La APK 4.29 suma una barra para cambiar la escala del modelo en la vista AR (Ajustar: −, barra y +, imantada a 1:10, 1:20, 1:25, 1:50…); ya traía guardar en el teléfono y compartir el modelo que llega de la PC (o de WhatsApp), listo para abrir en la app (una tarjeta arriba de todo al recibirlo), y una persona que recorre el mapa de lo real de a poco (sin tironcitos); sobre la 4.27: herramientas en la vista AR (choques en rojo, cinta métrica, ficha, aire en los conductos, corte, rayos X y video), el ingeniero que esquiva paredes y equipos reales, replanteo en obra a tamaño real y colores de Inventor. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
     link.textContent='Descargar APK 4.29';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.31.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.31.0.apk';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.32.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.32.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();
