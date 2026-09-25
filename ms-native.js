@@ -15,12 +15,15 @@
   'use strict';
   const {S,UI,motor}=AR,T=THREE;
   const available=()=>!!(window.NativePaper && typeof NativePaper.start==='function');
-  const MAX_TRIANGULOS=250000,STRIDE=20,TANDA=768*1024;   // bytes por vértice; bytes binarios por tanda (1 MB en base64)
+  // v4.36: tandas de 1,25 MB (1,7 MB en base64, debajo de los 2 MB que acepta NativePaper.append): la mitad de llamadas
+  const MAX_TRIANGULOS=250000,STRIDE=20,TANDA=1280*1024;   // bytes por vértice; bytes binarios por tanda
   let active=false;
   // base64 de un arreglo de bytes, por tandas (String.fromCharCode con millones de
-  // argumentos revienta la pila).
+  // argumentos revienta la pila). v4.36: si el navegador trae Uint8Array.toBase64 (nativo, mucho mas rapido y sin
+  // basura), ese; da el mismo texto.
   function base64(bytes){
     if(!(bytes instanceof Uint8Array))bytes=new Uint8Array(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    if(typeof bytes.toBase64==='function')return bytes.toBase64();
     const partes=[];
     for(let i=0;i<bytes.length;i+=0x8000)partes.push(String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)));
     return btoa(partes.join(''));
@@ -179,6 +182,9 @@
     }
     return out;
   }
+  // v4.36: el QR impreso de la hoja se decodifica UNA vez por archivo (jsQR tardaba ~200 ms en cada toque de AR)
+  const marcadores=new WeakMap();
+  async function marcadorDe(mk){let g=marcadores.get(mk);if(!g){g=await MSPaper.embeddedMarker(mk);if(g)marcadores.set(mk,g);}return g;}
   function conBlobs(header,blobs){Object.defineProperty(header,'_blobs',{value:blobs,enumerable:false});return header;}
   async function payload(){
     const tz=S.trazado,mk=tz?.marcador;
@@ -198,7 +204,7 @@
     if(raw&&(!Number.isFinite(Number(raw))||Number(raw)<=10||Number(raw)>2000))throw new Error('Revisá la medida del marco completo: debe ser mayor a 10 mm y no superar 2000 mm.');
     const factor=raw?Number(raw)/Number(mk.lado_mm):(S.factorImpresion||1),scale=Number(mk.escala),width=Number(mk.lado_mm)*.001*factor;
     if(!(scale>0&&Number.isFinite(scale)&&width>=.01&&width<=2&&factor>0))throw new Error('El archivo no indica una escala y un tamaño de marcador válidos.');
-    const geometry=await MSPaper.embeddedMarker(mk),center=motor.centroMarcador(tz,mk);
+    const geometry=await marcadorDe(mk),center=motor.centroMarcador(tz,mk);
     const group=motor.construirGrupo(tz);
     try{
       for(const key of ['grpPiso','grpSombra','grpEtiq','grpRef'])if(group.userData[key])group.userData[key].visible=false;
@@ -308,7 +314,7 @@
     card.textContent='La APK 4.29 suma una barra para cambiar la escala del modelo en la vista AR (Ajustar: −, barra y +, imantada a 1:10, 1:20, 1:25, 1:50…); ya traía guardar en el teléfono y compartir el modelo que llega de la PC (o de WhatsApp), listo para abrir en la app (una tarjeta arriba de todo al recibirlo), y una persona que recorre el mapa de lo real de a poco (sin tironcitos); sobre la 4.27: herramientas en la vista AR (choques en rojo, cinta métrica, ficha, aire en los conductos, corte, rayos X y video), el ingeniero que esquiva paredes y equipos reales, replanteo en obra a tamaño real y colores de Inventor. ';
     const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
     link.textContent='Descargar APK 4.29';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.33.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.33.0.apk';
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.36.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.36.0.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();
