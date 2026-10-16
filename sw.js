@@ -4,7 +4,7 @@
 'use strict';
 
 const APP_NAME = 'ms-ar';
-const VERSION = 'ar-fc3dd2e65b96';
+const VERSION = 'ar-a76b6efe3ed4';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
@@ -35,14 +35,13 @@ const ASSETS = [
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
+  "./img/logo.png",
   "./img/logo_dark.png",
-  "./img/ondas.svg",
+  "./img/curvas.svg",
+  "./img/portada_ms.jpg",
   "./fonts/SpaceGrotesk-Medium.ttf",
   "./fonts/SpaceGrotesk-SemiBold.ttf",
-  "./fonts/SpaceGrotesk-Bold.ttf",
-  "./fonts/ClashGrotesk-Regular.woff2",
-  "./fonts/ClashGrotesk-Medium.woff2",
-  "./fonts/ClashGrotesk-Semibold.woff2"
+  "./fonts/SpaceGrotesk-Bold.ttf"
 ];
 const SHELL_URLS = ASSETS.map(path => new URL(path, SCOPE).href);
 const SHELL = new Set(SHELL_URLS);

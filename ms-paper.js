@@ -58,8 +58,13 @@
     $('capaUI').classList.add('oculto');
     listen(r,$('papelSalir'),'click',()=>stop());
     listen(r,$('papelLibre'),'click',()=>{stop();AR.iniciar3D();});
-    listen(r,$('papelAnclar'),'click',()=>{
-      $('msModoPapel').value='anclado';stop();AR.iniciarAR();
+    // v4.37: "Fijar en la hoja y moverme" necesita WebXR; sin eso cerraba la cámara y dejaba "Iniciar AR" fallando
+    $('papelAnclar').hidden=true;
+    try{navigator.xr?.isSessionSupported?.('immersive-ar').then(ok=>{if(alive(r))$('papelAnclar').hidden=!ok;},()=>{});}catch(_){}
+    listen(r,$('papelAnclar'),'click',async()=>{
+      const antes=$('msModoPapel').value;$('msModoPapel').value='anclado';stop();
+      let ok=false;try{ok=await AR.iniciarAR();}catch(_){}
+      if(!ok){$('msModoPapel').value=antes;AR.revisarSoporte();}
     });
     listen(r,$('papelReleer'),'click',()=>{
       r.resetFlow=true; r.lastGood=0; r.filter.reset(); r.acquisition.reset(); r.lastRotation=null; r.group.visible=false; r.paused=false;
@@ -117,7 +122,8 @@
     const pending=r.pending; r.pending=null;
     if(r.paused) {pending.bitmap.close();schedule(r);return;}
     const now=performance.now(); r.lastFrame=now;
-    let pose=null, message='El seguimiento QR perdió la referencia. Para recorrer el modelo, tocá Fijar en la hoja y moverme.', mismatch=false;
+    // v4.37: antes de la primera lectura decía "perdió la referencia" sin haberla tenido nunca
+    let pose=null, message=r.vioQR?'El seguimiento QR perdió la referencia. Para recorrer el modelo, tocá Fijar en la hoja y moverme.':'Apuntá al QR completo del plano.', mismatch=false;
     const code=event.data.code;
     if(code) {
       if(code.data!==r.marker.text) {message='Este QR no corresponde al archivo abierto. Usá el plano y el JSON de la misma exportación.';mismatch=true;}
@@ -132,7 +138,7 @@
     }
     if(pose) {
       showFrame(r,pending);
-      place(r,pose);r.lastGood=now;
+      place(r,pose);r.lastGood=now;r.vioQR=true;
       r.group.visible=r.acquisition.accept(now);
       r.overlay.dataset.found=String(r.group.visible);
       r.overlay.dataset.tracking=code.tracked?'flow':'qr';
@@ -177,7 +183,7 @@
   }
   async function start() {
     if(run || S._iniciando || S._cargando || S.session || S.modo3D || !S.trazado) return false;
-    if(!isSecureContext || !navigator.mediaDevices?.getUserMedia) {UI.estado('La cámara requiere abrir MS AR con HTTPS y permitir el acceso a la cámara.','err');return false;}
+    if(!isSecureContext || !navigator.mediaDevices?.getUserMedia) {UI.estado('La cámara requiere abrir '+AR.CFG.marca+' AR con HTTPS y permitir el acceso a la cámara.','err');return false;}
     const r={id:++serial,closed:false,cleanups:[],fov:65,frameId:0,lastGood:0,filter:new math.CornerFilter(),acquisition:new math.Acquisition(),geometry:S.trazado.geo};
     run=r; S._iniciando='paper'; S.papelCamera=true;
     buildOverlay(r);

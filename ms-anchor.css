@@ -1,14 +1,17 @@
+/* MS AR, estilo web MS (oct-2026): anclado con dos cruces, sobre la cámara. Tarjetas blancas, punto de estado,
+   Marcar en rojo (la acción principal) y Salir con contorno. Sin desenfoque. */
 #papelAnclado{position:fixed;inset:0;z-index:120;color:#fff;pointer-events:none;font-family:inherit}
 #papelAnclado[hidden]{display:none}
 #papelAnclado .anclado-arriba{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;display:flex;gap:10px;align-items:start}
-#ancladoEstado{margin:0;padding:12px;background:#101827ed;border-left:4px solid #30d69b;border-radius:10px;flex:1;line-height:1.4;font-size:15px}
-#papelAnclado[data-tracking="lost"] #ancladoEstado{border-color:#ffc458}
-#papelAnclado button{pointer-events:auto;min-height:48px;border:1px solid #7892bc;border-radius:10px;padding:12px 16px;background:#18233fed;color:white;font:inherit;font-weight:600;cursor:pointer}
+#ancladoEstado{position:relative;margin:0;padding:12px 12px 12px 30px;background:rgba(255,255,255,.95);color:#1a2036;border-radius:12px;flex:1;line-height:1.4;font-size:15px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+#ancladoEstado::before{content:'';position:absolute;left:12px;top:18px;width:9px;height:9px;border-radius:50%;background:#10b981}
+#papelAnclado[data-tracking="lost"] #ancladoEstado::before{background:#f2b705}
+#papelAnclado button{pointer-events:auto;min-height:48px;border:1px solid #dde1e9;border-radius:12px;padding:12px 16px;background:#fff;color:#1a2036;font:inherit;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 #papelAnclado button:disabled{opacity:.55;cursor:default}
 #papelAnclado button[hidden]{display:none}
 #papelAnclado .anclado-centro{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:28px monospace;text-shadow:0 0 2px #000,0 0 5px #000}
 #papelAnclado[data-step="placed"] .anclado-centro{display:none}
 #papelAnclado .anclado-abajo{position:absolute;bottom:max(16px,env(safe-area-inset-bottom));left:12px;right:12px;text-align:center}
-#ancladoAyuda{padding:10px;background:#101827e8;border-radius:10px;font-size:14px;line-height:1.4}
-#ancladoMarcar{background:#087446!important}
+#ancladoAyuda{padding:10px;background:rgba(255,255,255,.95);color:#1a2036;border-radius:12px;font-size:14px;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+#ancladoMarcar{background:#e0292a!important;border-color:#e0292a!important;color:#fff!important}
 #capaAR.papel-fijo #panelAR,#capaAR.papel-fijo #rapidos,#capaAR.papel-fijo #hud,#capaAR.papel-fijo #miniPlanta,#capaAR.papel-fijo #btnSalirAR{display:none!important}

@@ -3,158 +3,288 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#283459">
+<meta name="theme-color" content="#ffffff">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>MS AR — Realidad Aumentada en obra</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script>
+/* Tema antes de pintar (sin parpadeo): claro por defecto, como la web de MS; el noche queda guardado. */
+(function(){ var t=null; try{ t=localStorage.getItem('ms-ar-tema'); }catch(e){}
+  if(t==='noche') document.documentElement.classList.add('theme-neon'); })();
+</script>
 <style>
 /* ============================================================
-   MS AR — interfaz Metalúrgica Sarmiento
-   Identidad oficial: rojo #e0292a · azul liviano #0095b8 ·
-   azul profundo #283459 · gris titanio #e9e8ed
-   Space Grotesk (títulos) + Clash Grotesk (texto) embebidas.
+   MS AR — interfaz Metalúrgica Sarmiento, ESTILO WEB MS (oct-2026)
+   Tema claro por defecto (como la web), tarjetas blancas con sombra
+   suave, encabezado esmerilado, botón principal rojo, datos del modelo
+   en bloque azul profundo con las curvas rojas, bienvenida con la nave.
+   Noche = html.theme-neon (azul profundo), guardado en el teléfono.
+   Identidad: rojo #e0292a · azul liviano #0095b8 · azul profundo
+   #283459 · gris titanio #e9e8ed. Space Grotesk (títulos, números,
+   solapas; embebida) + Segoe UI / Roboto (texto). Sin CDN.
    ============================================================ */
 @font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-Medium.ttf') format('truetype'); font-weight:500; font-display:swap; }
 @font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-SemiBold.ttf') format('truetype'); font-weight:600; font-display:swap; }
 @font-face{ font-family:'Space Grotesk'; src:url('fonts/SpaceGrotesk-Bold.ttf') format('truetype'); font-weight:700; font-display:swap; }
-@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Regular.woff2') format('woff2'); font-weight:400; font-display:swap; }
-@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Medium.woff2') format('woff2'); font-weight:500; font-display:swap; }
-@font-face{ font-family:'Clash Grotesk'; src:url('fonts/ClashGrotesk-Semibold.woff2') format('woff2'); font-weight:600; font-display:swap; }
 
 :root{
-  --rojo:#e0292a; --rojo2:#c1272d; --azul:#0095b8; --azulp:#283459; --titanio:#e9e8ed;
-  --fondo:#0a0d16; --panel:rgba(40,52,89,.55); --panel2:rgba(14,18,34,.85);
-  --txt:#f4f5f8; --txt2:#aab3c5; --borde:rgba(233,232,237,.14);
-  --t-tit:'Space Grotesk','Segoe UI',system-ui,sans-serif;
-  --t-txt:'Clash Grotesk','Segoe UI',system-ui,sans-serif;
-  --t-mono:'Consolas','Courier New',monospace;
+  --ms-red:#e0292a; --ms-red-dark:#c1272d; --ms-cyan:#0095b8; --ms-cyan-dark:#007a99; --ms-navy:#283459; --ms-titanio:#e9e8ed;
+  --ms-ok:#10b981;
+  --tint-red:rgba(224,41,42,.09); --tint-cyan:rgba(0,149,184,.10); --tint-amber:rgba(245,158,11,.13); --tint-green:rgba(16,185,129,.12);
+  --ms-bg:#edeff4; --ms-surface:#ffffff; --ms-surface-2:#f5f6f9; --ms-surface-3:#eceef3;
+  --ms-text:#1a2036; --ms-heading:#283459; --ms-text-muted:#5d667c; --ms-text-dim:#8b93a7;
+  --ms-border:#dde1e9; --ms-border-soft:#e8ebf0; --bg-input:#ffffff;
+  --note-info-txt:#0b5f75; --note-warn-txt:#8a5300; --note-ok-txt:#0b6b4c; --note-bad-txt:#a81d1e;
+  --header-bg:rgba(255,255,255,.88); --header-line:#e3e6ed;
+  --navy-grad:linear-gradient(150deg,#2e3b66 0%,#283459 45%,#1b2440 100%);
+  --shadow-soft:0 1px 2px rgba(26,32,54,.05), 0 8px 22px rgba(40,52,89,.07);
+  --shadow-md:0 2px 6px rgba(26,32,54,.07), 0 14px 34px rgba(40,52,89,.10);
+  --radius:16px; --radius-sm:10px;
+  --ft:'Segoe UI',Roboto,system-ui,-apple-system,sans-serif;
+  --fd:'Space Grotesk','Segoe UI',Roboto,sans-serif;
+  --fm:'Share Tech Mono',Consolas,'Roboto Mono',monospace;
+  /* capa AR (encima de la cámara): sin desenfoque — sobre la cámara el blur cuesta cuadros */
+  --ar-panel:rgba(255,255,255,.95); --ar-txt:#1a2036; --ar-txt2:#5d667c; --ar-borde:#dde1e9; --ar-btn:#ffffff;
+  --curvas-op:.55;
+  color-scheme:light;
+}
+html.theme-neon{
+  --ms-bg:#0b1020; --ms-surface:#151c33; --ms-surface-2:#10162a; --ms-surface-3:#1d2644;
+  --ms-text:#eef1f8; --ms-heading:#ffffff; --ms-text-muted:#9ba5c0; --ms-text-dim:#6f7a97;
+  --ms-border:#2a3559; --ms-border-soft:#222c4b; --bg-input:#0e1426;
+  --tint-red:rgba(224,41,42,.16); --tint-cyan:rgba(0,149,184,.18); --tint-amber:rgba(245,158,11,.16); --tint-green:rgba(16,185,129,.16);
+  --note-info-txt:#7fd3e8; --note-warn-txt:#fbc56a; --note-ok-txt:#6ee7b7; --note-bad-txt:#ff9d9d;
+  --header-bg:rgba(14,20,38,.88); --header-line:#222c4b;
+  --navy-grad:linear-gradient(150deg,#24305a 0%,#1b2442 55%,#121a32 100%);
+  --shadow-soft:0 1px 2px rgba(0,0,0,.30), 0 6px 18px rgba(0,0,0,.28);
+  --shadow-md:0 2px 6px rgba(0,0,0,.35), 0 14px 34px rgba(0,0,0,.40);
+  --ar-panel:rgba(16,22,42,.94); --ar-txt:#eef1f8; --ar-txt2:#9ba5c0; --ar-borde:#2a3559; --ar-btn:#1d2644;
+  --curvas-op:.9;
+  color-scheme:dark;
 }
 *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 html,body{ margin:0; padding:0; height:100%; }
-body{
-  background:var(--fondo); color:var(--txt); font-family:var(--t-txt);
-  touch-action:manipulation; overscroll-behavior:none;
-}
+body{ background:var(--ms-bg); color:var(--ms-text); font-family:var(--ft); font-size:15px; line-height:1.4;
+  touch-action:manipulation; overscroll-behavior:none; -webkit-font-smoothing:antialiased; }
+button,input,select,textarea{ font-family:inherit; color:inherit; }
 .oculto{ display:none !important; }
+:focus-visible{ outline:3px solid rgba(0,149,184,.55); outline-offset:2px; }
 
-/* ---------- pantalla de carga (fuera de AR) ---------- */
-#capaUI{ position:relative; min-height:100%;
-  background:radial-gradient(120% 80% at 50% -10%, #283459 0%, #18203a 45%, #0a0d16 100%); }
-#capaUI::before{ content:''; position:fixed; inset:0; background:url(img/ondas.svg) center/cover no-repeat; opacity:.55; pointer-events:none; z-index:0; }
-#capaUI > *{ position:relative; z-index:1; }
+/* ---------- BIENVENIDA (portada de la web: la nave) ---------- */
+#splash-screen{ position:fixed; inset:0; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:24px; text-align:center; overflow:hidden; cursor:pointer;
+  background:#0b1020 url('img/portada_ms.jpg') center 40% / cover no-repeat; transition:opacity .6s ease-out, transform .6s ease-out; }
+#splash-screen::before{ content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:linear-gradient(180deg, rgba(11,16,32,.80) 0%, rgba(20,27,51,.58) 45%, rgba(11,16,32,.90) 100%); }
+#splash-screen > *{ position:relative; z-index:1; }
+#splash-screen.fade-out{ opacity:0; transform:scale(1.03); pointer-events:none; }
+#splash-logo{ width:260px; max-width:72%; filter:drop-shadow(0 10px 30px rgba(0,0,0,.45)); animation:splLogo 1s ease-out both; }
+#splash-kicker{ margin-top:30px; font-size:11px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:#4fd1ee;
+  display:flex; align-items:center; gap:12px; animation:splFade .7s ease-out .5s both; }
+#splash-kicker::before, #splash-kicker::after{ content:''; width:24px; height:3px; border-radius:2px; background:var(--ms-red); }
+#splash-text{ margin-top:10px; font-family:var(--fd); font-size:42px; font-weight:600; color:#fff; animation:splUp .8s ease-out .6s both; }
+#splash-line{ width:min(320px,62vw); height:3px; margin:16px auto 0; border-radius:2px; background:var(--ms-red); transform-origin:center; animation:splLinea .6s ease-out .9s both; }
+#splash-subtitle{ margin-top:10px; font-size:13px; font-weight:500; color:rgba(255,255,255,.72); animation:splFade .7s ease-out 1s both; }
+#splash-pie{ position:absolute !important; left:16px; right:16px; bottom:calc(20px + env(safe-area-inset-bottom)); font-size:12px; font-weight:500;
+  letter-spacing:.3px; color:rgba(233,237,245,.62); animation:splFade .7s ease-out 1.1s both; }
+.splash-particle{ position:absolute !important; width:5px; height:5px; border-radius:50%; background:rgba(255,244,228,.6); filter:blur(.6px);
+  animation:splPolvo 4.2s ease-in-out infinite; }
+.splash-particle:nth-of-type(3n){ width:3px; height:3px; }
+.splash-particle:nth-of-type(4n){ width:8px; height:8px; background:rgba(255,244,228,.28); filter:blur(1.6px); }
+@keyframes splLogo{ 0%{opacity:0; transform:scale(.6);} 60%{opacity:1; transform:scale(1.04);} 100%{opacity:1; transform:scale(1);} }
+@keyframes splFade{ from{opacity:0;} to{opacity:1;} }
+@keyframes splUp{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:none;} }
+@keyframes splLinea{ from{transform:scaleX(0);} to{transform:scaleX(1);} }
+@keyframes splPolvo{ 0%,100%{transform:translate(0,0); opacity:.25;} 50%{transform:translate(14px,-26px); opacity:.85;} }
+@media (prefers-reduced-motion: reduce){ #splash-screen *, .splash-particle{ animation:none !important; } }
 
-.cab{ display:flex; align-items:center; gap:14px; padding:calc(16px + env(safe-area-inset-top)) 18px 12px;
-  border-bottom:3px solid var(--rojo); background:linear-gradient(180deg, rgba(10,13,22,.35), rgba(10,13,22,0)); }
-.cab img{ height:44px; width:auto; }
-.cab .tit{ font-family:var(--t-tit); font-weight:700; font-size:1.45rem; letter-spacing:.06em; line-height:1; }
-.cab .sub{ font-family:var(--t-txt); font-weight:500; font-size:.68rem; letter-spacing:.2em; text-transform:uppercase; color:var(--azul); margin-top:4px; }
+/* ---------- ENCABEZADO esmerilado (como la web) ---------- */
+#capaUI{ position:relative; min-height:100%; }
+.ms-header{ position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:12px;
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px; background:var(--header-bg);
+  -webkit-backdrop-filter:blur(14px) saturate(1.2); backdrop-filter:blur(14px) saturate(1.2);
+  border-bottom:1px solid var(--header-line); box-shadow:0 6px 22px rgba(40,52,89,.06); }
+html.theme-neon .ms-header{ box-shadow:0 6px 22px rgba(0,0,0,.35); }
+.ms-brand{ display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
+.ms-brand img{ height:34px; width:auto; display:block; flex-shrink:0; }
+.ms-brand .logo-dark{ display:none; }
+html.theme-neon .ms-brand .logo-light{ display:none; }
+html.theme-neon .ms-brand .logo-dark{ display:block; }
+.brand-text{ padding-left:12px; border-left:1px solid var(--ms-border); min-width:0; }
+.brand-text h1{ margin:0; font-family:var(--fd); font-size:18px; font-weight:600; color:var(--ms-heading); line-height:1.1; white-space:nowrap; }
+.brand-text span{ display:block; font-size:9.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--ms-text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tema-btn{ flex:0 0 auto; width:44px; height:44px; border-radius:12px; border:1px solid var(--ms-border); background:var(--ms-surface);
+  color:var(--ms-heading); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+.tema-btn svg{ width:20px; height:20px; }
+.tema-btn .sol{ display:none; }
+html.theme-neon .tema-btn .sol{ display:block; }
+html.theme-neon .tema-btn .luna{ display:none; }
 
-.wrap{ padding:14px 14px 96px; max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
-.card{ background:linear-gradient(145deg, rgba(40,52,89,.92), rgba(14,18,34,.97));
-  border:1px solid var(--borde); border-left:4px solid var(--rojo); border-radius:12px; padding:14px;
-  box-shadow:0 8px 28px rgba(0,0,0,.35); }
-.card h2{ font-family:var(--t-tit); font-weight:600; font-size:.8rem; letter-spacing:.16em; text-transform:uppercase; color:var(--azul); margin:0 0 10px; }
-.card h2 small{ color:var(--txt2); letter-spacing:.04em; text-transform:none; font-family:var(--t-txt); font-weight:400; margin-left:8px; }
+/* ---------- PÁGINA ---------- */
+.wrap{ padding:14px 14px 20px; max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+.intro{ max-width:720px; margin:0 auto; padding:18px 18px 0; }
+.intro h2{ margin:4px 0 2px; font-family:var(--fd); font-size:22px; font-weight:600; color:var(--ms-heading); line-height:1.2; }
+.intro p{ margin:0; color:var(--ms-text-muted); font-size:14px; }
+/* kicker: mayúsculas chicas con guion rojo (como "AMBIENTE ÓPTIMO" de la web) */
+.kicker{ display:flex; align-items:center; gap:8px; font-size:10.5px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--ms-text-dim); }
+.kicker::before{ content:''; width:14px; height:3px; border-radius:2px; background:var(--ms-red); flex-shrink:0; }
 
-.fila{ display:flex; flex-wrap:wrap; gap:8px; }
-.tile{ flex:1 1 46%; min-height:76px; border-radius:10px; cursor:pointer; text-align:left; padding:10px 12px;
-  background:rgba(233,232,237,.06); color:var(--txt); border:1px solid var(--borde);
-  font-family:var(--t-txt); display:flex; flex-direction:column; justify-content:center; gap:4px; }
-.tile b{ font-family:var(--t-tit); font-weight:600; font-size:.98rem; letter-spacing:.02em; }
-.tile span{ font-size:.74rem; color:var(--txt2); line-height:1.3; }
-.tile:active{ background:rgba(0,149,184,.18); }
-.tile.obj{ border-left:3px solid var(--azul); }
-.tile.json{ border-left:3px solid var(--rojo); }
-.mini{ flex:0 0 auto; min-height:40px; padding:0 12px; border-radius:8px; background:transparent; color:var(--txt2);
-  border:1px solid var(--borde); font-family:var(--t-txt); font-size:.8rem; cursor:pointer; }
-.mini:active{ color:var(--txt); border-color:var(--azul); }
-select.mini{ color:var(--txt); background:var(--panel2); }
+.card{ background:var(--ms-surface); border:1px solid var(--ms-border-soft); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow-soft); }
+.card > .kicker{ margin-bottom:4px; }
+.card h2{ margin:0 0 12px; font-family:var(--fd); font-size:18px; font-weight:600; color:var(--ms-heading); line-height:1.25; }
+.card h3{ margin:14px 0 8px; font-family:var(--fd); font-size:13px; font-weight:600; color:var(--ms-heading); }
 
-.seg{ display:flex; gap:6px; }
-.seg label{ flex:1 1 0; position:relative; }
-.seg input{ position:absolute; opacity:0; pointer-events:none; }
-.seg span{ display:block; text-align:center; padding:9px 6px; border-radius:8px; border:1px solid var(--borde);
-  font-size:.8rem; line-height:1.2; color:var(--txt2); }
-.seg span small{ display:block; font-size:.66rem; margin-top:2px; }
-.seg input:checked + span{ color:#fff; border-color:var(--azul); background:rgba(0,149,184,.22); box-shadow:inset 0 0 0 1px var(--azul); }
-.lbl{ font-size:.72rem; color:var(--txt2); letter-spacing:.06em; text-transform:uppercase; margin:10px 0 6px; font-weight:500; }
+/* opciones grandes (como las tarjetas con ícono de la web) */
+.fila{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tile{ flex:1 1 46%; min-height:84px; display:flex; align-items:flex-start; gap:12px; text-align:left; cursor:pointer;
+  padding:12px; border-radius:14px; border:1px solid var(--ms-border); background:var(--ms-surface); color:var(--ms-text); transition:border-color .15s, box-shadow .15s; }
+.tile:active{ border-color:var(--ms-cyan); box-shadow:0 0 0 3px var(--tint-cyan); }
+.tile .ico{ flex:0 0 42px; height:42px; border-radius:11px; background:var(--tint-red); color:var(--ms-red); display:flex; align-items:center; justify-content:center; }
+.tile .ico svg{ width:24px; height:24px; }
+.tile .txt{ display:block; min-width:0; }
+.tile b{ display:block; font-family:var(--fd); font-weight:600; font-size:15.5px; color:var(--ms-heading); }
+.tile .txt > span{ display:block; margin-top:3px; font-size:12.5px; color:var(--ms-text-muted); line-height:1.35; }
 
+/* botones terciarios (contorno) y campos */
+.mini{ flex:0 0 auto; min-height:44px; padding:0 14px; border-radius:var(--radius-sm); cursor:pointer;
+  background:var(--ms-surface); color:var(--ms-text); border:1px solid var(--ms-border); font-size:13.5px; font-weight:600; }
+.mini:active{ border-color:var(--ms-cyan); color:var(--ms-cyan); }
+select.mini, input.mini{ background:var(--bg-input); font-weight:500; font-size:16px; }
+input.mini{ padding:0 12px; }
+.mini.acento{ border-color:var(--ms-cyan); color:var(--ms-cyan); background:var(--tint-cyan); }
+.mini.ok-btn{ border-color:var(--ms-ok); color:var(--note-ok-txt); background:var(--tint-green); }
+.herr{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--ms-border); }
+.herr-tit{ font-size:12px; font-weight:600; color:var(--ms-text-muted); margin-bottom:8px; }
+
+/* datos del modelo abierto: bloque azul profundo con las curvas rojas */
+#infoTrazado{ position:relative; overflow:hidden; margin-top:14px; padding:30px 14px 14px; border-radius:14px; background:var(--navy-grad); color:#fff;
+  display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+#infoTrazado::before{ content:'Modelo abierto'; position:absolute; top:11px; left:14px; font-size:10px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:rgba(255,255,255,.62); }
+#infoTrazado::after{ content:''; position:absolute; inset:0; pointer-events:none; background:url('img/curvas.svg') right top / 360px auto no-repeat; opacity:var(--curvas-op); }
+#infoTrazado > *{ position:relative; z-index:1; }
+.ms-badge{ display:inline-block; padding:5px 10px; border-radius:9px; background:rgba(255,255,255,.10); color:#fff; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums; }
+#infoTrazado .ms-badge:first-child{ flex:1 1 100%; padding:0 0 4px; background:none; font-family:var(--fd); font-size:20px; font-weight:600; overflow-wrap:anywhere; line-height:1.2; }
+#infoTrazado #bObra{ color:rgba(255,255,255,.75); font-size:16px; font-weight:500; }
 .chips{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
-.ms-badge{ display:inline-block; padding:4px 10px; border-radius:999px; font-family:var(--t-mono); font-size:.72rem;
-  background:rgba(0,149,184,.14); color:#8fd8ea; border:1px solid rgba(0,149,184,.4); }
-.chip-d{ display:flex; align-items:center; gap:5px; font-family:var(--t-mono); font-size:.7rem; color:var(--txt2);
-  border:1px solid var(--borde); border-radius:6px; padding:3px 7px; }
-.chip-d i{ width:11px; height:11px; border-radius:3px; display:inline-block; }
+.chips:empty{ display:none; }
+.chip-d{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ms-text); background:var(--ms-surface);
+  border:1px solid var(--ms-border); border-radius:999px; padding:4px 10px 4px 6px; font-variant-numeric:tabular-nums; }
+.chip-d i{ width:18px; height:10px; border-radius:5px; display:inline-block; }
 
-.btn{ width:100%; min-height:54px; border-radius:10px; cursor:pointer; font-family:var(--t-tit); font-weight:700;
-  font-size:1.02rem; letter-spacing:.12em; text-transform:uppercase; color:#fff; background:var(--rojo);
-  border:1px solid var(--rojo); box-shadow:0 6px 20px rgba(224,41,42,.35); }
-.btn:active{ background:var(--rojo2); }
-.btn:disabled{ opacity:.35; box-shadow:none; }
-.btn.sec{ background:transparent; color:var(--azul); border-color:var(--azul); box-shadow:none; margin-top:8px; font-size:.9rem; min-height:46px; }
-.nota{ margin-top:10px; font-size:.78rem; color:var(--txt2); line-height:1.45; }
-.nota.err{ color:#ff8a8b; }
-.nota.ok{ color:#8fd8ea; }
-details{ margin-top:10px; }
-summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
-.diag{ margin-top:8px; padding:10px; border-radius:8px; background:rgba(0,0,0,.35); border:1px solid var(--borde);
-  font-family:var(--t-mono); font-size:.68rem; line-height:1.5; color:var(--txt2); white-space:pre-wrap; word-break:break-all; }
-.pasos{ margin:0; padding-left:18px; font-size:.8rem; color:var(--txt2); line-height:1.6; }
-.pasos b{ color:var(--txt); }
-.pie{ position:fixed; left:0; right:0; bottom:0; z-index:2; padding:8px 14px calc(8px + env(safe-area-inset-bottom));
-  text-align:center; font-family:var(--t-mono); font-size:.68rem; color:var(--txt2); background:rgba(10,13,22,.9); border-top:1px solid var(--borde); }
+/* opciones (radio) como botones; la elegida en rojo tenue */
+.lbl{ font-size:12px; color:var(--ms-text-muted); font-weight:600; margin:14px 0 6px; display:block; }
+.seg{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
+.seg label{ position:relative; }
+.seg input{ position:absolute; opacity:0; pointer-events:none; }
+.seg span{ display:block; height:100%; text-align:center; padding:10px 8px; border-radius:var(--radius-sm); border:1px solid var(--ms-border);
+  background:var(--ms-surface); font-size:14px; font-weight:600; line-height:1.2; color:var(--ms-text); cursor:pointer; }
+.seg span small{ display:block; font-size:11.5px; font-weight:500; margin-top:3px; color:var(--ms-text-muted); }
+.seg input:checked + span{ color:var(--ms-red-dark); border-color:var(--ms-red); background:var(--tint-red); box-shadow:inset 0 0 0 1px var(--ms-red); }
+html.theme-neon .seg input:checked + span{ color:#ff7071; }
+.seg input:checked + span small{ color:inherit; opacity:.8; }
+.seg input:focus-visible + span{ outline:3px solid rgba(0,149,184,.55); outline-offset:2px; }
+.solo-papel, .solo-real{ display:none; }
+#capaUI.modo-papel .solo-papel{ display:block; }
+#capaUI.modo-real .solo-real{ display:block; }
+/* en la APK la vista AR propia ubica con un toque, la hoja o «Alinear a pared»: estas opciones no aplican */
+html[data-native-paper="true"] #capaUI .solo-real{ display:none; }
 
-/* ---------- capa AR (encima de la cámara) ---------- */
+/* botones grandes: principal rojo, secundario azul liviano, terciario con contorno */
+.btn{ width:100%; min-height:54px; border-radius:12px; cursor:pointer; font-family:var(--fd); font-weight:600; font-size:17px; letter-spacing:.2px;
+  color:#fff; background:var(--ms-red); border:1px solid var(--ms-red); box-shadow:0 8px 20px rgba(224,41,42,.28); }
+.btn:active{ background:var(--ms-red-dark); }
+.btn:disabled{ background:var(--ms-surface-3); border-color:var(--ms-border); color:var(--ms-text-dim); box-shadow:none; cursor:default; }
+.btn.sec{ margin-top:10px; min-height:48px; font-size:15px; background:var(--ms-cyan); border-color:var(--ms-cyan); box-shadow:0 6px 16px rgba(0,149,184,.22); }
+.btn.sec:active{ background:var(--ms-cyan-dark); }
+details .btn.sec, #opcionesOffline .btn.sec{ background:var(--ms-surface); color:var(--ms-text); border-color:var(--ms-border); box-shadow:none; font-family:var(--ft); font-weight:600; font-size:14px; }
+details .btn.sec:active, #opcionesOffline .btn.sec:active{ border-color:var(--ms-cyan); color:var(--ms-cyan); }
+details{ margin-top:12px; }
+summary{ font-size:13.5px; font-weight:600; color:var(--ms-text-muted); cursor:pointer; padding:8px 0; }
+
+/* notas: caja con tinte (info azul, ok verde, error rojo) */
+.nota{ margin-top:12px; font-size:13px; color:var(--ms-text-muted); line-height:1.45; }
+#estadoAR, .nota.ok, .nota.err, #nativeInstall{ padding:10px 12px; border-radius:var(--radius-sm); background:var(--tint-cyan); color:var(--note-info-txt); }
+.nota.ok{ background:var(--tint-green); color:var(--note-ok-txt); }
+.nota.err{ background:var(--tint-red); color:var(--note-bad-txt); }
+#nativeInstall a, .card a{ color:var(--ms-cyan); font-weight:600; }
+html.theme-neon #nativeInstall a, html.theme-neon .card a{ color:#4fcbe6; }
+.diag{ margin-top:8px; padding:10px; border-radius:var(--radius-sm); background:var(--ms-surface-2); border:1px solid var(--ms-border-soft);
+  font-family:var(--fm); font-size:11.5px; line-height:1.5; color:var(--ms-text-muted); white-space:pre-wrap; word-break:break-all; }
+/* avisos que llegan de la APK (versión nueva, modelo recibido): tarjeta con tinte verde */
+.card.aviso{ background:var(--ms-surface); border-color:rgba(16,185,129,.45); box-shadow:var(--shadow-md); position:relative; padding-left:54px; }
+.card.aviso::before{ content:'✓'; position:absolute; left:14px; top:14px; width:28px; height:28px; border-radius:8px; background:var(--tint-green); color:var(--ms-ok);
+  display:flex; align-items:center; justify-content:center; font-weight:700; }
+.card.aviso b{ font-family:var(--fd); font-weight:600; color:var(--ms-heading); }
+.card.aviso p{ color:var(--ms-text-muted); }
+
+/* pasos */
+.pasos{ margin:0; padding:0; list-style:none; counter-reset:paso; display:flex; flex-direction:column; gap:10px; }
+.pasos li{ counter-increment:paso; position:relative; padding-left:38px; font-size:14px; color:var(--ms-text-muted); line-height:1.5; }
+.pasos li::before{ content:counter(paso); position:absolute; left:0; top:0; width:26px; height:26px; border-radius:8px; background:var(--tint-red); color:var(--ms-red);
+  font-family:var(--fd); font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; }
+.pasos b{ color:var(--ms-heading); }
+.pie{ padding:6px 16px calc(18px + env(safe-area-inset-bottom)); text-align:center; font-size:12px; color:var(--ms-text-dim); }
+.pie #ver{ font-family:var(--fd); font-weight:600; color:var(--ms-text-muted); }
+
+/* biblioteca QR (la inserta ms-library.js arriba de todo): sus estilos están en ms-library.css */
+
+/* ---------- CAPA AR (encima de la cámara) ---------- */
 #videoCam{ position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:41; background:#000; }
 #capaAR{ position:fixed; inset:0; z-index:50; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; }
 #gestos{ position:fixed; inset:0; z-index:46; touch-action:none; pointer-events:auto; }
 #miniPlanta{ position:fixed; right:10px; top:calc(112px + env(safe-area-inset-top)); z-index:49; width:132px; height:132px;
-  border-radius:10px; border:1px solid rgba(0,149,184,.6); background:rgba(10,13,22,.55); pointer-events:none; }
-#miniPlanta.grande{ inset:0; width:100vw; height:100vh; border:none; border-radius:0; background:rgba(10,13,22,.32); z-index:45; }
+  border-radius:14px; border:2px solid rgba(255,255,255,.9); background:rgba(11,16,32,.55); pointer-events:none; box-shadow:0 4px 14px rgba(0,0,0,.3); }
+#miniPlanta.grande{ inset:0; width:100vw; height:100vh; border:none; border-radius:0; background:rgba(11,16,32,.32); z-index:45; box-shadow:none; }
 
-.hud{ position:relative; z-index:47; padding:calc(10px + env(safe-area-inset-top)) 12px 0; display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
-.paso{ display:inline-block; font-family:var(--t-tit); font-weight:700; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase;
-  color:#fff; background:var(--rojo); border-radius:6px; padding:5px 10px; }
-.hud-msg{ display:inline-block; max-width:80%; background:rgba(10,13,22,.78); color:#fff; border-left:3px solid var(--rojo);
-  border-radius:8px; padding:9px 12px; font-size:.84rem; line-height:1.35; }
-.hud-datos{ display:inline-block; font-family:var(--t-mono); font-size:.7rem; color:#8fd8ea; background:rgba(10,13,22,.6);
-  border-radius:6px; padding:5px 9px; white-space:pre-line; }
+.hud{ position:relative; z-index:47; padding:calc(10px + env(safe-area-inset-top)) 80px 0 12px; display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+.paso{ display:inline-flex; align-items:center; gap:8px; font-family:var(--fd); font-weight:700; font-size:11.5px; letter-spacing:1px; text-transform:uppercase;
+  color:#fff; background:var(--ms-red); border-radius:999px; padding:6px 12px; box-shadow:0 4px 12px rgba(0,0,0,.25); }
+.hud-msg{ display:inline-block; max-width:100%; background:var(--ar-panel); color:var(--ar-txt); border-radius:14px; padding:10px 14px;
+  font-size:14px; line-height:1.35; box-shadow:0 4px 16px rgba(0,0,0,.25); }
+.hud-datos{ display:inline-block; font-family:var(--fm); font-size:11.5px; color:#fff; background:rgba(27,36,64,.82); border-radius:10px; padding:5px 10px; white-space:pre-line; }
+.hud-datos:empty{ display:none; }
 
 /* botones rápidos a la derecha: siempre a mano */
 .rapidos{ position:fixed; right:10px; top:50%; transform:translateY(-40%); z-index:48; pointer-events:auto; display:flex; flex-direction:column; gap:10px; }
-.rapidos button{ width:58px; height:58px; border-radius:50%; border:1px solid rgba(233,232,237,.25); cursor:pointer;
-  background:rgba(14,18,34,.86); color:#fff; font-family:var(--t-tit); font-weight:600; font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; box-shadow:0 4px 14px rgba(0,0,0,.4); }
-.rapidos button i{ font-style:normal; font-size:1.25rem; line-height:1; }
-.rapidos button.salir{ background:var(--rojo); border-color:var(--rojo); }
-.rapidos button.fijado{ background:var(--azul); border-color:var(--azul); color:#04121a; }
+.rapidos button{ width:60px; height:60px; border-radius:50%; border:1px solid var(--ar-borde); cursor:pointer; background:var(--ar-btn); color:var(--ar-txt);
+  font-family:var(--fd); font-weight:600; font-size:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  box-shadow:0 4px 14px rgba(0,0,0,.32); }
+.rapidos button i{ font-style:normal; font-size:20px; line-height:1; }
+.rapidos button.salir{ background:var(--ms-red); border-color:var(--ms-red); color:#fff; }
+.rapidos button.fijado{ background:var(--ms-cyan); border-color:var(--ms-cyan); color:#fff; }
 
-/* cinta inferior MS */
-.panel-ar{ position:relative; z-index:48; pointer-events:auto; padding:8px 10px calc(10px + env(safe-area-inset-bottom));
-  background:linear-gradient(180deg, rgba(10,13,22,0), rgba(10,13,22,.9) 22%); display:flex; flex-direction:column; gap:8px; }
-.ptabs{ display:flex; gap:6px; }
-.ptab{ flex:1 1 0; min-height:38px; border-radius:8px; cursor:pointer; background:rgba(40,52,89,.7); color:var(--txt2);
-  border:1px solid var(--borde); font-family:var(--t-tit); font-weight:600; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; }
-.ptab.activa{ color:#fff; background:var(--azulp); border-color:var(--azul); box-shadow:inset 0 -3px 0 var(--rojo); }
-.pgrupo{ display:flex; flex-wrap:wrap; gap:6px; }
-.bctrl{ flex:1 1 22%; min-width:72px; min-height:44px; border-radius:8px; cursor:pointer; background:rgba(14,18,34,.9); color:#dfe6f2;
-  border:1px solid rgba(0,149,184,.35); font-family:var(--t-txt); font-weight:500; font-size:.8rem; }
-.bctrl:active{ background:rgba(0,149,184,.25); }
-.bctrl.salir{ flex:none; color:#fff; background:var(--rojo); border-color:var(--rojo); font-family:var(--t-tit); font-weight:700; }
-.bctrl.destacado{ background:var(--azul) !important; border-color:var(--azul) !important; color:#04121a !important; font-weight:700; box-shadow:0 0 14px rgba(0,149,184,.65); }
-.bctrl.flotante{ position:fixed; z-index:60; top:calc(12px + env(safe-area-inset-top)); right:12px; width:auto; padding:0 16px; }
-.ayuda{ font-size:.7rem; color:var(--txt2); padding:0 2px; }
-/* Fondo del visor como el viewport de Inventor: degrade azul grisado que
-   aclara hacia abajo. Colores medidos de una captura real de Inventor.
-   Sobre este fondo las aristas negras se leen; sobre el navy no. */
-#visor3D{ position:fixed; inset:0; z-index:40;
-  background:linear-gradient(160deg, #98a8bb 0%, #aebccf 45%, #c7d3e5 100%); }
+/* hoja inferior: solapas con subrayado rojo + botones */
+/* margen derecho: la hoja no pasa por debajo de los botones redondos (en teléfonos chicos Salir caía sobre
+   "Apoyar de nuevo", que borra el ancla) */
+.panel-ar{ position:relative; z-index:48; pointer-events:auto; margin:0 78px 0 6px; padding:8px 10px calc(10px + env(safe-area-inset-bottom));
+  background:var(--ar-panel); border-radius:18px 18px 0 0; box-shadow:0 -6px 24px rgba(0,0,0,.28); display:flex; flex-direction:column; gap:8px; }
+.ptabs{ display:flex; gap:2px; border-bottom:1px solid var(--ar-borde); }
+.ptab{ position:relative; flex:1 1 0; min-height:42px; cursor:pointer; background:transparent; border:none; color:var(--ar-txt2);
+  font-family:var(--fd); font-weight:500; font-size:14px; }
+.ptab::after{ content:''; position:absolute; left:14%; right:14%; bottom:-1px; height:3px; border-radius:3px 3px 0 0; background:var(--ms-red); transform:scaleX(0); transition:transform .2s; }
+.ptab.activa{ color:var(--ms-red); font-weight:600; }
+html.theme-neon .ptab.activa{ color:#ff5455; }
+.ptab.activa::after{ transform:scaleX(1); }
+.ptab-cont{ display:flex; flex-direction:column; gap:6px; }
+/* filas que se deslizan de costado: la hoja queda baja y la cámara a la vista */
+.pgrupo{ display:flex; flex-wrap:nowrap; gap:6px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.pgrupo::-webkit-scrollbar{ display:none; }
+.bctrl{ flex:0 0 auto; min-height:44px; border-radius:var(--radius-sm); cursor:pointer; background:var(--ar-btn); color:var(--ar-txt);
+  border:1px solid var(--ar-borde); font-family:var(--ft); font-weight:600; font-size:13px; padding:0 14px; white-space:nowrap; }
+.bctrl:active{ border-color:var(--ms-cyan); color:var(--ms-cyan); }
+.bctrl.salir{ flex:none; color:#fff; background:var(--ms-red); border-color:var(--ms-red); font-family:var(--fd); }
+.bctrl.destacado{ background:var(--ms-cyan) !important; border-color:var(--ms-cyan) !important; color:#fff !important; box-shadow:0 0 0 3px rgba(0,149,184,.3); }
+.bctrl.flotante{ position:fixed; z-index:60; top:calc(12px + env(safe-area-inset-top)); right:12px; width:auto; padding:0 18px; box-shadow:0 6px 16px rgba(0,0,0,.25); }
+.ayuda{ font-size:11.5px; color:var(--ar-txt2); padding:0 2px; line-height:1.35; }
+/* Fondo del visor como el viewport de Inventor: degradé azul grisado que aclara hacia abajo (colores medidos
+   de una captura real de Inventor). Sobre este fondo las aristas negras se leen; sobre el azul profundo no. */
+#visor3D{ position:fixed; inset:0; z-index:40; background:linear-gradient(160deg, #98a8bb 0%, #aebccf 45%, #c7d3e5 100%); }
 #visor3D canvas{ display:block; }
-@media (max-width:400px){ .bctrl{ flex-basis:47%; } .tile{ flex-basis:100%; } }
+@media (max-width:400px){ .tile{ flex-basis:100%; } }
 </style>
 <link rel="stylesheet" href="ms-paper.css">
 <link rel="stylesheet" href="ms-library.css">
@@ -162,102 +292,146 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 </head>
 <body>
 
-<!-- ======= PANTALLA DE CARGA ======= -->
+<!-- ======= BIENVENIDA (un toque la saltea) ======= -->
+<div id="splash-screen" role="presentation">
+  <div class="splash-particle" style="top:18%;left:10%"></div>
+  <div class="splash-particle" style="top:28%;left:84%;animation-delay:.5s"></div>
+  <div class="splash-particle" style="top:70%;left:14%;animation-delay:1s"></div>
+  <div class="splash-particle" style="top:80%;left:80%;animation-delay:1.5s"></div>
+  <div class="splash-particle" style="top:50%;left:6%;animation-delay:.3s"></div>
+  <div class="splash-particle" style="top:40%;left:92%;animation-delay:.8s"></div>
+  <div class="splash-particle" style="top:62%;left:38%;animation-delay:.2s"></div>
+  <div class="splash-particle" style="top:74%;left:58%;animation-delay:1.2s"></div>
+  <div class="splash-particle" style="top:86%;left:30%;animation-delay:1.8s"></div>
+  <div class="splash-particle" style="top:12%;left:56%;animation-delay:.9s"></div>
+  <img id="splash-logo" src="img/logo_dark.png" alt="Metalúrgica Sarmiento">
+  <div id="splash-kicker">Realidad aumentada en obra</div>
+  <div id="splash-text">MS AR</div>
+  <div id="splash-line"></div>
+  <div id="splash-subtitle">Depto. Innovación y Desarrollo · Metalúrgica Sarmiento</div>
+  <div id="splash-pie">Metalúrgica Sarmiento S.R.L. · Soluciones claras, desde el análisis hasta el resultado</div>
+</div>
+
+<!-- ======= PANTALLA DE INICIO ======= -->
 <div id="capaUI">
-  <header class="cab">
-    <img src="img/logo_dark.png" alt="Metalúrgica Sarmiento">
-    <div>
-      <div class="tit">MS AR</div>
-      <div class="sub">Realidad aumentada en obra</div>
+  <header class="ms-header">
+    <div class="ms-brand">
+      <img class="logo-light" src="img/logo.png" alt="Metalúrgica Sarmiento">
+      <img class="logo-dark" src="img/logo_dark.png" alt="Metalúrgica Sarmiento">
+      <div class="brand-text">
+        <h1>MS AR</h1>
+        <span>Depto Innovación y Desarrollo</span>
+      </div>
     </div>
+    <button id="msTema" class="tema-btn" type="button" title="Tema noche" aria-label="Cambiar entre tema claro y noche">
+      <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2 6 6M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+    </button>
   </header>
+
+  <div class="intro">
+    <div class="kicker">Realidad aumentada en obra</div>
+    <h2>Tu modelo, a escala real donde va a ir</h2>
+    <p>Piezas y ensambles de Inventor, y redes de conductería de la Calculadora de Aspiración.</p>
+  </div>
 
   <main class="wrap">
 
     <section class="card">
-      <h2>1 · ¿Qué vas a ver?</h2>
+      <div class="kicker">Paso 1</div>
+      <h2>¿Qué vas a ver?</h2>
       <div class="fila">
-        <button id="btn3DFile" class="tile obj"><b>Modelo 3D · OBJ</b><span>Como sale de Inventor o de PlanObra. Elegí el .obj y el .mtl juntos y abre con sus colores; los modelos gigantes se simplifican solos.</span></button>
-        <button id="btnArchivo" class="tile json"><b>Red de conductería · JSON</b><span>El botón AR de la Calculadora de Aspiración: caños, codos, derivaciones, bridas y máquinas.</span></button>
+        <button id="btn3DFile" class="tile obj" type="button"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.8 20.5 7.5v9L12 21.2 3.5 16.5v-9z"/><path d="M3.8 7.6 12 12.2l8.2-4.6M12 12.2v8.8"/></svg></span><span class="txt"><b>Modelo 3D · OBJ</b><span>Como sale de Inventor o de PlanObra. Elegí el .obj y el .mtl juntos y abre con sus colores; los modelos gigantes se simplifican solos.</span></span></button>
+        <button id="btnArchivo" class="tile json" type="button"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h7a3 3 0 0 1 3 3v9"/><path d="M13 12h8"/><circle cx="3" cy="6" r="1.2"/><circle cx="21" cy="12" r="1.2"/><circle cx="13" cy="20" r="1.2"/></svg></span><span class="txt"><b>Red de conductería · JSON</b><span>El botón AR de la Calculadora de Aspiración: caños, codos, derivaciones, bridas y máquinas.</span></span></button>
       </div>
-      <div class="fila" style="margin-top:8px; align-items:center">
-        <select id="selUnid" class="mini" title="Unidades del OBJ">
+      <div class="fila" style="margin-top:10px">
+        <select id="selUnid" class="mini" title="Unidades del OBJ" aria-label="Unidades del OBJ">
           <option value="mm" selected>OBJ en mm</option>
           <option value="cm">OBJ en cm</option>
           <option value="m">OBJ en m</option>
         </select>
-        <button id="btnMTL" class="mini">Colores .mtl</button>
-        <button id="btnDemo" class="mini">Ejemplo</button>
-        <select id="selHojaApp" class="mini" title="Hoja del plano con QR"><option value="a4">Hoja A4</option><option value="a3" selected>Hoja A3</option><option value="a2">Hoja A2</option><option value="a1">Hoja A1</option></select>
-        <button id="btnHoja" class="mini" style="border-color:var(--rojo);color:#fff" title="Genera el plano con QR de este 3D (PDF a tamaño exacto + OBJ con la hoja adentro) para imprimir y montarlo encima">Plano con QR</button>
-        <input type="file" id="inp3D" accept=".obj,.mtl,.stl" multiple hidden>
-        <input type="file" id="inpMTL" accept=".mtl" hidden>
-        <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
+        <button id="btnMTL" class="mini" type="button">Colores .mtl</button>
+        <button id="btnDemo" class="mini" type="button">Ejemplo</button>
       </div>
-      <div id="infoTrazado" class="chips"><span class="ms-badge" id="bObra">nada cargado</span></div>
+      <div class="herr">
+        <div class="herr-tit">Plano para imprimir (QR o marca de replanteo)</div>
+        <div class="fila">
+          <select id="selHojaApp" class="mini" title="Hoja del plano con QR" aria-label="Hoja del plano con QR"><option value="a4">Hoja A4</option><option value="a3" selected>Hoja A3</option><option value="a2">Hoja A2</option><option value="a1">Hoja A1</option></select>
+          <button id="btnHoja" class="mini acento" type="button" title="Genera el plano con QR de este 3D (PDF a tamaño exacto + OBJ con la hoja adentro) para imprimir y montarlo encima">Plano con QR</button>
+        </div>
+      </div>
+      <input type="file" id="inp3D" accept=".obj,.mtl,.stl" multiple hidden>
+      <input type="file" id="inpMTL" accept=".mtl" hidden>
+      <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
+      <div id="infoTrazado" class="chips"><span class="ms-badge" id="bObra">Todavía no abriste ningún modelo</span></div>
       <div id="leyenda" class="chips"></div>
       <div id="estadoAR" class="nota">Comprobando el AR del teléfono…</div>
     </section>
 
     <section class="card">
-      <h2>2 · ¿Cómo?</h2>
-      <div class="lbl">Tamaño</div>
+      <div class="kicker">Paso 2</div>
+      <h2>¿Cómo lo querés ver?</h2>
+      <span class="lbl">Tamaño</span>
       <div class="seg">
         <label><input type="radio" name="modo" value="1" checked><span>Real 1:1<small>parado en la obra</small></span></label>
         <label><input type="radio" name="modo" value="20"><span>Maqueta 1:20<small>sobre una mesa</small></span></label>
         <label><input type="radio" name="modo" value="50"><span>Maqueta 1:50<small>en la oficina</small></span></label>
         <label><input type="radio" name="modo" value="papel"><span>Sobre plano impreso<small>QR de la hoja</small></span></label>
       </div>
-      <div class="lbl">Ubicación (solo a tamaño real)</div>
-      <div class="seg">
-        <label><input type="radio" name="ubic" value="auto" checked><span>Automática<small>según el tamaño</small></span></label>
-        <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza o equipo</small></span></label>
-        <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>galpón · casa</small></span></label>
+      <div class="solo-real">
+        <span class="lbl">Ubicación</span>
+        <div class="seg">
+          <label><input type="radio" name="ubic" value="auto" checked><span>Automática<small>según el tamaño</small></span></label>
+          <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza o equipo</small></span></label>
+          <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>galpón · casa</small></span></label>
+        </div>
       </div>
-      <div class="lbl">Hoja impresa (solo "Sobre plano impreso")</div>
-      <select id="selImpreso" class="mini" style="width:100%">
-        <option value="1" selected>Impresa al 100 % (como se generó)</option>
-        <option value="0.7071">Reducida una hoja (A1 en A2, A3 en A4): 71 %</option>
-        <option value="0.5">Reducida dos hojas (A1 en A3): 50 %</option>
-        <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
-        <option value="2">Ampliada dos hojas: 200 %</option>
-      </select>
-      <div class="lbl">¿Cuánto mide el marco negro completo? (mm)</div>
-      <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
-             placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
-      <!-- Modo hoja SIMPLIFICADO a la lectura de QR. Los otros tres (dos
-           cruces, fijar a la hoja, reconocimiento del telefono) se sacaron de
-           la vista porque no se usaban. El select queda en el DOM, con un
-           unico valor, para no romper el codigo ni las pruebas que lo leen. -->
-      <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
-      <select id="msModoPapel" class="mini" style="width:100%"><option value="automatico" selected>QR · ubicación automática</option><option value="camara">Seguir QR visible con cámara</option><option value="anclado">Dos cruces · anclaje manual</option><option value="nativo">Reconocimiento WebXR · si está disponible</option></select>
-      <div class="nota"><b>Sobre plano impreso:</b> en la APK 4.16, el QR ubica el modelo automáticamente y el seguimiento espacial permite mover el teléfono. Mantené la hoja quieta. En el navegador, el seguimiento por cámara necesita mantener el QR visible; también podés usar las dos cruces.</div>
+      <div class="solo-papel">
+        <label class="lbl" for="selImpreso">Hoja impresa</label>
+        <select id="selImpreso" class="mini" style="width:100%">
+          <option value="1" selected>Impresa al 100 % (como se generó)</option>
+          <option value="0.7071">Reducida una hoja (A1 en A2, A3 en A4): 71 %</option>
+          <option value="0.5">Reducida dos hojas (A1 en A3): 50 %</option>
+          <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
+          <option value="2">Ampliada dos hojas: 200 %</option>
+        </select>
+        <label class="lbl" for="qrMedido">¿Cuánto mide el marco negro completo? (mm)</label>
+        <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
+               placeholder="Dejalo vacío si imprimiste al 100 %" style="width:100%">
+        <!-- Modo hoja SIMPLIFICADO a la lectura de QR. Las otras opciones (dos cruces, seguir con la cámara,
+             reconocimiento WebXR) quedan en el select para el código y las pruebas que lo leen. -->
+        <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
+        <select id="msModoPapel" class="mini" style="width:100%"><option value="automatico" selected>QR · ubicación automática</option><option value="camara">Seguir QR visible con cámara</option><option value="anclado">Dos cruces · anclaje manual</option><option value="nativo">Reconocimiento WebXR · si está disponible</option></select>
+        <div class="nota">En la aplicación (APK) el QR ubica el modelo solo y podés caminar alrededor: mantené la hoja quieta. En el navegador hay que mantener el QR a la vista, o usar las dos cruces.</div>
+      </div>
     </section>
 
     <section class="card">
-      <h2>3 · Ver</h2>
-      <button id="btnAR" class="btn" disabled>Iniciar AR</button>
-      <button id="btn3D" class="btn sec">Ver en 3D (sin AR)</button>
+      <div class="kicker">Paso 3</div>
+      <h2>Ver</h2>
+      <button id="btnAR" class="btn" type="button" disabled>Iniciar AR</button>
+      <button id="btn3D" class="btn sec" type="button">Ver en 3D (sin AR)</button>
       <details>
         <summary>Más opciones</summary>
-        <button id="btnSensor" class="btn sec">AR por sensores (no queda fijo al caminar)</button>
-        <button id="btnDiag" class="btn sec">Diagnóstico del teléfono</button>
+        <button id="btnSensor" class="btn sec" type="button">AR por sensores (no queda fijo al caminar)</button>
+        <button id="btnDiag" class="btn sec" type="button">Diagnóstico del teléfono</button>
         <pre id="diag" class="diag oculto"></pre>
       </details>
     </section>
 
     <section class="card">
+      <div class="kicker">Ayuda</div>
       <h2>Cómo se usa</h2>
       <ol class="pasos">
         <li>Desde la Calculadora: botón <b>AR</b> → el archivo llega por WhatsApp → abrilo con <b>Red de conductería</b>. Desde Inventor o PlanObra: exportá <b>OBJ</b> (con <b>Preparar OBJ para AR</b> en la PC quedan los colores adentro).</li>
-        <li><b>Iniciar AR</b>, apuntá al piso hasta ver el aro rojo y tocá: el modelo se apoya ahí. El modelo queda fijado al colocarlo; usá Apoyar de nuevo para cambiarlo de lugar.</li>
+        <li><b>Iniciar AR</b>, apuntá al piso hasta ver el aro y tocá: el modelo se apoya ahí y queda fijado. Usá <b>Apoyar de nuevo</b> para cambiarlo de lugar.</li>
         <li>Si lo perdés de vista: <b>Traer acá</b>. Cuando esté bien: <b>Fijar</b>.</li>
-        <li>Galpones y casas: la app pide <b>2 puntos</b> — elegís una esquina en el plano, la marcás en el lugar real, y lo mismo con una segunda esquina lejana.</li>
+        <li>Galpones y casas: en la aplicación, <b>Replanteo en obra</b> (con la marca impresa o marcando 2 puntos al pie de la pared) o <b>Ajustar → Alinear a pared</b>; en el navegador, la ubicación por <b>2 puntos</b>.</li>
       </ol>
     </section>
   </main>
 
-  <footer class="pie"><span id="ver">v4.36.0</span> · MS AR · Depto. Innovación y Desarrollo</footer>
+  <footer class="pie"><span id="ver">v4.37.0</span> · MS AR · Depto. Innovación y Desarrollo · Metalúrgica Sarmiento</footer>
 </div>
 
 <!-- ======= CAPA AR ======= -->
@@ -272,77 +446,77 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
   </div>
 
   <div id="rapidos" class="rapidos">
-    <button id="rapTraer" title="Traer el modelo al frente"><i>⤓</i>Traer acá</button>
-    <button id="rapFijar" title="Fijar / liberar"><i>🔒</i>Fijar</button>
-    <button id="rapPlanta" title="Vista en planta"><i>▦</i>Planta</button>
-    <button id="btnSalirAR" class="salir" title="Salir del AR"><i>✕</i>Salir</button>
+    <button id="rapTraer" type="button" title="Traer el modelo al frente"><i>⤓</i>Traer acá</button>
+    <button id="rapFijar" type="button" title="Fijar / liberar"><i>🔒</i>Fijar</button>
+    <button id="rapPlanta" type="button" title="Vista en planta"><i>▦</i>Planta</button>
+    <button id="btnSalirAR" class="salir" type="button" title="Salir del AR"><i>✕</i>Salir</button>
   </div>
 
   <div id="panelAR" class="panel-ar oculto">
     <div class="ptabs">
-      <button class="ptab activa" data-tab="ubicar">Ubicar</button>
-      <button class="ptab" data-tab="ver">Ver</button>
-      <button class="ptab" data-tab="ajuste">Ajustar</button>
-      <button class="ptab" data-tab="medir">Medir</button>
+      <button class="ptab activa" data-tab="ubicar" type="button">Ubicar</button>
+      <button class="ptab" data-tab="ver" type="button">Ver</button>
+      <button class="ptab" data-tab="ajuste" type="button">Ajustar</button>
+      <button class="ptab" data-tab="medir" type="button">Medir</button>
     </div>
     <div class="ptab-cont" data-tab="ubicar">
       <div class="pgrupo">
-        <button class="bctrl" data-act="fijar" id="btnFijar">Fijar</button>
-        <button class="bctrl" data-act="reancla">Apoyar de nuevo</button>
-        <button class="bctrl" data-act="traer">Traer acá</button>
-        <button class="bctrl" data-act="esquina" id="btnEsquina">2 puntos</button>
-        <button class="bctrl" data-act="pivote" id="btnPivote">Punto del 3D</button>
+        <button class="bctrl" data-act="fijar" id="btnFijar" type="button">Fijar</button>
+        <button class="bctrl" data-act="reancla" type="button">Apoyar de nuevo</button>
+        <button class="bctrl" data-act="traer" type="button">Traer acá</button>
+        <button class="bctrl" data-act="esquina" id="btnEsquina" type="button">2 puntos</button>
+        <button class="bctrl" data-act="pivote" id="btnPivote" type="button">Punto del 3D</button>
       </div>
       <div class="pgrupo">
-        <button class="bctrl" data-act="escuadrar" id="btnEscuadrar">Escuadrar</button>
-        <button class="bctrl" data-act="auto" id="btnAuto">Auto-ajuste</button>
-        <button class="bctrl" data-act="autocont" id="btnAutoCont">Auto continuo: OFF</button>
-        <button class="bctrl" data-act="deshacerauto">Deshacer ajuste</button>
-        <button class="bctrl" data-act="rot90">Girar 90°</button>
-        <button class="bctrl" data-act="esc">Escala</button>
+        <button class="bctrl" data-act="escuadrar" id="btnEscuadrar" type="button">Escuadrar</button>
+        <button class="bctrl" data-act="auto" id="btnAuto" type="button">Auto-ajuste</button>
+        <button class="bctrl" data-act="autocont" id="btnAutoCont" type="button">Auto continuo: OFF</button>
+        <button class="bctrl" data-act="deshacerauto" type="button">Deshacer ajuste</button>
+        <button class="bctrl" data-act="rot90" type="button">Girar 90°</button>
+        <button class="bctrl" data-act="esc" type="button">Escala</button>
       </div>
       <div class="ayuda">Tocá el aro para apoyar · 1 dedo mueve · 2 dedos giran / suben · Punto del 3D: clavá una boca en una marca real y girá alrededor · Fijar cuando esté bien</div>
     </div>
     <div class="ptab-cont oculto" data-tab="ver">
       <div class="pgrupo">
-        <button class="bctrl" data-act="opac">Transparencia</button>
-        <button class="bctrl" data-act="color" id="btnColor">Color: real</button>
-        <button class="bctrl" data-act="etiq">Etiquetas</button>
-        <button class="bctrl" data-act="maq">Máquinas</button>
+        <button class="bctrl" data-act="opac" type="button">Transparencia</button>
+        <button class="bctrl" data-act="color" id="btnColor" type="button">Color: real</button>
+        <button class="bctrl" data-act="etiq" type="button">Etiquetas</button>
+        <button class="bctrl" data-act="maq" type="button">Máquinas</button>
       </div>
       <div class="pgrupo">
-        <button class="bctrl" data-act="piso">Marcas de piso</button>
-        <button class="bctrl" data-act="bandera" id="btnBandera">Bandera: ON</button>
-        <button class="bctrl" data-act="mini" id="btnMini">Planta: chica</button>
-        <button class="bctrl" data-act="ocl" id="btnOcl">Oclusión: ON</button>
+        <button class="bctrl" data-act="piso" type="button">Marcas de piso</button>
+        <button class="bctrl" data-act="bandera" id="btnBandera" type="button">Bandera: ON</button>
+        <button class="bctrl" data-act="mini" id="btnMini" type="button">Planta: chica</button>
+        <button class="bctrl" data-act="ocl" id="btnOcl" type="button">Oclusión: ON</button>
       </div>
     </div>
     <div class="ptab-cont oculto" data-tab="ajuste">
       <div class="pgrupo">
-        <button class="bctrl" data-act="rot-">⟲ 15°</button>
-        <button class="bctrl" data-act="rot+">15° ⟳</button>
-        <button class="bctrl" data-act="alt-">▼ bajar</button>
-        <button class="bctrl" data-act="alt+">▲ subir</button>
+        <button class="bctrl" data-act="rot-" type="button">⟲ 15°</button>
+        <button class="bctrl" data-act="rot+" type="button">15° ⟳</button>
+        <button class="bctrl" data-act="alt-" type="button">▼ bajar</button>
+        <button class="bctrl" data-act="alt+" type="button">▲ subir</button>
       </div>
       <div class="pgrupo">
-        <button class="bctrl" data-act="fino" id="btnFino">Ajuste fino: OFF</button>
-        <button class="bctrl" data-act="pasoMm" id="btnPasoMm">Paso: 10 mm</button>
-        <button class="bctrl" data-act="dist-">− cerca</button>
-        <button class="bctrl" data-act="dist+">+ lejos</button>
+        <button class="bctrl" data-act="fino" id="btnFino" type="button">Ajuste fino: OFF</button>
+        <button class="bctrl" data-act="pasoMm" id="btnPasoMm" type="button">Paso: 10 mm</button>
+        <button class="bctrl" data-act="dist-" type="button">− cerca</button>
+        <button class="bctrl" data-act="dist+" type="button">+ lejos</button>
       </div>
       <div class="pgrupo">
-        <button class="bctrl" data-act="mov" data-eje="x" data-sig="-1">◀ X−</button>
-        <button class="bctrl" data-act="mov" data-eje="x" data-sig="1">X+ ▶</button>
-        <button class="bctrl" data-act="mov" data-eje="y" data-sig="1">▲ Y+</button>
-        <button class="bctrl" data-act="mov" data-eje="y" data-sig="-1">▼ Y−</button>
-        <button class="bctrl" data-act="mov" data-eje="h" data-sig="1">↑ Alto +</button>
-        <button class="bctrl" data-act="mov" data-eje="h" data-sig="-1">↓ Alto −</button>
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="-1" type="button">◀ X−</button>
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="1" type="button">X+ ▶</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="1" type="button">▲ Y+</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="-1" type="button">▼ Y−</button>
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="1" type="button">↑ Alto +</button>
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="-1" type="button">↓ Alto −</button>
       </div>
       <div class="ayuda">Los pasos en mm mueven según los ejes del plano (X+ = derecha del plano, Y+ = arriba del plano)</div>
     </div>
     <div class="ptab-cont oculto" data-tab="medir">
       <div class="pgrupo">
-        <button class="bctrl" data-act="medir" id="btnMedir">Medir: OFF</button>
+        <button class="bctrl" data-act="medir" id="btnMedir" type="button">Medir: OFF</button>
       </div>
       <div class="ayuda">Con Medir activo: tocá dos puntos del piso y te dice la distancia real</div>
     </div>
@@ -350,22 +524,28 @@ summary{ font-size:.78rem; color:var(--txt2); cursor:pointer; }
 </div>
 
 <div id="visor3D" class="oculto">
-  <button id="btnSalir3D" class="bctrl salir flotante">Cerrar</button>
+  <button id="btnSalir3D" class="bctrl salir flotante" type="button">Cerrar</button>
 </div>
 
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: 'MS', version: 'v4.36.0', mejorasMS: true,
+  marca: 'MS', version: 'v4.37.0', mejorasMS: true,
   pielDefault: 'metal',              // OBJ sin colores → chapa (es una metalúrgica)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: false,
+  // Redes (criterio único con la Calculadora, oct-2026): el color del caño es su Ø en la escala azul MS
+  // (la misma función que la planta, el 3D y el informe), y cada rótulo es una pastilla blanca con el
+  // borde del color de su caño. El rojo queda para avisos.
+  escalaDiametro: 'ms',
+  etiquetaPastilla: true,
   colores: {
     acento: 0xe0292a, acento2: 0x0095b8, aviso: 0xf2b705,
     bajo: 0x0095b8, alto: 0xe0292a,
     ejeX: 0xe0292a, ejeY: 0x21c063, ejeZ: 0x2e6bff,
-    grilla: 0x283459, fondoEtiq: 'rgba(12,16,32,0.86)', textoEtiq: '#FFFFFF',
-    tuboCyan: 0x0095b8, tuboRojo: 0xe0292a
+    grilla: 0x283459, grillaCentro: 0x0095b8, marca: 0x0095b8,
+    fondoEtiq: 'rgba(255,255,255,0.95)', textoEtiq: '#283459',
+    tuboCyan: 0x0095b8, tuboRojo: 0x283459
   }
 };
 </script>
@@ -385,10 +565,32 @@ window.AR_CONFIG = {
 /* ── cableado propio de la interfaz MS ── */
 (function(){
   const $ = id => document.getElementById(id);
+  const ui = $('capaUI');
   $('msModoPapel').addEventListener('change',()=>AR.revisarSoporte());
   // .mtl aparte (colores de Inventor)
   $('btnMTL').addEventListener('click', () => $('inpMTL').click());
   $('inpMTL').addEventListener('change', ev => { const f = ev.target.files && ev.target.files[0]; if(f) AR.cargarMTL(f); ev.target.value = ''; });
+  // TEMA: claro por defecto (como la web), noche guardado en el teléfono
+  const meta = document.querySelector('meta[name=theme-color]');
+  function pintarTema(){
+    const noche = document.documentElement.classList.contains('theme-neon');
+    $('msTema').title = noche ? 'Tema día' : 'Tema noche';
+    if(meta) meta.content = noche ? '#0e1426' : '#ffffff';
+  }
+  $('msTema').addEventListener('click', () => {
+    const noche = document.documentElement.classList.toggle('theme-neon');
+    try{ localStorage.setItem('ms-ar-tema', noche ? 'noche' : 'claro'); }catch(_){}
+    pintarTema();
+  });
+  pintarTema();
+  // los campos de la hoja impresa solo con "Sobre plano impreso"; la ubicación solo a tamaño real
+  function modoVisible(){
+    const m = (document.querySelector('input[name=modo]:checked') || {}).value;
+    ui.classList.toggle('modo-papel', m === 'papel');
+    ui.classList.toggle('modo-real', m === '1');
+  }
+  document.querySelectorAll('input[name=modo]').forEach(r => r.addEventListener('change', modoVisible));
+  modoVisible();
   // botones rápidos (fuera del panel): no deben generar 'select' de WebXR
   const rap = $('rapidos');
   rap.addEventListener('beforexrselect', ev => ev.preventDefault());
@@ -399,16 +601,39 @@ window.AR_CONFIG = {
   $('rapPlanta').addEventListener('click', () => {
     const b = document.querySelector('#panelAR [data-act="mini"]'); if(b) b.click();
   });
-  // el estado "fijado" se refleja en el botón redondo
+  // el estado "fijado" se refleja en el botón redondo (solo si cambió: no reescribir el DOM cada 0,4 s)
+  let fijadoAntes = null;
   setInterval(() => {
     const f = !!AR.S.fijado;
-    $('rapFijar').classList.toggle('fijado', f);
-    $('rapFijar').innerHTML = f ? '<i>🔒</i>Fijado' : '<i>🔓</i>Fijar';
+    if(f !== fijadoAntes){
+      fijadoAntes = f;
+      $('rapFijar').classList.toggle('fijado', f);
+      $('rapFijar').innerHTML = f ? '<i>🔒</i>Fijado' : '<i>🔓</i>Fijar';
+    }
     // la cinta de abajo solo cuando hay sesión y no hay modal de plano
     const panel = $('panelAR');
-    if(!document.getElementById('capaAR').classList.contains('oculto') && (AR.S.session || AR.S.renderer)){ panel.classList.remove('oculto'); }
+    if(!$('capaAR').classList.contains('oculto') && (AR.S.session || AR.S.renderer)){ panel.classList.remove('oculto'); }
+    modoVisible();   // el modo también lo cambian el código (APK, biblioteca QR) sin evento
   }, 400);
   // el botón Salir del panel es el redondo: el núcleo escucha #btnSalirAR (ya cableado)
+
+  // BIENVENIDA: se va sola a los 2,2 s; un toque la saltea. No aparece si se llega con un archivo
+  // compartido, al volver a cargar en la misma sesión, ni en las pruebas automáticas.
+  const splash = $('splash-screen');
+  let vista = false; try{ vista = sessionStorage.getItem('ms-ar-bienvenida') === '1'; sessionStorage.setItem('ms-ar-bienvenida','1'); }catch(_){}
+  const automatica = navigator.webdriver && !/[?&]bienvenida\b/.test(location.search);
+  function irse(){
+    if(!splash || splash.classList.contains('fade-out')) return;
+    splash.classList.add('fade-out');
+    setTimeout(() => splash.remove(), 650);
+  }
+  if(!splash) return;
+  if(vista || automatica || location.hash) splash.remove();
+  else{
+    setTimeout(irse, 2200);
+    splash.addEventListener('click', irse);
+    for(const ev of ['native-files','native-update','ar:model-loaded','ar:files-loaded']) window.addEventListener(ev, irse, { once:true });
+  }
 })();
 </script>
 <script src="ar-app.js"></script>

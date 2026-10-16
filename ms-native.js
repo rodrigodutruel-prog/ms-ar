@@ -254,13 +254,25 @@
     const nombres=items.map(i=>i.name).join(', ');recibiendo=true;
     try{
       UI.estado('Recibiendo '+nombres+'…','ok');try{AR.registrar&&AR.registrar('archivo recibido: '+nombres);}catch(_){}
+      if(!await libre())throw new Error('la app está ocupada con otro modelo. Volvé al inicio y abrilo de nuevo.');
+      if(!await libre())throw new Error('la app está ocupada con otro modelo. Volvé al inicio y abrilo de nuevo.');
       const files=[];
       for(const it of items){let r=null;try{r=await fetch(it.url,{cache:'no-store'});}catch(_){}if(!r||!r.ok)throw new Error('No se pudo leer '+it.name+'. Volvé a compartirlo o abrilo con Seleccionar archivo.');files.push(new File([await r.blob()],it.name));}
       const ok=await AR.cargarArchivos(files);
       if(ok){UI.estado('Modelo recibido: '+nombres+'. Ya podés fijarlo en AR.','ok');barraRecibido(items);}
-    }catch(x){UI.estado('Archivo recibido: '+(x.message||x),'err');try{AR.registrar&&AR.registrar('archivo recibido, error: '+(x.message||x));}catch(_){}}
+      else sacarBarra();
+    }catch(x){sacarBarra();UI.estado('Archivo recibido: '+(x.message||x),'err');try{AR.registrar&&AR.registrar('archivo recibido, error: '+(x.message||x));}catch(_){}}
     finally{recibiendo=false;}
   });
+  // v4.37: con el visor 3D abierto (o mientras se abría otro modelo) cargarArchivos se negaba y lo recibido se perdía sin
+  // aviso: se cierra el visor y se espera a que la app quede libre (hasta 20 s)
+  async function libre(){
+    if(AR.S.modo3D){const b=document.getElementById('btnSalir3D');try{if(b&&b.onclick)b.onclick();}catch(_){}}
+    for(let i=0;i<80;i++){const s=AR.S;if(!(s._iniciando||s._cargando||s.session||s.papelCamera||s.modo3D))return true;await new Promise(r=>setTimeout(r,250));}
+    return false;
+  }
+  // si lo nuevo no abrió, la tarjeta Guardar / Compartir del anterior puede apuntar a archivos que la APK ya reemplazó
+  function sacarBarra(){const b=document.getElementById('msRecibido');if(b)b.remove();}
   let recibiendo=false;   // mientras se abre lo recibido, sus eventos de carga no sacan la barra de guardar/compartir
   // GUARDAR / COMPARTIR EL MODELO RECIBIDO (v4.28): lo que llegó a la app (de la PC con Inventor, de WhatsApp…) ya está
   // preparado para la app; se guarda en Descargas del teléfono o se manda a otra persona, que lo abre directo con la app.
@@ -270,19 +282,20 @@
     if(!window.NativePaper||typeof NativePaper.guardarRecibido!=='function'||typeof NativePaper.compartirRecibido!=='function'){if(card)card.remove();return;}
     // 4.28.1: TARJETA ARRIBA DE TODO (en la 4.28 iba debajo del estado, más abajo en la página, y al llegar el modelo no
     // se veía sin bajar). Va después del aviso de versión nueva si lo hay, y la página sube hasta ella.
-    if(!card){card=document.createElement('section');card.className='card';card.id='msRecibido';card.style.borderColor='#30d69b';}
+    // v4.37: clases (card aviso / mini ok-btn) que cada marca pinta a su estilo; con colores en línea el texto de los
+    // botones salía blanco sobre blanco en las interfaces claras
+    if(!card){card=document.createElement('section');card.className='card aviso';card.id='msRecibido';}
     const main=document.querySelector('main')||document.body,aviso=document.getElementById('nativeUpdate');
     if(aviso&&aviso.parentNode===main)aviso.after(card);else main.insertBefore(card,main.firstElementChild);
     const urls=JSON.stringify(items.map(i=>String(i.url))),nombre=(items.find(i=>/\.(obj|stl|json)$/i.test(i.name))||items[0]).name;
     const titulo=document.createElement('b');titulo.textContent='Modelo recibido: '+nombre;
-    const texto=document.createElement('p');texto.style.cssText='margin:6px 0 10px;opacity:.85;line-height:1.35';
+    const texto=document.createElement('p');texto.style.cssText='margin:6px 0 10px;line-height:1.35';
     texto.textContent='Ya está preparado para la app, con sus colores. Guardalo en el teléfono o mandalo a otra persona: lo abre directo con la app.';
     const fila=document.createElement('div');fila.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center';
-    const g=document.createElement('button');g.type='button';g.className='mini';g.id='msGuardarRecibido';g.textContent='Guardar en el teléfono';
+    const g=document.createElement('button');g.type='button';g.className='mini ok-btn';g.id='msGuardarRecibido';g.textContent='Guardar en el teléfono';
     g.title='Una copia de '+nombre+' en Descargas del teléfono, lista para abrir con la app';g.onclick=()=>NativePaper.guardarRecibido(urls);
-    const c=document.createElement('button');c.type='button';c.className='mini';c.id='msCompartirRecibido';c.textContent='Compartir';
+    const c=document.createElement('button');c.type='button';c.className='mini ok-btn';c.id='msCompartirRecibido';c.textContent='Compartir';
     c.title='Mandar '+nombre+' por WhatsApp, correo o Drive: del otro lado se abre directo con la app';c.onclick=()=>NativePaper.compartirRecibido(urls);
-    for(const x of [g,c])x.style.cssText='border-color:#30d69b;color:#fff';   // se ven como botones para tocar, no apagados
     fila.append(g,c);card.replaceChildren(titulo,texto,fila);card.dataset.urls=urls;
     try{card.scrollIntoView({block:'start',behavior:'smooth'});}catch(_){}
   }
@@ -293,12 +306,19 @@
     const v=String(e.detail?.version||''),url=String(e.detail?.url||'');if(!v||!/^https:\/\//.test(url))return;
     let card=document.getElementById('nativeUpdate');
     // ARRIBA DE TODO (primera tarjeta de la página): debajo del selector de hoja quedaba oculta en la APK.
-    if(!card){card=document.createElement('section');card.className='card';card.id='nativeUpdate';card.style.borderColor='#30d69b';const main=document.querySelector('main')||document.body;main.insertBefore(card,main.firstElementChild);}
-    card.textContent='Hay una versión nueva de la aplicación: '+v+' (instalada: '+(window.NativePaper?.version?.()||'?')+'). Se instala encima, sin desinstalar, y conserva la biblioteca. ';
-    const link=document.createElement('a');link.textContent='Descargar APK '+v;link.href=url;link.target='_blank';link.rel='noopener';card.append(link);
-    UI.estado('Hay una versión nueva de la aplicación ('+v+'). El link para bajarla está arriba.','ok');
-    try{AR.registrar&&AR.registrar('versión nueva publicada: '+v);}catch(_){}
+    if(!card){card=document.createElement('section');card.className='card aviso';card.id='nativeUpdate';const main=document.querySelector('main')||document.body;main.insertBefore(card,main.firstElementChild);}
+    const instalada=String(window.NativePaper?.version?.()||'').trim();
+    const titulo=document.createElement('b');titulo.textContent='Hay una versión nueva de la aplicación: '+v;
+    const texto=document.createElement('p');texto.style.cssText='margin:6px 0 8px;line-height:1.35';
+    texto.textContent=(instalada?'Tenés la '+instalada+'. ':'')+'Se instala encima, sin desinstalar, y conserva la biblioteca.';
+    const link=document.createElement('a');link.textContent='Descargar APK '+v;link.href=url;link.target='_blank';link.rel='noopener';
+    card.replaceChildren(titulo,texto,link);
+    // la APK lo reenvía cada 10 minutos al volver a la app: el aviso en la línea de estado, una sola vez por versión
+    // (tapaba "Modelo recibido…" o un error que todavía no se había leído)
+    if(v!==versionAvisada){versionAvisada=v;UI.estado('Hay una versión nueva de la aplicación ('+v+'). El link para bajarla está arriba.','ok');
+      try{AR.registrar&&AR.registrar('versión nueva publicada: '+v);}catch(_){}}
   });
+  let versionAvisada='';
   // REGISTRO: lo que pasa en la APK (archivos recibidos, consulta de versión) queda en el Diagnóstico del
   // teléfono, que antes venía vacío porque la parte nativa no escribía ahí.
   // con estado:true también se muestra en la línea de estado (avance de un STL grande que se reduce en el teléfono, v4.22)
@@ -310,11 +330,13 @@
     const radio=document.querySelector('input[name=modo][value=papel]');radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));
     AR.revisarSoporte();
   }else{
+    // En el navegador (sin la APK): qué suma la aplicación y el link a la APK de ESTA versión. Antes el texto hablaba
+    // de la 4.29 y el link bajaba la 4.36 (se escribían a mano y quedaban viejos); ahora salen de AR_CONFIG.version.
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
-    card.textContent='La APK 4.29 suma una barra para cambiar la escala del modelo en la vista AR (Ajustar: −, barra y +, imantada a 1:10, 1:20, 1:25, 1:50…); ya traía guardar en el teléfono y compartir el modelo que llega de la PC (o de WhatsApp), listo para abrir en la app (una tarjeta arriba de todo al recibirlo), y una persona que recorre el mapa de lo real de a poco (sin tironcitos); sobre la 4.27: herramientas en la vista AR (choques en rojo, cinta métrica, ficha, aire en los conductos, corte, rayos X y video), el ingeniero que esquiva paredes y equipos reales, replanteo en obra a tamaño real y colores de Inventor. ';
-    const link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar APK 4.29';
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/v4.36.0/'+(ms?'MS_AR':'3DDUT_AR')+'_v4.36.0.apk';
+    card.textContent='En Android, la aplicación (APK) deja el modelo más firme: vista AR propia con ARCore, el QR de la hoja lo ubica solo, escala regulable, medir, corte, rayos X, foto y video, el ingeniero que recorre la obra, y abre los modelos que llegan de la PC o de WhatsApp. ';
+    const ver=String(AR.CFG.version||'').replace(/^v?/,'v'),link=document.createElement('a'),ms=AR.CFG.marca==='MS';
+    link.textContent='Descargar la APK '+ver;
+    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/'+ver+'/'+(ms?'MS_AR':'3DDUT_AR')+'_'+ver+'.apk';
     card.append(link);document.getElementById('msModoPapel').after(card);
   }
 })();

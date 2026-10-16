@@ -49,6 +49,9 @@ const PAL = Object.assign({
   grilla: 0x333940, fondoEtiq: 'rgba(9,9,11,0.82)', textoEtiq: '#FFFFFF',
   tuboCyan: 0x00aeef, tuboRojo: 0xe31e24
 }, CFG.colores || {});
+// marcas de piso / galpón y líneas centrales de la grilla: si la marca no las define, van con su acento
+if(PAL.marca === undefined) PAL.marca = PAL.acento;
+if(PAL.grillaCentro === undefined) PAL.grillaCentro = PAL.acento;
 const cssPal = k => '#' + ('000000' + (PAL[k] >>> 0).toString(16)).slice(-6);
 
 
@@ -150,6 +153,8 @@ const UI = {
 };
 
 function numeroValido(v){ return typeof v === 'number' && Number.isFinite(v); }
+// la geometría de un modelo y sus aristas (que cuelgan de userData y liberarObjeto conserva a propósito)
+function soltarGeo(g){ if(!g) return; try{ g.userData && g.userData.aristasGeo && g.userData.aristasGeo.dispose(); }catch(e){} g.dispose(); }
 function liberarObjeto(objeto, conservar){
   if(!objeto) return;
   window.MSVisual?.dispose(objeto);
@@ -275,7 +280,21 @@ function parseTrazado(raw){
 /* ------------------------------------------------------------
    3. COLORES POR DIÁMETRO (serie MS 100–1200)
    ------------------------------------------------------------ */
+// MS (criterio único con la Calculadora, oct-2026): el Ø pinta con la MISMA escala que getPipeColor() de la
+// Calculadora de Aspiración — absoluta y logarítmica Ø80…Ø630: celeste → azul liviano MS → azul profundo. El mismo Ø
+// tiene el mismo color en la planta, el 3D y el informe de la Calculadora y acá. Si se cambia allá, cambiarla acá.
+const ESCALA_AZUL_MS = [[0, [77, 196, 236]], [0.34, [0, 149, 184]], [0.68, [40, 82, 158]], [1, [26, 32, 72]]];
+function colorDiametroMS(dMm){
+  if(!(dMm > 0)) return new THREE.Color(0xcbd5e1);
+  const t = Math.max(0, Math.min(1, Math.log(dMm / 80) / Math.log(630 / 80)));
+  const P = ESCALA_AZUL_MS;
+  let i = 0; while(i < P.length - 2 && t > P[i + 1][0]) i++;
+  const a = P[i], b = P[i + 1], k = (t - a[0]) / (b[0] - a[0]);
+  const c = a[1].map((v, j) => Math.round(v + (b[1][j] - v) * k));
+  return new THREE.Color((c[0] << 16) | (c[1] << 8) | c[2]);   // hex = sRGB, igual que en la Calculadora
+}
 function colorPorDiametro(dMetros, dMin, dMax){
+  if(CFG.escalaDiametro === 'ms') return colorDiametroMS(dMetros * 1000);
   const t = dMax > dMin ? (dMetros - dMin) / (dMax - dMin) : 0.5;
   const cyan = new THREE.Color(PAL.tuboCyan);
   const rojo = new THREE.Color(PAL.tuboRojo);
@@ -286,17 +305,36 @@ function colorPorDiametro(dMetros, dMin, dMax){
    4. CONSTRUCCIÓN DE LA GEOMETRÍA
    ------------------------------------------------------------ */
 function etiqueta(texto, color){
+  // el doble de resolución que antes (512×128, la misma proporción 4:1 del sprite): letra nítida de cerca
+  const W = 512, H = 128;
   const cv = document.createElement('canvas');
-  cv.width = 256; cv.height = 64;
+  cv.width = W; cv.height = H;
   const g = cv.getContext('2d');
-  g.fillStyle = PAL.fondoEtiq;
-  g.fillRect(0,0,256,64);
-  g.fillStyle = '#' + color.getHexString();
-  g.fillRect(0,0,6,64);
-  g.font = 'bold 34px Consolas, monospace';
+  const hex = '#' + color.getHexString();
+  const pastilla = !!CFG.etiquetaPastilla;
+  const fam = pastilla ? '"Segoe UI", Roboto, system-ui, sans-serif' : 'Consolas, monospace';
+  const util = W - (pastilla ? 64 : 40);
+  // el texto se achica hasta entrar: los rótulos largos ("pantalón Ø200 · Ø120/Ø100") salían cortados
+  let fs = 68;
+  g.font = (pastilla ? '700 ' : 'bold ') + fs + 'px ' + fam;
+  while(fs > 24 && g.measureText(texto).width > util){ fs -= 2; g.font = (pastilla ? '700 ' : 'bold ') + fs + 'px ' + fam; }
+  if(pastilla){
+    // MS (estilo web, oct-2026): una pastilla blanca con el borde del color de su caño y la letra en azul profundo
+    const x0 = 6, y0 = 6, x1 = W - 6, y1 = H - 6, r = (y1 - y0) / 2;
+    g.beginPath();
+    g.moveTo(x0 + r, y0); g.lineTo(x1 - r, y0); g.arc(x1 - r, y0 + r, r, -Math.PI/2, Math.PI/2);
+    g.lineTo(x0 + r, y1); g.arc(x0 + r, y0 + r, r, Math.PI/2, Math.PI*1.5); g.closePath();
+    g.fillStyle = PAL.fondoEtiq; g.fill();
+    g.lineWidth = 9; g.strokeStyle = hex; g.stroke();
+  }else{
+    g.fillStyle = PAL.fondoEtiq;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = hex;
+    g.fillRect(0, 0, 12, H);
+  }
   g.fillStyle = PAL.textoEtiq;
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(texto, 134, 34);
+  g.fillText(texto, pastilla ? W/2 : W/2 + 6, H/2 + 3);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, depthTest:false, transparent:true }));
@@ -431,7 +469,7 @@ function construirGrupoBase(tz){
   });
 
   // piso de referencia
-  const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 4, 20, PAL.acento, PAL.grilla);
+  const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 4, 20, PAL.grillaCentro, PAL.grilla);
   grilla.material.transparent = true;
   grilla.material.opacity = .22;
   grilla.userData.rol = 'grilla';
@@ -497,7 +535,7 @@ function construirGrupoMS(tz){
     const k = Math.round(d);
     if(_matsD[k]) return _matsD[k];
     const col = colorPorDiametro(d/1000, dMinMS/1000, dMaxMS/1000)
-      .lerp(new THREE.Color(0xc9ced4), 0.35);        // tinte + un toque de chapa
+      .lerp(new THREE.Color(0xc9ced4), CFG.escalaDiametro === 'ms' ? 0.15 : 0.35);   // tinte + un toque de chapa
     const _op = (typeof S.opacidad === 'number') ? S.opacidad : 1;
     _matsD[k] = new THREE.MeshStandardMaterial({ color:col, metalness:CFG.mejorasMS ? .35 : .75, roughness:CFG.mejorasMS ? .48 : .4,
       emissive: col, emissiveIntensity:.18,
@@ -669,7 +707,7 @@ function construirGrupoMS(tz){
     }
     if(L > 1.1){
       const largoTxt = (t.largo_util_m != null ? t.largo_util_m : L);
-      const et = etiqueta('Ø' + Math.round(d) + ' · ' + largoTxt.toFixed(2).replace('.', ',') + ' m', new THREE.Color(PAL.acento2));
+      const et = etiqueta('Ø' + Math.round(d) + ' · ' + largoTxt.toFixed(2).replace('.', ',') + ' m', colorPorDiametro(d/1000, dMinMS/1000, dMaxMS/1000));
       et.position.copy(A).addScaledVector(dir, L/2).add(new THREE.Vector3(0, d/2000 + .14, 0));
       et.scale.set(.55, .13, 1);
       grpEtiq.add(et);
@@ -829,7 +867,7 @@ function construirGrupoMS(tz){
       const palanca = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, rV*1.6), matPal);
       palanca.position.set(P.x + rV*1.35, zV, P.z); palanca.rotation.x = ap;
       palanca.position.z += Math.sin(ap) * 0; grpTubos.add(palanca);
-      const etV = etiqueta('válvula Ø' + Math.round(dV) + ' · ' + Math.round((m.valvula_apertura_gr != null ? m.valvula_apertura_gr : 60)) + '°', new THREE.Color(PAL.acento));
+      const etV = etiqueta('válvula Ø' + Math.round(dV) + ' · ' + Math.round((m.valvula_apertura_gr != null ? m.valvula_apertura_gr : 60)) + '°', colorPorDiametro(dV/1000, dMinMS/1000, dMaxMS/1000));
       etV.position.set(P.x + rV + .18, zV + .1, P.z); etV.scale.set(.42, .105, 1); grpEtiq.add(etV);
     }
     // PANTALÓN + MANGUERAS si la máquina tiene varias bocas
@@ -849,7 +887,7 @@ function construirGrupoMS(tz){
         for(let s2=.04; s2<L; s2+=.06) lst.push({ p: A.clone().addScaledVector(dir, s2), q: quatDir(dir) });
         addBrida(B, dir.clone().negate(), b.d_mm);
       });
-      const etP = etiqueta('pantalón Ø' + Math.round(dB) + ' · ' + bocasM.map(b => 'Ø' + Math.round(b.d_mm)).join('/'), new THREE.Color(PAL.acento2));
+      const etP = etiqueta('pantalón Ø' + Math.round(dB) + ' · ' + bocasM.map(b => 'Ø' + Math.round(b.d_mm)).join('/'), colorPorDiametro(dB/1000, dMinMS/1000, dMaxMS/1000));
       etP.position.set(P.x - rB - .2, P.y - hP/2, P.z); etP.scale.set(.5, .125, 1); grpEtiq.add(etP);
     }
   });
@@ -859,7 +897,7 @@ function construirGrupoMS(tz){
   const grpPiso = new THREE.Group();
   grpPiso.userData.rol = 'replanteo';
   const matEje  = new THREE.LineDashedMaterial({ color:PAL.acento2, dashSize:.20, gapSize:.13, transparent:true, opacity:.95 });
-  const matCruz = new THREE.LineBasicMaterial({ color:PAL.acento, transparent:true, opacity:.95 });
+  const matCruz = new THREE.LineBasicMaterial({ color:PAL.marca, transparent:true, opacity:.95 });
   const cruces = new Set();
   function cruzPiso(x, z){
     const k = Math.round(x*50) + '|' + Math.round(z*50);
@@ -888,7 +926,7 @@ function construirGrupoMS(tz){
     grpPiso.add(ln);
     if(L > 1.1){
       const zm = (A.y + B.y) / 2;
-      const etP = etiqueta('alt. eje ' + zm.toFixed(2).replace('.', ',') + ' m', new THREE.Color(PAL.acento));
+      const etP = etiqueta('alt. eje ' + zm.toFixed(2).replace('.', ',') + ' m', new THREE.Color(PAL.marca));
       etP.position.set((A.x + B.x)/2, .22, (A.z + B.z)/2);
       etP.scale.set(.5, .125, 1);
       grpPiso.add(etP);
@@ -905,14 +943,14 @@ function construirGrupoMS(tz){
     const an = paq.galpon.ancho_m, la = paq.galpon.largo_m;
     const esq = [[0,0],[an,0],[an,la],[0,la]].map(e => new THREE.Vector3(e[0]-cx, .012, e[1]-cz));
     g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(esq.concat([esq[0]])),
-      new THREE.LineBasicMaterial({ color:PAL.acento })));
+      new THREE.LineBasicMaterial({ color:PAL.marca })));
     esq.forEach(e => {
       const poste = new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,1.2,8),
-        new THREE.MeshBasicMaterial({ color:PAL.acento, transparent:true, opacity:.85 }));
+        new THREE.MeshBasicMaterial({ color:PAL.marca, transparent:true, opacity:.85 }));
       poste.position.copy(e).add(new THREE.Vector3(0,.6,0));
       g.add(poste);
     });
-    const grilla = new THREE.GridHelper(Math.max(an, la), Math.round(Math.max(an, la)), PAL.acento, PAL.grilla);
+    const grilla = new THREE.GridHelper(Math.max(an, la), Math.round(Math.max(an, la)), PAL.grillaCentro, PAL.grilla);
     grilla.material.transparent = true; grilla.material.opacity = .2;
     grilla.userData.rol = 'grilla';
     g.add(grilla);
@@ -1138,8 +1176,16 @@ function acosRapido(x){
 function unificarPosiciones(vs, nv){
   const tabla = new TablaPos(nv), remap = new Int32Array(nv), rep = new Int32Array(nv);
   let nu = 0;
+  // v4.37: el paso del soldado es RELATIVO al tamaño (2 millonésimas de la extensión, como mucho 0,01). Era 0,01 de la
+  // unidad del archivo: bien en mm, pero la red de la Calculadora llega en metros (celdas de 1 cm) y fundía bridas y
+  // agujeros (57 % menos de aristas), y un OBJ en m perdía todas las de una chapa de 2 mm. Se resta el mínimo para que
+  // los enteros no desborden.
+  let mn = Infinity, mx = -Infinity;
+  for(let i=0;i<nv*3;i++){ const v = vs[i]; if(v < mn) mn = v; if(v > mx) mx = v; }
+  if(!(mx >= mn)){ mn = 0; mx = 0; }
+  const inv = 1/Math.min(0.01, Math.max(1e-9, (mx - mn)*2e-6));
   for(let i=0;i<nv;i++){
-    const id = tabla.id(Math.round(vs[i*3]*100)|0, Math.round(vs[i*3+1]*100)|0, Math.round(vs[i*3+2]*100)|0);
+    const id = tabla.id(Math.round((vs[i*3]-mn)*inv)|0, Math.round((vs[i*3+1]-mn)*inv)|0, Math.round((vs[i*3+2]-mn)*inv)|0);
     remap[i] = id; if(id === nu) rep[nu++] = i;
   }
   return { remap, rep: rep.subarray(0, nu), nu };
@@ -1305,7 +1351,8 @@ async function parseOBJ(txt, avance, mtl){
   const lineas = txt.split('\n'); txt = null;
   const N = lineas.length;
   const LOTE = 25000;
-  const num = new Float64Array(8), idx = new Int32Array(64);
+  const num = new Float64Array(8);
+  let idx = new Int32Array(64);       // crece: una tapa de cilindro de Blender/SketchUp trae caras de 72+ vértices
   const POW10 = [1,10,100,1e3,1e4,1e5,1e6,1e7,1e8,1e9,1e10,1e11,1e12,1e13,1e14,1e15];
   // Lee hasta 8 numeros desde la posicion k (espacios o tabs entre medio; '#' corta la linea).
   // Devuelve cuantos leyo; si un token no es un numero finito devuelve -1-(los leidos hasta ahi).
@@ -1348,7 +1395,8 @@ async function parseOBJ(txt, avance, mtl){
       if(c === 47){ while(k < L){ c = l.charCodeAt(k); if(c === 32 || c === 9 || c === 13 || c === 35) break; k++; } }
       else if(k < L && !(c === 32 || c === 9 || c === 13 || c === 35)) return -1;
       const i = neg ? nvAct - v : v - 1;
-      if(i < 0 || i >= nvAct || n >= 64) return -1;
+      if(i < 0 || i >= nvAct) return -1;
+      if(n >= idx.length){ const m = new Int32Array(idx.length*2); m.set(idx); idx = m; }
       idx[n++] = i;
     }
     return n;
@@ -1386,7 +1434,7 @@ async function parseOBJ(txt, avance, mtl){
       }else if(c0===111 && sep){        // "o "
         enVidrio = /vidrio|glass|agua|cristal/i.test(l);
       }else if(c0===35 && l.startsWith('# MSAR_HOJA ', k)){   // la hoja impresa (Plano_AR_desde_OBJ)
-        try{ hojaEmb = JSON.parse(l.slice(k+12)); }catch(e){}
+        try{ if(!hojaEmb) hojaEmb = JSON.parse(l.slice(k+12)); }catch(e){}   // la primera: la más nueva va adelante
       }else if(c0===35 && l.startsWith('# MSAR_ARISTAS_POS', k)){
         aristasPos = true;
       }else if(c0===117 && l.startsWith('usemtl', k)){
@@ -1575,7 +1623,7 @@ async function cargarArchivos(files){
       if(!resto.length){ const ok = aplicarMTLCargado(materiales); if(ok) window.dispatchEvent(new CustomEvent('ar:files-loaded', {detail:{files:lista,units:$('selUnid').value}})); return ok; }
     }else S.mtl = null;
     const f = resto[0];
-    const ok = ext(f) === 'json' ? cargar(JSON.parse(await leerArchivo(f, false))) : await cargarModelo3D(f, true);
+    const ok = ext(f) === 'json' ? cargar(JSON.parse(await leerArchivo(f, false)), true) : await cargarModelo3D(f, true);
     if(ok) window.dispatchEvent(new CustomEvent('ar:files-loaded', {detail:{files:lista,units:$('selUnid').value}}));
     return ok;
   }catch(e){ UI.estado('No se pudo abrir el archivo: ' + e.message, 'err'); return false; }
@@ -1684,15 +1732,16 @@ async function cargarModelo3D(file, interno){
       const _mini = new Float32Array(Math.ceil(_posM.count/_salto)*2);
       let _mk = 0;
       for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
-      if(geo.userData.pieles && geo.userData.pieles.real){
-        S.piel = 'real';
-        const bC = $('btnColor'); if(bC) bC.textContent = 'Color: real';
-      }
-      if(S.trazado && S.trazado.geo && S.trazado.geo !== geo) S.trazado.geo.dispose();
+      // la piel de ESTE modelo (antes quedaba la del anterior: "Color: real" en un modelo sin colores)
+      S.piel = (geo.userData.pieles && geo.userData.pieles.real) ? 'real' : (CFG.pielDefault || 'altura');
+      { const bC = $('btnColor'); if(bC) bC.textContent = 'Color: ' + S.piel; }
+      if(S.trazado && S.trazado.geo && S.trazado.geo !== geo) soltarGeo(S.trazado.geo);
+      S._ultimaHoja = null; S._mejorPct = null;
       S._textoOBJ = textoOBJ;
       S.trazado = { esModelo:true, geo:geo, obra:file.name, tamano:file.size, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand),
                     refOrigen: new THREE.Vector3(-c.x, -minY0, -c.z), fUnid: ({ mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001) };
       // HOJA IMPRESA embebida (Plano_AR_desde_OBJ): el QR y las cruces en coordenadas del archivo
+      let avisoCarga = null;
       let hoja = geo.userData.hoja;
       if(!hoja){ try{ hoja = JSON.parse(localStorage.getItem('ar-hoja::' + file.name + '::' + file.size) || 'null'); }catch(e){ hoja = null; } }
       if(hoja && hoja.marcador){
@@ -1702,7 +1751,11 @@ async function cargarModelo3D(file, interno){
         S.trazado.hoja = hoja;
         if(hoja.esquina1_mm){ const e1 = aLocal(hoja.esquina1_mm[0], hoja.esquina1_mm[1]); S.trazado.refEsquina = e1; }
         if(hoja.esquina2_mm){ const e2 = aLocal(hoja.esquina2_mm[0], hoja.esquina2_mm[1]); S.trazado.refP2Sugerido = { x: e2.x, z: e2.z }; }
-        UI.estado('Modelo con hoja impresa (escala 1:' + hoja.escala + ', ' + String(hoja.hoja || '').toUpperCase() + '): elegí "Sobre plano impreso" y apuntá al QR.', 'ok');
+        avisoCarga = ['Modelo con hoja impresa (escala 1:' + hoja.escala + ', ' + String(hoja.hoja || '').toUpperCase() + '): elegí "Sobre plano impreso" y apuntá al QR.', 'ok'];
+        // v4.37: la hoja dice en qué unidades está el archivo; abierto con otras, el QR y las cruces caen en otro lado
+        const uSel = $('selUnid').value;
+        if(hoja.unidades && hoja.unidades !== uSel)
+          avisoCarga = ['Este OBJ tiene la hoja en ' + hoja.unidades + ' y lo abriste en ' + uSel + ': cambiá las unidades a "' + hoja.unidades + '" y volvé a abrirlo.', 'err'];
         const rP = document.querySelector('input[name="modo"][value="papel"]');
         if(rP){ rP.checked = true; rP.dispatchEvent(new Event('change')); }
       }
@@ -1710,15 +1763,17 @@ async function cargarModelo3D(file, interno){
       pintarInfo(S.trazado);
       // aviso de UNIDADES: si el modelo mide menos de 30 cm o más de 400 m, casi seguro
       // el selector está mal (mm ↔ m) — se avisa en vez de dejar que "no se vea nada"
+      // (v4.37: se muestran DESPUÉS de revisarSoporte, que reescribía el estado y nunca se llegaban a ver)
       const _ext = Math.max(med.x, med.y, med.z);
-      if(_ext < 0.3) UI.estado('Mide solo ' + (_ext*100).toFixed(0) + ' cm de lado: si tendría que ser más grande, cambiá las unidades a "m" y volvé a abrirlo.', 'err');
-      else if(_ext > 400) UI.estado('Mide ' + Math.round(_ext) + ' m de lado: si tendría que ser más chico, cambiá las unidades a "mm" y volvé a abrirlo.', 'err');
+      if(_ext < 0.3) avisoCarga = ['Mide solo ' + (_ext*100).toFixed(0) + ' cm de lado: si tendría que ser más grande, cambiá las unidades a "m" y volvé a abrirlo.', 'err'];
+      else if(_ext > 400) avisoCarga = ['Mide ' + Math.round(_ext) + ' m de lado: si tendría que ser más chico, cambiá las unidades a "mm" y volvé a abrirlo.', 'err'];
       else $('estadoAR').classList.remove('err');
-      revisarSoporte();
+      // sin esperar (si el soporte de AR tarda, el modelo igual queda abierto): el aviso va cuando termina
+      Promise.resolve(revisarSoporte()).then(() => { if(avisoCarga) UI.estado(avisoCarga[0], avisoCarga[1]); }, () => {});
       window.dispatchEvent(new CustomEvent('ar:model-loaded', { detail: { obra: S.trazado.obra } }));
       return true;
     }catch(e){
-      if(geo && (!S.trazado || S.trazado.geo !== geo)) geo.dispose();
+      if(geo && (!S.trazado || S.trazado.geo !== geo)) soltarGeo(geo);
       UI.estado('Error al leer el 3D: ' + e.message, 'err');
       return false;
     }
@@ -1920,7 +1975,7 @@ function construirGrupoModelo(tz){
     }, 1500);
   }
 
-  const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 2, 20, PAL.acento, PAL.grilla);
+  const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 2, 20, PAL.grillaCentro, PAL.grilla);
   grilla.material.transparent = true; grilla.material.opacity = .22;
   grilla.userData.rol = 'grilla';
   g.add(grilla);
@@ -1996,6 +2051,7 @@ function muestrearModelo(grupo, nMax){
   const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
   grupo.traverse(o => {
     if(!o.isMesh || o.isInstancedMesh || o.isSprite || o.userData.rol === 'grilla') return;
+    if(!(o.userData.esModelo3D || o.userData.esTubo)) return;   // v4.37: sombra, bandera, flechas y piso no son el modelo
     const g = o.geometry, pos = g.getAttribute('position');
     if(!pos) return;
     const M = new THREE.Matrix4().multiplyMatrices(invG, o.matrixWorld);
@@ -2248,11 +2304,14 @@ function pintarInfo(tz){
   });
 }
 
-function cargar(raw){
+function cargar(raw, interno){
   try{
     if(S.session || S.papelCamera || SENS.activo || S.modo3D || S._iniciando) throw new Error('Volvé al inicio antes de abrir otro modelo.');
+    // v4.37: mientras se lee otro archivo, el Ejemplo (o AR.cargar) esperaba nada: el archivo lo pisaba al terminar
+    if(S._cargando && !interno) throw new Error('Esperá a que termine de abrirse el archivo anterior.');
     const siguiente = (raw && raw.formato === 'MS_ASPIRACION_RED') ? parsePaqueteMS(raw) : parseTrazado(raw);
-    if(S.trazado && S.trazado.geo) S.trazado.geo.dispose();
+    if(S.trazado && S.trazado.geo) soltarGeo(S.trazado.geo);
+    S._ultimaHoja = null; S._mejorPct = null;
     S.trazado = siguiente;
     S._textoOBJ = null;
     if(S.trazado.esMS) prepararReferenciasMS(S.trazado);
@@ -2393,7 +2452,7 @@ async function diagnostico(){
   let bC = document.getElementById('btnCopiarDiag');
   if(!bC){
     bC = document.createElement('button');
-    bC.id = 'btnCopiarDiag'; bC.className = 'btn sec';
+    bC.id = 'btnCopiarDiag'; bC.className = ($('btnDiag') && $('btnDiag').className) || 'btn sec';
     bC.style.cssText = 'margin:8px 0;width:100%';
     bC.textContent = 'Copiar / compartir el diagnóstico';
     d.parentNode.insertBefore(bC, d);
@@ -2531,6 +2590,7 @@ async function iniciarARInterno(intento){
   S.scene.add(guia);
   S.esqGuia = guia;
 
+  S.opacidad = 1; S.opNivel = 0;            // la red arranca opaca siempre (la transparencia era de la sesión anterior)
   S.grupo = construirGrupo(S.trazado);
   S.grupo.visible = false;
   aplicarEscala();
@@ -3268,7 +3328,9 @@ async function iniciarARInterno(intento){
       S.grupo.userData.grpMaq.visible  = S.verMaquinas;
       if(S.grupo.userData.grpPiso) S.grupo.userData.grpPiso.visible = S.verPiso;
     }
-    if(CFG.mejorasMS && S._trackPerdido){S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();S._hitUltima=null;S._hitUltimaT=0;S._aroUltima=null;S._aroDesde=0;S.aroSostenido=false;}   // sin esto, al recuperar el tracking el aro reaparecia en coordenadas previas a la relocalizacion
+    // v4.37: lo que se oculta por perder el seguimiento vuelve al recuperarlo (sin ancla nadie lo volvía a mostrar)
+    if(CFG.mejorasMS && !S._trackPerdido && S._ocultoTrack){ S._ocultoTrack = false; if(!S.paperFixed && S.anclado) S.grupo.visible = true; }
+    if(CFG.mejorasMS && S._trackPerdido){if(S.grupo.visible)S._ocultoTrack=true;S.grupo.visible=false;S.reticula.visible=false;S._hitReady=false;S._hitFilter?.reset();S._hitUltima=null;S._hitUltimaT=0;S._aroUltima=null;S._aroDesde=0;S.aroSostenido=false;}   // sin esto, al recuperar el tracking el aro reaparecia en coordenadas previas a la relocalizacion
     if(S.paperFixed){
       if(S.esquinando===5 && S.esqP1 && S.anchor && S.ancListo){
         S.esqP1.copy(S.trazado.refEsquina).multiplyScalar(S.grupo.scale.x).applyQuaternion(S.grupo.quaternion).add(S.grupo.position);
@@ -3310,17 +3372,27 @@ function renderPlantaImpresion(tz, anchoPx, altoPx){
   const bb = tz.geo.boundingBox;
   const rt = new THREE.WebGLRenderTarget(anchoPx, altoPx, { depthBuffer: true, stencilBuffer: false });
   const esc = new THREE.Scene();
-  esc.add(new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0xd9dde2, side: THREE.DoubleSide })));
-  if(tz.tris < 120000){ try{ esc.add(new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 25), new THREE.LineBasicMaterial({ color: 0x1a2432 }))); }catch(e){} }
+  const matCara = new THREE.MeshBasicMaterial({ color: 0xd9dde2, side: THREE.DoubleSide });
+  esc.add(new THREE.Mesh(tz.geo, matCara));
+  let bordes = null, matBorde = null;
+  if(tz.tris < 120000){ try{ bordes = new THREE.EdgesGeometry(tz.geo, 25); matBorde = new THREE.LineBasicMaterial({ color: 0x1a2432 }); esc.add(new THREE.LineSegments(bordes, matBorde)); }catch(e){} }
   const alto = bb.max.y - bb.min.y;
   const corte = (alto > 3) ? (bb.min.y + 1.8) : (bb.max.y + 10);
   const cam = new THREE.OrthographicCamera(bb.min.x, bb.max.x, -bb.min.z, -bb.max.z, .01, (corte - bb.min.y) + 5);
   // mirando hacia abajo con el +X a la derecha y el −Z (arriba del plano) hacia arriba de la hoja
   cam.position.set(0, corte, 0); cam.up.set(0, 0, -1); cam.lookAt(0, bb.min.y, 0);
-  const xrEra = rnd.xr.enabled; rnd.xr.enabled = false;
-  rnd.setRenderTarget(rt); rnd.setClearColor(0xffffff, 1); rnd.clear(); rnd.render(esc, cam);
-  const px = new Uint8Array(anchoPx * altoPx * 4); rnd.readRenderTargetPixels(rt, 0, 0, anchoPx, altoPx, px);
-  rnd.setRenderTarget(null); rnd.setClearColor(0x000000, 0); rnd.xr.enabled = xrEra; rt.dispose();
+  // v4.37: con try/finally, como prepararPlanoImagen: si algo falla a mitad (memoria en un A1), el renderer único no
+  // queda con xr apagado y el render target puesto (la AR y el visor dibujaban mal hasta reiniciar)
+  const xrEra = rnd.xr.enabled, tEra = rnd.getRenderTarget(), cEra = rnd.getClearColor(new THREE.Color()), aEra = rnd.getClearAlpha();
+  let px;
+  try{
+    rnd.xr.enabled = false;
+    rnd.setRenderTarget(rt); rnd.setClearColor(0xffffff, 1); rnd.clear(); rnd.render(esc, cam);
+    px = new Uint8Array(anchoPx * altoPx * 4); rnd.readRenderTargetPixels(rt, 0, 0, anchoPx, altoPx, px);
+  }finally{
+    rnd.setRenderTarget(tEra); rnd.setClearColor(cEra, aEra); rnd.xr.enabled = xrEra; rt.dispose();
+    matCara.dispose(); if(bordes) bordes.dispose(); if(matBorde) matBorde.dispose();
+  }
   const cv = document.createElement('canvas'); cv.width = anchoPx; cv.height = altoPx;
   const c2 = cv.getContext('2d'); const idat = c2.createImageData(anchoPx, altoPx);
   for(let y = 0; y < altoPx; y++) idat.data.set(px.subarray((altoPx-1-y)*anchoPx*4, (altoPx-y)*anchoPx*4), y*anchoPx*4);
@@ -3358,13 +3430,15 @@ function pdfConJPEG(jpegDataURL, Wmm, Hmm, anchoPx, altoPx){
 // el OBJ con la hoja adentro (texto original si lo hay; si no —STL— se escribe desde la geometría)
 function textoOBJConHoja(tz, hoja){
   const cab = '# MSAR_HOJA ' + JSON.stringify(hoja) + '\n';
-  if(S._textoOBJ) return cab + S._textoOBJ + (S._textoOBJ.endsWith('\n') ? '' : '\n');
+  // v4.37: sin la hoja anterior (al regenerar desde un _AR.obj quedaban dos y al reabrirlo volvía la vieja)
+  if(S._textoOBJ){ const tx = S._textoOBJ.replace(/^[ \t]*# MSAR_HOJA .*(\r?\n|$)/gm, ''); return cab + tx + (tx.endsWith('\n') ? '' : '\n'); }
   const pos = tz.geo.getAttribute('position'), O = tz.refOrigen, f = tz.fUnid || 0.001;
-  const partes = [cab, '# generado por MS AR desde ' + tz.obra + '\n'];
+  const partes = [cab, '# generado por ' + CFG.marca + ' AR desde ' + tz.obra + '\n'];
   const n = pos.count;
+  const dec = Math.max(2, Math.round(2 + Math.log10(f/0.001)));   // 0,01 mm en cualquier unidad (en m eran 1 cm)
   for(let i=0;i<n;i++){
     const lx = pos.getX(i), ly = pos.getY(i), lz = pos.getZ(i);
-    partes.push('v ' + ((lx - O.x)/f).toFixed(2) + ' ' + ((-(lz - O.z))/f).toFixed(2) + ' ' + ((ly - O.y)/f).toFixed(2) + '\n');
+    partes.push('v ' + ((lx - O.x)/f).toFixed(dec) + ' ' + ((-(lz - O.z))/f).toFixed(dec) + ' ' + ((ly - O.y)/f).toFixed(dec) + '\n');
   }
   const idx = tz.geo.index;
   if(idx){ for(let i=0;i<idx.count;i+=3) partes.push('f ' + (idx.getX(i)+1) + ' ' + (idx.getX(i+1)+1) + ' ' + (idx.getX(i+2)+1) + '\n'); }
@@ -3395,7 +3469,11 @@ async function generarHojaEnApp(hojaNom){
     await new Promise(r => setTimeout(r, 30));
     const [W, H] = HOJAS_APP[hojaNom];
     const bb = tz.geo.boundingBox, f = tz.fUnid || 0.001, O = tz.refOrigen || new THREE.Vector3();
-    const anMM = (bb.max.x - bb.min.x)/f, laMM = (bb.max.z - bb.min.z)/f, alMM = (bb.max.y - bb.min.y)/f;
+    // v4.37: la escala sale de los mm REALES (la escena está en metros). Era /f = unidades del archivo: un OBJ abierto
+    // en cm salía con el plano 10 veces mal y en m con "1:0.2". Las coordenadas de la hoja siguen en unidades del
+    // archivo (las del OBJ que va adentro), y el corrimiento del QR (mm reales) se pasa a esas unidades.
+    const anMM = (bb.max.x - bb.min.x)*1000, laMM = (bb.max.z - bb.min.z)*1000, alMM = (bb.max.y - bb.min.y)*1000;
+    const uPorMM = 0.001/f, alF = (bb.max.y - bb.min.y)/f;
     const mg = MARCADOR_MARGEN_MM[hojaNom] || 90, ladoQR = MARCADOR_LADO_MM[hojaNom] || 62, cOff = 6 + ladoQR/2;   // centro del marcador: a cOff mm del origen del dibujo
     const ox = mg, oy = mg, dispW = W - ox - 15, dispH = H - oy - 25;
     let esc = SERIE_ESC.find(e => anMM/e <= dispW && laMM/e <= dispH); if(!esc) esc = SERIE_ESC[SERIE_ESC.length-1];
@@ -3404,12 +3482,13 @@ async function generarHojaEnApp(hojaNom){
     // coordenadas DEL ARCHIVO de las esquinas del plano (arriba-izq y abajo-der)
     const aFile = (lx, lz) => [ (lx - O.x)/f, -(lz - O.z)/f ];
     const e1 = aFile(bb.min.x, bb.min.z), e2 = aFile(bb.max.x, bb.max.z);
-    const texto = 'MS AR | ' + nombre.slice(0, 40) + ' | plano 1:' + esc;
+    const texto = CFG.marca + ' AR | ' + nombre.slice(0, 40) + ' | plano 1:' + esc;
     const qrCv = marcadorCompuesto(qrCanvas(texto, 12), 1000);
     const png = qrCv.toDataURL('image/png');
-    const marcador = { patron:'QR2', lado_mm:ladoQR, escala:esc, texto:texto, png:png, x_file_mm: e1[0] - cOff*esc, y_file_mm: e1[1] + cOff*esc };
+    const marcador = { patron:'QR2', lado_mm:ladoQR, escala:esc, texto:texto, png:png, x_file_mm: e1[0] - cOff*esc*uPorMM, y_file_mm: e1[1] + cOff*esc*uPorMM };
     const hoja = { version:1, hoja:hojaNom, escala:esc, titulo:nombre, esquina1_mm:e1, esquina2_mm:e2,
-                   bbox_mm:[e1[0], e2[1], 0, e2[0], e1[1], alMM], marcador:marcador, origen:'app' };
+                   bbox_mm:[e1[0], e2[1], 0, e2[0], e1[1], alF], marcador:marcador, origen:'app',
+                   unidades: ({ 0.001:'mm', 0.01:'cm', 1:'m' })[f] || 'mm' };
     // ── la hoja como imagen ──
     const DPI = (hojaNom === 'a1' || hojaNom === 'a2') ? 150 : 200;
     const px = mm => mm/25.4*DPI;
@@ -3438,10 +3517,10 @@ async function generarHojaEnApp(hojaNom){
     g.fillText('QR = ' + ladoQR + ' mm de lado', px(ox - 6 - ladoQR), px(oy - 6 - ladoQR - 2));
     g.imageSmoothingEnabled = true;
     // rótulo
-    g.fillStyle = '#111'; g.font = 'bold ' + Math.round(px(4.6)) + 'px sans-serif'; g.fillText('PLANO PARA MS AR · ' + nombre, px(ox), px(12));
+    g.fillStyle = '#111'; g.font = 'bold ' + Math.round(px(4.6)) + 'px sans-serif'; g.fillText('PLANO PARA ' + CFG.marca + ' AR · ' + nombre, px(ox), px(12));
     g.fillStyle = '#333'; g.font = Math.round(px(3.0)) + 'px sans-serif';
     g.fillText('Escala 1:' + esc + ' · hoja ' + hojaNom.toUpperCase() + ' · imprimir al 100 % (sin "ajustar a página") · ' + new Date().toLocaleDateString('es-AR') + ' · pieza ' + Math.round(anMM) + ' x ' + Math.round(laMM) + ' x ' + Math.round(alMM) + ' mm', px(ox), px(17));
-    g.fillText('En MS AR: abrir ' + nombre + '_AR.obj, modo "Sobre plano impreso", apuntar al QR. El 3D se monta sobre esta hoja.', px(ox), px(21));
+    g.fillText('En ' + CFG.marca + ' AR: abrir ' + nombre + '_AR.obj' + (f !== 0.001 ? ' (en ' + (({ 0.01:'cm', 1:'m' })[f] || 'mm') + ')' : '') + ', modo "Sobre plano impreso", apuntar al QR. El 3D se monta sobre esta hoja.', px(ox), px(21));
     g.font = Math.round(px(2.6)) + 'px sans-serif';
     g.fillText('Cruz 1 = esquina superior izquierda de la pieza · Cruz 2 = esquina inferior derecha · el QR es el marcador (sin reconocimiento de imágenes: tocar cruz 1 y cruz 2).', px(ox), px(24.5));
     g.fillStyle = '#666'; g.fillText((CFG.marca === 'MS' ? 'Metalúrgica Sarmiento · Depto. Innovación y Desarrollo' : '3DDUT Digital Craft') + ' · generado en la app', px(ox), px(H - 8));
@@ -3632,27 +3711,30 @@ function abrirReplanteo(){
   if(!pts.length){ UI.estado('Este modelo no tiene puntos para replantear.', 'err'); return; }
   const fondo = document.createElement('div');
   fondo.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  const caja = document.createElement('div');
-  caja.style.cssText = 'background:#1b2532;color:#fff;border-radius:12px;padding:16px;max-width:420px;width:100%;font:15px system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5)';
-  const h = document.createElement('div'); h.textContent = 'Replanteo en obra (tamaño real)'; h.style.cssText = 'font-weight:700;font-size:17px;margin-bottom:6px';
-  const p = document.createElement('div'); p.textContent = 'Se imprime una marca A4 que se pega en el piso sobre un punto conocido del plano; el modelo aparece en su lugar, a escala 1:1.'; p.style.cssText = 'opacity:.85;margin-bottom:10px;line-height:1.35';
-  const sel = document.createElement('select'); sel.id = 'replanteoPunto'; sel.style.cssText = 'width:100%;margin:4px 0 10px;padding:8px;font-size:15px';
+  const caja = document.createElement('div'); caja.id = 'replanteoCaja';
+  // tarjeta clara con los botones pintados acá (v4.37): con la clase 'mini' de cada marca, el texto blanco de
+  // "Generar la marca" quedaba sobre un botón blanco (no se leía)
+  caja.style.cssText = 'background:#fff;color:#1a2036;border-radius:16px;padding:18px;max-width:420px;width:100%;font:15px "Segoe UI",Roboto,system-ui,sans-serif;box-shadow:0 18px 50px rgba(0,0,0,.35)';
+  const h = document.createElement('div'); h.textContent = 'Replanteo en obra (tamaño real)'; h.style.cssText = 'font-weight:700;font-size:18px;margin-bottom:6px';
+  const p = document.createElement('div'); p.textContent = 'Se imprime una marca A4 que se pega en el piso sobre un punto conocido del plano; el modelo aparece en su lugar, a escala 1:1.'; p.style.cssText = 'color:#5d667c;margin-bottom:10px;line-height:1.35';
+  const sel = document.createElement('select'); sel.id = 'replanteoPunto'; sel.style.cssText = 'width:100%;margin:4px 0 10px;padding:8px;font-size:16px;min-height:44px;border:1px solid #dde1e9;border-radius:10px;background:#fff;color:#1a2036';
   pts.forEach((q, i) => { const o = document.createElement('option'); o.value = i; o.textContent = q.nombre; sel.append(o); });
   const fila = document.createElement('div'); fila.style.cssText = 'display:flex;gap:8px;margin-bottom:12px';
-  const campo = (id, rotulo) => { const l = document.createElement('label'); l.style.cssText = 'flex:1;font-size:13px;opacity:.9';
+  const campo = (id, rotulo) => { const l = document.createElement('label'); l.style.cssText = 'flex:1;font-size:13px;font-weight:600;color:#5d667c';
     l.textContent = rotulo; const i = document.createElement('input'); i.type = 'number'; i.id = id; i.value = '0'; i.step = '1';
-    i.style.cssText = 'width:100%;padding:8px;font-size:15px;margin-top:3px;box-sizing:border-box'; l.append(i); fila.append(l); return i; };
+    i.style.cssText = 'width:100%;padding:8px;font-size:16px;min-height:44px;margin-top:3px;box-sizing:border-box;border:1px solid #dde1e9;border-radius:10px;background:#fff;color:#1a2036'; l.append(i); fila.append(l); return i; };
   const ix = campo('replanteoDx', 'Corrida hacia X (cm)'), iy = campo('replanteoDy', 'Corrida hacia ↑ (cm)');
   const botones = document.createElement('div'); botones.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
-  const cancelar = document.createElement('button'); cancelar.className = 'mini'; cancelar.textContent = 'Cancelar';
-  const ok = document.createElement('button'); ok.className = 'mini'; ok.id = 'replanteoOk'; ok.textContent = 'Generar la marca (PDF)'; ok.style.cssText = 'border-color:var(--rojo, #e0292a);color:#fff';
+  const estiloBoton = (fondo, borde, color) => 'min-height:44px;padding:0 16px;border-radius:10px;font:600 14px "Segoe UI",Roboto,system-ui,sans-serif;cursor:pointer;background:' + fondo + ';border:1px solid ' + borde + ';color:' + color;
+  const cancelar = document.createElement('button'); cancelar.className = 'mini'; cancelar.type = 'button'; cancelar.textContent = 'Cancelar'; cancelar.style.cssText = estiloBoton('#fff', '#dde1e9', '#1a2036');
+  const ok = document.createElement('button'); ok.className = 'mini'; ok.type = 'button'; ok.id = 'replanteoOk'; ok.textContent = 'Generar la marca (PDF)'; ok.style.cssText = estiloBoton(cssPal('acento'), cssPal('acento'), '#fff');
   botones.append(cancelar, ok);
   // SIN HOJA (v4.31, pedido de Rodrigo): en la cámara se marcan dos puntos al pie de la pared y el modelo queda contra ella
-  const sinHoja = document.createElement('div'); sinHoja.style.cssText = 'border-top:1px solid rgba(255,255,255,.18);margin-top:14px;padding-top:12px';
-  const sh = document.createElement('div'); sh.textContent = 'Sin hoja impresa: en la cámara marcás dos puntos del piso al pie de la pared y el modelo queda a tamaño real contra ella, desde el primer punto.'; sh.style.cssText = 'opacity:.85;margin-bottom:8px;line-height:1.35;font-size:14px';
-  const bSin = document.createElement('button'); bSin.className = 'mini'; bSin.id = 'replanteoSinHoja'; bSin.textContent = 'Sin hoja: marcar 2 puntos en la pared'; bSin.style.cssText = 'width:100%;border-color:var(--verde, #16a34a);color:#fff';
+  const sinHoja = document.createElement('div'); sinHoja.style.cssText = 'border-top:1px dashed #dde1e9;margin-top:14px;padding-top:12px';
+  const sh = document.createElement('div'); sh.textContent = 'Sin hoja impresa: en la cámara marcás dos puntos del piso al pie de la pared y el modelo queda a tamaño real contra ella, desde el primer punto.'; sh.style.cssText = 'color:#5d667c;margin-bottom:8px;line-height:1.35;font-size:14px';
+  const bSin = document.createElement('button'); bSin.className = 'mini'; bSin.type = 'button'; bSin.id = 'replanteoSinHoja'; bSin.textContent = 'Sin hoja: marcar 2 puntos en la pared'; bSin.style.cssText = 'width:100%;' + estiloBoton(cssPal('acento2'), cssPal('acento2'), '#fff');
   sinHoja.append(sh, bSin);
-  const et = document.createElement('div'); et.textContent = 'Punto del plano donde va el centro de la hoja'; et.style.cssText = 'font-size:13px;opacity:.9';
+  const et = document.createElement('div'); et.textContent = 'Punto del plano donde va el centro de la hoja'; et.style.cssText = 'font-size:13px;font-weight:600;color:#5d667c';
   caja.append(h, p, et, sel, fila, botones, sinHoja); fondo.append(caja); document.body.append(fondo);
   const cerrar = () => fondo.remove();
   cancelar.addEventListener('click', cerrar);
@@ -4451,7 +4533,7 @@ function nubeDesdeFrame(frame){
   if(!di || typeof di.getDepthInMeters !== 'function') return null;
   const invP = new THREE.Matrix4().fromArray(view.projectionMatrix).invert();
   const M = new THREE.Matrix4().fromArray(view.transform.matrix);
-  const centro = S.grupo.position, R = Math.max(S.trazado.medidas.x, S.trazado.medidas.y, S.trazado.medidas.z)/S.escala * 1.3 + 0.4;
+  const centro = S.grupo.position, R = Math.max(S.trazado.medidas.x, S.trazado.medidas.y, S.trazado.medidas.z)*(S.grupo.scale.x || 1) * 1.3 + 0.4;
   const out = [];
   const NX = 72, NY = 54;   // ~3900 muestras por frame
   for(let j=0;j<NY;j++){
@@ -4476,6 +4558,8 @@ function nubeDesdeFrame(frame){
 async function correrAutoAjuste(){
   if(!S.grupo || S.autoCorriendo) return;
   S.autoCorriendo = true;
+  // v4.37: se toma y se limpia al entrar (los return tempranos la dejaban puesta y el próximo manual se descartaba)
+  const silencioso = !!S._autoSilencioso; S._autoSilencioso = false;
   try{
     if(!S.modeloPts) S.modeloPts = muestrearModelo(S.grupo, 3000);
     let nube = S.autoNube || [];
@@ -4508,7 +4592,7 @@ async function correrAutoAjuste(){
     // resultado hasta que la coincidencia deja de mejorar (ideal ≥95%).
     let r = null, rotY = S.rotY, pos = S.grupo.position.clone();
     for(let ronda = 0; ronda < 5; ronda++){
-      const ri = await icpYaw(nube, S.modeloPts, rotY, pos, S.escala,
+      const ri = await icpYaw(nube, S.modeloPts, rotY, pos, 1/(S.grupo.scale.x || 1),
         f => { $('hudMsg').textContent = 'Encajando (ronda ' + (ronda+1) + ')… ' + Math.round(f*100) + '%'; });
       if(!ri.ok){ if(!r){ $('hudMsg').textContent = 'Auto-ajuste: ' + ri.motivo; return; } break; }
       if(r && ri.pct <= r.pct + 1){ if(ri.pct > r.pct) r = ri; break; }
@@ -4520,8 +4604,7 @@ async function correrAutoAjuste(){
       return;
     }
     S._deshacerAuto = { rotY: S._ultimoGiroAuto, pos: S._ultimaPosAuto, offsetY: S.offsetY };
-    if(S._autoSilencioso){
-      S._autoSilencioso = false;
+    if(silencioso){
       if(S._mejorPct != null && r.pct <= S._mejorPct){ registrar('auto continuo: ' + r.pct + '% no mejora ' + S._mejorPct + '%'); return; }
     }
     S._mejorPct = Math.max(S._mejorPct || 0, r.pct);
@@ -4873,7 +4956,7 @@ function dibujarMiniPlanta(){
   if(!cam || !M || !S.trazado.planImg) return;
   const cp = new THREE.Vector3(); cam.getWorldPosition(cp);
   const fw = new THREE.Vector3(); cam.getWorldDirection(fw);
-  const esc = 1/S.escala, cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
+  const esc = (S.grupo.scale.x || 1/S.escala), cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
   const gp = S.grupo.position;
   const aMundo = (x, z) => [ (x*cy + z*sy)*esc + gp.x, (-x*sy + z*cy)*esc + gp.z ];
   const bb = (S.trazado.geo && S.trazado.geo.boundingBox) || S.trazado.bbox;
@@ -5003,11 +5086,14 @@ function cerrarAR(desdeEvento){
   // La escena se libera RECIEN cuando ARCore desarmo la sesion: hacerlo antes
   // cuelga Chrome (ya documentado para el boton atras, que espera 1200 ms).
   // salirAR() avisa por _liberarEscena cuando session.end() resolvio.
+  const oclTex = S.ocl && S.ocl.tex;
+  S._mejorPct = null;
   if(escena){
     let _libre = false;
     const soltar = () => {
       if(_libre) return; _libre = true;
       try{ liberarObjeto(escena, geoModelo); escena.clear(); }catch(e){}
+      try{ if(oclTex) oclTex.dispose(); }catch(e){}   // vive en un uniform: liberarObjeto no la ve
     };
     _liberarEscena = soltar;
     setTimeout(soltar, desdeEvento ? 1200 : 2500);   // red de seguridad
@@ -5563,6 +5649,7 @@ async function iniciarARSensorInterno(intento){
   S.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, .05, 400);
   S.camera.position.set(0,0,0);
 
+  S.opacidad = 1; S.opNivel = 0;
   S.grupo = construirGrupo(S.trazado);
   aplicarEscala();
   S.grupo.visible = false;
@@ -5607,6 +5694,7 @@ async function iniciarARSensorInterno(intento){
   canvas.addEventListener('pointerdown', SENS.tap);
 
   SENS.activo = true;
+  try{ if(history.state && (history.state.ar || history.state.v3d)) history.replaceState({ ar: 1 }, ''); else history.pushState({ ar: 1 }, ''); S._histAR = true; }catch(e){}
 
   let sinDatos = 0;
   (function loop(){
@@ -5706,6 +5794,7 @@ function iniciar3DInterno(){
   };
   $('btnSalir3D').onclick = cerrar3D;
   const cam = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, .01, Math.max(500, S.trazado.medidas.length()*12));
+  S.opacidad = 1; S.opNivel = 0;
   const grupo = construirGrupo(S.trazado);
   scene.add(grupo);
   // Shadows are attached after framing, so they never enlarge the model bounds.

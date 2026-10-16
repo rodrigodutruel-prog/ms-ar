@@ -109,8 +109,14 @@
     if (!isSecureContext || !('serviceWorker' in navigator)) { message('El uso sin conexión requiere HTTPS o el servidor local de esta computadora.'); return; }
     try {
       registration = await navigator.serviceWorker.register('sw.js',{updateViaCache:'none'});
+      let avisada = false;
       const waiting = () => {
-        if (registration.waiting) { update.classList.remove('oculto'); message('Hay una actualización disponible. Aplicala cuando termines de usar el visor.'); }
+        if (registration.waiting) {
+          update.classList.remove('oculto'); message('Hay una actualización disponible. Aplicala cuando termines de usar el visor.');
+          // v4.37: el aviso y el botón están dentro de "Más opciones" (cerrado): se avisa también en la línea de estado.
+          // Solo si ya había una versión activa (en la primera instalación también hay un "waiting" por un instante).
+          if (!avisada && navigator.serviceWorker.controller) { avisada = true; if (!active()) AR.UI.estado('Hay una versión nueva de la aplicación: tocá «Actualizar aplicación» en Más opciones.', 'ok'); }
+        }
       };
       waiting(); registration.addEventListener('updatefound',() => registration.installing?.addEventListener('statechange',waiting));
       let applying = false;

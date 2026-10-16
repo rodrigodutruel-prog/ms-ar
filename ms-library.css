@@ -1,11 +1,21 @@
-.qr-library{border:1px solid #61748a66;border-radius:14px;padding:16px;margin:0 0 20px;background:#1421360a}
-.qr-library h2{font-size:18px;margin:0 0 8px}.qr-library p{font-size:14px;line-height:1.45;overflow-wrap:anywhere}
-.qr-library button,.qr-library select{font:inherit;min-height:44px;border:1px solid #7892bc;border-radius:9px;padding:10px 12px;cursor:pointer;max-width:100%}
-.qr-library button{background:#18233f;color:#fff}.qr-library label{display:block;margin:12px 0}.qr-library select{display:block;width:100%;margin-top:6px}
-.qr-actions{display:flex;gap:8px;flex-wrap:wrap}.qr-actions button{flex:1 1 180px}.qr-library summary{cursor:pointer;padding:10px 0}
-.qr-record{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid #7892bc55;padding:10px 0}.qr-record span{flex:1 1 100%;overflow-wrap:anywhere}
-.qr-scanner{position:fixed;inset:0;z-index:95;background:#080d18;color:white}.qr-scanner video{width:100%;height:100%;object-fit:contain}
+/* MS AR, estilo web MS (oct-2026): la biblioteca es una tarjeta más de la página (claro / noche por las variables
+   de index.html); el lector de QR va sobre la cámara con tarjetas blancas. */
+.qr-library{background:var(--ms-surface,#fff);color:var(--ms-text,#1a2036);border:1px solid var(--ms-border-soft,#e8ebf0);border-radius:var(--radius,16px);padding:16px;box-shadow:var(--shadow-soft,0 8px 22px rgba(40,52,89,.07))}
+.qr-library h2{margin:0 0 6px;font-family:var(--fd,inherit);font-size:18px;font-weight:600;color:var(--ms-heading,#283459)}
+.qr-library h2::before{content:'Biblioteca del teléfono';display:flex;align-items:center;gap:8px;margin-bottom:4px;font-family:var(--ft,inherit);font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--ms-text-dim,#8b93a7)}
+.qr-library p{font-size:13.5px;line-height:1.45;color:var(--ms-text-muted,#5d667c);overflow-wrap:anywhere;margin:6px 0}
+.qr-library button,.qr-library select{font:inherit;font-size:14px;font-weight:600;min-height:44px;border-radius:10px;padding:10px 12px;cursor:pointer;max-width:100%}
+.qr-library button{background:var(--ms-surface,#fff);color:var(--ms-text,#1a2036);border:1px solid var(--ms-border,#dde1e9)}
+.qr-library button:active{border-color:#0095b8;color:#0095b8}
+.qr-library #qrBuscar{background:#0095b8;border-color:#0095b8;color:#fff}
+.qr-library label{display:block;margin:12px 0;font-size:13px;font-weight:600;color:var(--ms-text-muted,#5d667c)}
+.qr-library select{display:block;width:100%;margin-top:6px;background:var(--bg-input,#fff);color:var(--ms-text,#1a2036);border:1px solid var(--ms-border,#dde1e9);font-size:16px;font-weight:500}
+.qr-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qr-actions button{flex:1 1 180px}
+.qr-library summary{cursor:pointer;padding:10px 0;font-size:13.5px;font-weight:600;color:var(--ms-text-muted,#5d667c)}
+.qr-record{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-top:1px solid var(--ms-border-soft,#e8ebf0);padding:10px 0;font-size:13.5px}.qr-record span{flex:1 1 100%;overflow-wrap:anywhere}
+.qr-scanner{position:fixed;inset:0;z-index:95;background:#0b1020;color:#fff}.qr-scanner video{width:100%;height:100%;object-fit:contain}
 .qr-scanner-top{position:absolute;top:max(12px,env(safe-area-inset-top));left:12px;right:12px;display:flex;align-items:start;gap:10px}
-.qr-scanner-top p{background:#101827ed;border-radius:10px;padding:12px;margin:0;flex:1;line-height:1.4}
-.qr-scanner button{font:inherit;min-height:44px;border-radius:9px;padding:12px;background:#18233f;color:white;border:1px solid #7892bc;cursor:pointer}
+.qr-scanner-top p{background:rgba(255,255,255,.95);color:#1a2036;border-radius:12px;padding:12px;margin:0;flex:1;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.qr-scanner button{font:inherit;font-weight:600;min-height:44px;border-radius:10px;padding:12px;background:#fff;color:#1a2036;border:1px solid #dde1e9;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.qr-scanner #qrScanSalir{background:#e0292a;border-color:#e0292a;color:#fff}
 .qr-matches{position:absolute;bottom:20px;left:12px;right:12px;display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto}
