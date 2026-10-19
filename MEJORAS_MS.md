@@ -1,3 +1,15 @@
+MS AR y 3DDUT AR 4.38.0
+
+- Encajar con lo real: con la pieza ya hecha (por ejemplo el organizador de matrices al lado de la plegadora), al apoyar el 3D cerca de ella se pone solo encima. Mientras movés el teléfono despacio de costado, mirando la pieza, mide unos segundos lo que tiene delante (se ven puntos amarillos sobre lo que va midiendo) y busca el giro y el corrimiento que dejan el 3D sobre lo real. No hace falta apoyarlo justo ni derecho: alcanza con que quede cerca (corrido hasta cerca de un metro y girado para cualquier lado).
+- Si no encuentra lo real que coincide (la pieza todavía no está, o el 3D quedó lejos), el 3D queda donde lo pusiste y lo avisa. No lo pega a otra máquina ni a una pared: antes de moverlo controla que, donde el 3D pone superficie, el teléfono vea esa superficie y no lo que hay detrás.
+- En Ajustar, una fila nueva: «Encajar al real» (lo intenta de nuevo desde donde está; mientras trabaja, el mismo botón lo cancela), «Deshacer encaje» (vuelve a donde estaba) y «Al apoyar: encaja / no» (para que al apoyar no lo intente; se recuerda).
+- Va a tamaño real, con el modelo apoyado en el piso. Con la pared marcada (Alinear a pared) respeta la cara contra la pared y solo corrige unos grados. Hace falta un teléfono que mida la profundidad (el Motorola la calcula al moverse).
+- El Diagnóstico anota cada encaje (cuánto midió, cuánto coincide, cuánto giró y se movió), para ajustarlo con lo que pase en el taller.
+
+Verificación: una escena armada a mano (organizador con estantes, matrices y camino de rodillos, pared, piso y una prensa al lado) medida desde seis lugares con ruido y medidas falsas. El 3D corrido y girado (hasta 140°) queda sobre el real a 6-24 mm, también con el triple de ruido y con el real todavía sin el camino de rodillos. Sin el real, con un gabinete cerrado del mismo tamaño en su lugar o con el real fuera de alcance, no lo mueve. Gate de la batería MS (con las 28 baterías Java, entre ellas la nueva del encaje) y las dos APK compiladas. El encaje con la cámara real queda para probar en el teléfono: el emulador no mide profundidad.
+
+Instalar cada APK 4.38.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.37.0
 
 - Nueva cara de MS AR, con el estilo de la web de MS: tema claro por defecto (el noche, azul profundo, queda a un toque con la luna y se recuerda), encabezado con el logo, tarjetas blancas, el botón principal en rojo (Iniciar AR) y el secundario en azul (Ver en 3D), los datos del modelo abierto en un bloque azul profundo con las curvas rojas de la web, y una bienvenida con la foto de la nave (un toque la saltea). Las opciones de la hoja impresa aparecen solo con «Sobre plano impreso» y la ubicación solo a tamaño real.
