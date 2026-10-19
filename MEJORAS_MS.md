@@ -1,3 +1,13 @@
+MS AR y 3DDUT AR 4.38.1
+
+- Encajar con lo real busca más lejos: hasta unos 2 m alrededor de donde apoyaste el 3D. El organizador con su camino de rodillos se apoya por el centro de su planta, que cae lejos del organizador, y tocando sobre el organizador real quedaba al borde de lo que buscaba.
+- Cuando no encaja, el aviso dice los números (cuántos puntos midió, cuánto coincide, cuánto se ve) y lo medido queda en Descargas › MS AR › encaje_<fecha>.bin: pasado a la PC, se vuelve a correr el encaje con lo que midió el teléfono para ver por qué no encontró la pieza.
+- El Diagnóstico ya no pierde lo que pasó en la vista AR. Si el teléfono cerraba la pantalla de la app por memoria mientras estabas en la vista AR, al salir había que abrir la app de nuevo y no quedaba nada anotado; ahora la pantalla se rehace sola y lo anotado llega igual (y si no llegó, aparece la próxima vez que se abre la app).
+
+Verificación: la batería del encaje suma el caso del taller (el 3D con un camino de rodillos de 3 m que el real no tiene, tocando sobre el organizador real, hasta 2 m corrido: queda a 8-15 mm) y que lo guardado en el archivo da el mismo encaje en la PC. Gate de la batería MS y las dos APK compiladas.
+
+Instalar cada APK 4.38.1 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.38.0
 
 - Encajar con lo real: con la pieza ya hecha (por ejemplo el organizador de matrices al lado de la plegadora), al apoyar el 3D cerca de ella se pone solo encima. Mientras movés el teléfono despacio de costado, mirando la pieza, mide unos segundos lo que tiene delante (se ven puntos amarillos sobre lo que va midiendo) y busca el giro y el corrimiento que dejan el 3D sobre lo real. No hace falta apoyarlo justo ni derecho: alcanza con que quede cerca (corrido hasta cerca de un metro y girado para cualquier lado).
