@@ -1,3 +1,15 @@
+MS AR y 3DDUT AR 4.39.0
+
+- Encajar con lo real también corrige la altura: mientras mide la pieza, mide el piso que la rodea y apoya el 3D en él. ARCore calcula el piso donde se toca para apoyar y en el taller lo dejaba unos centímetros alto («queda más arriba»); ahora la base del 3D va al piso real medido al lado de la pieza (en las pruebas, a 1-2 mm). El aviso dice cuánto lo bajó o lo subió, y «Deshacer encaje» lo deja como estaba. Si el piso no se ve claro, la altura no se toca.
+- Botonera nueva en la vista AR, más clara y profesional: íconos en todos los botones, la línea de estado y los avisos en tarjetas, y Ajustar ordenado en tres solapas (Mover · Girar · Encajar) en lugar de siete renglones de botones. Abajo, la barra de acciones (Ubicar · Ajustar · Fijar · Herramientas): mientras se ajusta, Fijar se destaca como la acción principal. Persona, Voz y Paredes muestran su estado con el ícono y el color.
+- La mira de apuntar queda en el centro de lo que se ve entre la tarjeta de arriba y el panel de abajo (con Ajustar abierto quedaba tapada por el panel); ahí se apoya el modelo, se marca el piso y los puntos de la pared.
+- Herramientas y Ajustar ya no se abren uno encima del otro: al abrir Herramientas se pliega Ajustar, y vuelve al cerrarla.
+- Los botones que no se pueden usar se ven en gris (antes «Encajar: n/d» se veía en un rojo tenue, como si fuera un error).
+
+Verificación: la batería del encaje suma el piso real (el 3D apoyado 4 cm alto, 3 cm hundido y 5 cm alto con el triple de ruido: el piso medido queda a 1,5-2,2 mm del real y el 3D encaja), gate de la batería MS, las dos APK compiladas y la vista AR revisada en el emulador (cada solapa, Herramientas y los estados de los botones, en las dos marcas). El encaje con la cámara real queda para probar en el teléfono.
+
+Instalar cada APK 4.39.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.38.2
 
 - Encajar con lo real ahora usa la profundidad del teléfono. En la 4.38 la descartaba entera por un error al ubicarla en el tiempo: el encaje quedaba en «0 %», trabajaba solo con los pocos puntos que sigue ARCore y terminaba en «no encontré lo real que coincide (sin vistas para confirmarlo)» o, alguna vez, en un encaje sin confirmar. Ahora cada imagen de profundidad se proyecta con la cámara del mismo cuadro, como indica Google, y si la profundidad cruda no llega se usa la suavizada (la misma de «Paredes»).
