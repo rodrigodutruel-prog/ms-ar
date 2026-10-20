@@ -1,3 +1,16 @@
+MS AR y 3DDUT AR 4.38.2
+
+- Encajar con lo real ahora usa la profundidad del teléfono. En la 4.38 la descartaba entera por un error al ubicarla en el tiempo: el encaje quedaba en «0 %», trabajaba solo con los pocos puntos que sigue ARCore y terminaba en «no encontré lo real que coincide (sin vistas para confirmarlo)» o, alguna vez, en un encaje sin confirmar. Ahora cada imagen de profundidad se proyecta con la cámara del mismo cuadro, como indica Google, y si la profundidad cruda no llega se usa la suavizada (la misma de «Paredes»).
+- Mientras encaja, si la profundidad todavía no llega, la línea de arriba lo dice («esperando la profundidad del teléfono») en vez de quedarse en 0 %.
+- Mientras encaja, el ingeniero no camina: se cruzaba delante de la cámara y tapaba la pieza real. Al terminar sigue desde donde estaba.
+- Los avisos de la vista AR se leen enteros, en un renglón debajo de la línea de arriba (se van solos o tocándolos). Antes salían como mensaje flotante de Android, que los corta en dos renglones con «…».
+- «Tocar la base» aclara que se toca la cara del 3D (no la de la pieza real), y si el toque no cae sobre el 3D lo dice así.
+- El Diagnóstico anota, en cada encaje, cuántas imágenes de profundidad llegaron, cuántas no estaban listas y cuánto atraso traían.
+
+Verificación: gate de la batería MS (con las baterías Java de la vista AR) y las dos APK compiladas. El encaje con la cámara real queda para probar en el teléfono: el emulador no mide profundidad.
+
+Instalar cada APK 4.38.2 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.38.1
 
 - Encajar con lo real busca más lejos: hasta unos 2 m alrededor de donde apoyaste el 3D. El organizador con su camino de rodillos se apoya por el centro de su planta, que cae lejos del organizador, y tocando sobre el organizador real quedaba al borde de lo que buscaba.
