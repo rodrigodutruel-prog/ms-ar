@@ -1,3 +1,15 @@
+MS AR y 3DDUT AR 4.40.4
+
+- Verificar: la aplicación busca sola la pieza. Ya no hace falta encuadrar la pieza entera ni acomodar el 3D encima: se apunta la mira a la pieza, o a una parte, se sostiene el teléfono quieto y un detector prueba el 3D en todos los giros y con cada parte suya bajo la mira. Lo que encuentra se lo pasa al seguidor, que lo confirma como siempre. La 4.40.3 no lo lograba: el 3D se sostiene por su centro y girado como el teléfono, y de cerca no había forma de ponerlo sobre la parte que se mira.
+- De cerca, por una parte: con los bordes a la vista casi paralelos (un tramo de curva o de caño) ahora engancha si todo lo que se ve coincide. Si quedó corrido a lo largo, se corrige cuando aparece una punta.
+- Más exigente con lo que encuentra sola: un lugar propuesto por el detector tiene que coincidir entero, con mucho contraste, y quedar fijado en todas las direcciones. Y nadie engancha con más de un tercio del 3D sin coincidir: en una pila de piezas iguales el 3D podía quedar «a caballo» entre dos.
+- Piezas casi simétricas: el detector propone las dos orientaciones y gana la que coincide entera. Si lo que las distingue no está a la vista, puede quedar dada vuelta.
+- Límites: hace falta que se vea alguna punta, esquina o borde que no corra paralelo a los demás; con piezas iguales juntas engancha en cualquiera de ellas; una estantería de parantes parejos o una pieza toda curva siguen pidiendo acercar el 3D a mano, como antes.
+
+Verificado en la PC con el encuadre como es en el teléfono, apuntando a un punto cualquiera de la pieza desde un lado cualquiera: una curva sola desde 1,2 m engancha 8 de 8 (la 4.40.3, ninguna); en una pila de cuatro curvas iguales, 9 a 13 de 16 hasta 2 m y 6 de 16 a 3 m, sin quedar a caballo; un bastidor con una placa en una punta, 7 de 8 del lado correcto; sin la pieza, ningún enganche en 70 escenas; la batería de pruebas completa. Todavía no se probó en el teléfono.
+
+Instalar cada APK 4.40.4 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.40.3
 
 - Verificar: al acercarse o alejarse de la pieza el 3D ya no «pierde un poco la referencia». Eran tres cosas: el repaso que busca alrededor dejaba de corregir medio segundo justo mientras uno caminaba (ahora va solo con el teléfono quieto); una corrección mediana, de hasta unos 7 cm, se mandaba a confirmar en vez de aplicarse (ahora se aplica en el momento si la medida es firme); y un giro chico, que mueve mucho las puntas de la pieza y poco el medio, se corregía de a poco (ahora en un ciclo).
