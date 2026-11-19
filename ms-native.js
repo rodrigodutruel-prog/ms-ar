@@ -300,18 +300,25 @@
     try{card.scrollIntoView({block:'start',behavior:'smooth'});}catch(_){}
   }
   for(const ev of ['ar:files-loaded','ar:model-loaded'])window.addEventListener(ev,()=>{if(recibiendo)return;const b=document.getElementById('msRecibido');if(b)b.remove();});
+  function apkDeMarca(version){
+    const marca=AR.CFG.marca,ver=String(version||'').replace(/^[vV]/,'');
+    if(!/^\d+\.\d+\.\d+$/.test(ver)||!['MS','3DDUT'].includes(marca))return '';
+    const ms=marca==='MS',tag='v'+ver;
+    return 'https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/'+tag+'/'+(ms?'MS_AR':'3DDUT_AR')+'_'+tag+'.apk';
+  }
   // VERSION NUEVA: la APK consulta el release al abrir y avisa con 'native-update' {version,url}. La tarjeta
   // va arriba, con el link a la APK; en la APK el link se abre en el navegador del teléfono y se instala encima.
   window.addEventListener('native-update',e=>{
-    const v=String(e.detail?.version||''),url=String(e.detail?.url||'');if(!v||!/^https:\/\//.test(url))return;
+    const v=String(e.detail?.version||'').replace(/^[vV]/,''),url=apkDeMarca(v);
+    if(!url||url!==String(e.detail?.url||''))return;
     let card=document.getElementById('nativeUpdate');
     // ARRIBA DE TODO (primera tarjeta de la página): debajo del selector de hoja quedaba oculta en la APK.
     if(!card){card=document.createElement('section');card.className='card aviso';card.id='nativeUpdate';const main=document.querySelector('main')||document.body;main.insertBefore(card,main.firstElementChild);}
     const instalada=String(window.NativePaper?.version?.()||'').trim();
-    const titulo=document.createElement('b');titulo.textContent='Hay una versión nueva de la aplicación: '+v;
+    const titulo=document.createElement('b');titulo.textContent='Hay una versión nueva de '+AR.CFG.marca+' AR: '+v;
     const texto=document.createElement('p');texto.style.cssText='margin:6px 0 8px;line-height:1.35';
     texto.textContent=(instalada?'Tenés la '+instalada+'. ':'')+'Se instala encima, sin desinstalar, y conserva la biblioteca.';
-    const link=document.createElement('a');link.textContent='Descargar APK '+v;link.href=url;link.target='_blank';link.rel='noopener';
+    const link=document.createElement('a');link.textContent='Descargar '+AR.CFG.marca+' AR '+v;link.href=url;link.target='_blank';link.rel='noopener';
     card.replaceChildren(titulo,texto,link);
     // la APK lo reenvía cada 10 minutos al volver a la app: el aviso en la línea de estado, una sola vez por versión
     // (tapaba "Modelo recibido…" o un error que todavía no se había leído)
@@ -334,9 +341,8 @@
     // de la 4.29 y el link bajaba la 4.36 (se escribían a mano y quedaban viejos); ahora salen de AR_CONFIG.version.
     const card=document.createElement('div');card.className='nota';card.id='nativeInstall';
     card.textContent='En Android, la aplicación (APK) deja el modelo más firme: vista AR propia con ARCore, el QR de la hoja lo ubica solo, escala regulable, medir, corte, rayos X, foto y video, el ingeniero que recorre la obra, y abre los modelos que llegan de la PC o de WhatsApp. ';
-    const ver=String(AR.CFG.version||'').replace(/^v?/,'v'),link=document.createElement('a'),ms=AR.CFG.marca==='MS';
-    link.textContent='Descargar la APK '+ver;
-    link.href='https://github.com/rodrigodutruel-prog/'+(ms?'ms-ar':'3ddut-ar')+'/releases/download/'+ver+'/'+(ms?'MS_AR':'3DDUT_AR')+'_'+ver+'.apk';
-    card.append(link);document.getElementById('msModoPapel').after(card);
+    const ver=String(AR.CFG.version||'').replace(/^v?/,'v'),url=apkDeMarca(ver),link=document.createElement('a');
+    link.textContent='Descargar '+AR.CFG.marca+' AR '+ver;
+    if(url){link.href=url;card.append(link);}document.getElementById('msModoPapel').after(card);
   }
 })();

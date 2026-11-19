@@ -1,3 +1,88 @@
+MS AR y 3DDUT AR 4.40.3
+
+- Verificar: al acercarse o alejarse de la pieza el 3D ya no «pierde un poco la referencia». Eran tres cosas: el repaso que busca alrededor dejaba de corregir medio segundo justo mientras uno caminaba (ahora va solo con el teléfono quieto); una corrección mediana, de hasta unos 7 cm, se mandaba a confirmar en vez de aplicarse (ahora se aplica en el momento si la medida es firme); y un giro chico, que mueve mucho las puntas de la pieza y poco el medio, se corregía de a poco (ahora en un ciclo).
+- Engancha mostrando una parte. Ya no hace falta poner el 3D justo encima ni encuadrar la pieza entera: mientras se encuadra, el seguidor prueba también alrededor de donde se sostiene el 3D, corrido hasta 30 cm y girado hasta 22°. Alcanza con apuntar la mira a la pieza, o a una parte, y acercar el 3D. En la simulación engancha siempre con el 3D sostenido a 35 cm y 20° de la pieza, y 14 de 16 veces a 45 cm y 25°; antes, a esa distancia, casi nunca.
+- Si se mostró solo el medio de una curva o de un caño, el 3D puede quedar corrido a lo largo: sin ver las puntas no hay forma de saberlo. El cartel dice «bueno» y no «perfecto», y en cuanto aparece una punta se corrige solo.
+- Con varias piezas iguales juntas puede enganchar en la de al lado de la que se quería: para elegir una, acercarle el 3D.
+
+Verificado en la PC: acercándose a una punta hasta 0,8 m y volviendo, con el teléfono midiendo mal el camino, el 3D queda a 0,8 px de media y nunca a más de 4 px (con la 4.40.2, picos de 6 px y saltos); un enganche corrido 17 cm a lo largo se corrige a 1,6 s de aparecer las puntas; la batería de pruebas completa. Probada la 4.40.2 en el taller con las curvas TN el 19-nov: «anduvo ya mucho mejor». Esta versión no se probó todavía en el teléfono.
+
+Instalar cada APK 4.40.3 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.40.2
+
+- Verificar: una vez enganchado, el 3D queda pegado a la pieza al caminar. La 4.40.1 enganchaba bien y al moverse se soltaba (prueba del 19-nov con la Curva TN-90°). La causa: al seguir, cada corrección se aplicaba a la mitad «para que no tiemble»; caminando, ese retraso alcanzaba para que las puntas de la pieza (las bridas) perdieran su borde, y el 3D se deslizaba a lo largo de la curva con el cartel en «perfecto». Ahora la corrección se aplica entera en cada medida.
+- Se reengancha solo y enseguida. Si el teléfono mide mal un paso rápido y el 3D queda corrido, ya no espera ni busca apenas alrededor: a las dos medidas que no coinciden busca hasta unos 20 cm y 10°, y con una o dos medidas iguales lo vuelve a poner. Mientras busca, el cartel dice «REENGANCHANDO…». En la simulación, con un corrimiento de 15 cm vuelve en 1,3 s; la 4.40.1 tardaba 14 s y la mitad de las veces no volvía.
+- Curvas y caños, que se pueden deslizar sobre sí mismos: el seguidor ahora mide «el amarre». Si lo que coincide son los lomos y no las puntas, sabe que el 3D puede estar corrido a lo largo, lo busca en esa dirección con las bridas y lo corrige. Con las puntas afuera ya no dice «perfecto».
+- Cada ocho medidas, un repaso: aunque todo parezca bien, busca alrededor por si la pieza coincide mejor en otro lado.
+- La bitácora y las capturas de Descargas › MS AR (seguir_….bin) dicen cuándo dejó de coincidir y a cuántos centímetros se reenganchó.
+
+Verificado en la PC: caminando alrededor de la curva con el teléfono midiendo mal el camino, el 3D queda a menos de 1 px de media (con la 4.40.1, 11 px); con un corrimiento de 8, 15 y 22 cm vuelve siempre a la misma curva, sola o con cuatro iguales anidadas; la batería de pruebas completa. Falta la prueba que vale: en el teléfono, con la pieza real.
+
+Instalar cada APK 4.40.2 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.40.1
+
+- Verificar engancha de verdad con piezas de Inventor. La 4.40.0 buscaba los bordes de la pieza con las aristas del archivo: con un modelo real (el Organizador: 85.000 aristas, parantes y rodillos a pocos píxeles uno del otro) cada punto tenía varios bordes parecidos al lado y no enganchaba nunca. Ahora el 3D se dibuja como lo ve la cámara y de ese dibujo salen los bordes que de verdad se ven a esa distancia (contorno, escalones, quiebres). Con una captura real del Organizador del 18-nov que la 4.40.0 daba por mala, ahora engancha y queda sobre la pieza.
+- El 3D sostenido va a la distancia de lo real. Antes se sostenía a la distancia en que entraba entero en la pantalla (6,5 m para el Organizador con su camino de rodillos) aunque la pieza estuviera a 3 m: se veía a la mitad y no había forma de ponerlo encima. Ahora, con lo que el teléfono mide bajo la mira, el 3D se acerca o se aleja solo hasta la distancia de lo que se apunta. «Acercar» y «Alejar» siguen: al tocarlos manda la mano hasta el próximo «Encuadrar».
+- Más exigente para dar por enganchado: en las capturas reales el 3D se podía quedar sobre los bordes de la pared y una viga (un lugar que no es la pieza) con una nota de 0,36-0,43, y la 4.40.0 enganchaba con 0,30. Ahora pide 0,48; el enganche bueno de las capturas reales da 0,63-0,65.
+- Las capturas de Descargas › MS AR (seguir_….bin, las 8 últimas) traen también el modelo: en la PC se repite el seguimiento entero con lo que vio el teléfono.
+- Ojo con piezas iguales juntas: con cuatro curvas iguales una al lado de la otra no hay forma de saber cuál es cuál (en la simulación enganchó una vez en la de al lado). Para verificar, encuadrar una pieza sola.
+
+Verificado en la PC: con las 6 capturas reales del Organizador (Motorola, 18-nov) engancha bien en la que el 3D estaba cerca, no engancha donde estaba lejos o la pieza no estaba en la imagen, y ya no engancha en el lugar falso de la pared; con la Curva TN-90° en la simulación engancha 6 de 6 a 2-18 mm; el 3D sostenido al doble o a 0,6 de la distancia queda a menos del 10 % en las seis piezas de prueba; AristasTests, SeguimientoTests y SeguirTests. Falta la prueba que vale: en el teléfono, con la pieza real.
+
+Instalar cada APK 4.40.1 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.40.0
+
+- Dos modos, que se eligen al entrar a la vista AR. «Verificar pieza construida»: la pieza ya está hecha y se compara con el 3D. «Probar en la planta»: la pieza todavía no existe y se apoya el 3D donde iría. Se cambia en cualquier momento con el botón «Modo».
+- Verificar: el 3D se engancha a la pieza real y la sigue. El 3D aparece sostenido delante de la cámara; hay que pararse frente a la pieza, a la distancia en que el 3D la cubre, y cuando coinciden se engancha solo y avisa. Desde ahí la posición sale de la imagen de la cámara (las aristas del 3D contra los bordes de la pieza), varias veces por segundo: al caminar alrededor ya no se corre, y no depende de la profundidad del teléfono ni de encontrar el piso. La etiqueta de arriba dice cómo va: seguimiento perfecto, bueno, sin seguimiento o pieza fuera de vista.
+- Para comparar: el 3D va translúcido con las aristas claras; la «Cortina» deja el 3D de un lado de la pantalla y la pieza real sola del otro; «Pausar» lo deja quieto. Si no engancha solo, «Dejar acá» lo deja donde está para acomodarlo con Ajustar.
+- Probar en la planta: como siempre (apoyar, ajustar, fijar), y ahora nada mueve el 3D solo: se sacó el encaje automático al apoyar. «Encajar al real» queda dentro de Verificar, como ayuda para acercar el 3D.
+- Vista AR rediseñada: arriba, volver, el nombre del modelo y el modo; abajo, cada modo muestra solo sus botones.
+- En Verificar, cuando engancha, cuando no engancha y cuando pierde el seguimiento queda una captura en Descargas › MS AR (seguir_….bin, las 12 últimas) para revisarla en la PC.
+
+Verificado en la PC con imágenes simuladas de piezas de taller (bastidor de caño, soporte, ciclón, gabinete, conducto, con piso con rayas, sombras y otras piezas alrededor): puesto a 5 cm y 3 grados de la pieza queda encima en 28 de 30 intentos; ya enganchado queda a 2-5 mm mientras la cámara rodea la pieza y ARCore se corre 34 mm; sin la pieza no engancha nunca. En el emulador con ARCore: los dos modos, el 3D sostenido, el seguidor andando y las capturas repasadas en la PC. Gate y 33 baterías Java. Falta la prueba que vale: en el teléfono, con una pieza real.
+
+Instalar cada APK 4.40.0 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.39.4
+
+- La altura del 3D, medida respecto del teléfono. Con las capturas del taller (20-oct) se vio que el encaje fallaba sobre todo por la altura: ARCore a veces apoya el 3D lejos del piso (una vez flotando 35-40 cm, otra vez 1,1 m por debajo, con el teléfono a 3 m de la base) y el encaje solo buscaba el piso entre 25 cm abajo y 12 cm arriba del 3D, así que no lo encontraba y fallaba una vez tras otra. Ahora el piso se busca donde puede estar para quien sostiene el teléfono (entre 0,8 y 2,3 m debajo), hasta 4 m alrededor; si el 3D estaba lejos del piso, el aviso lo dice y lo apoya en él.
+- La altura ya no salta de un encaje al otro. La profundidad del teléfono erra la escala unos centímetros de una medición a otra (el piso salía a 1, 4, 8, 4 y 9 cm con el 3D quieto): ahora vale la mediana de lo medido con el mismo anclaje, y si las mediciones no coinciden, la altura no se toca.
+- Se deja la manera de encajar de la 4.39.2 (la 4.39.3 en el taller anduvo peor): sin el pulido con todos los puntos ni el desempate nuevo.
+- Se conserva de la 4.39.3: cada «Encajar al real» con el botón deja su captura en Descargas › MS AR (quedan las 30 últimas).
+
+Verificado con las 30 capturas del taller: el 3D que flotaba 35-38 cm y el que estaba 1,1-1,2 m abajo se apoyan en el piso real; en una misma sesión la altura queda quieta (correcciones de 0 a 2,6 cm, donde el teléfono había hecho +38, +51, −56 y +48 mm). Gate, 30 baterías Java (nuevas: el piso respecto de la cámara y la mediana por anclaje), 98 comprobaciones del puente con navegador real y las dos APK compiladas y verificadas. Falta probarlo en el teléfono.
+
+Instalar cada APK 4.39.4 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.39.3
+
+- Encajar al real más preciso de una vez. Con la 4.39.2 en el taller (cámara de inspección, 20-oct) el 3D se paró bien sobre su base, pero hubo que tocar «Encajar al real» varias veces (movió 121, 24 y 12 cm) y al final las patas quedaban unos 10 cm corridas. Ahora el encaje aceptado se pule con todos los puntos que midió el teléfono (antes la búsqueda usaba 2.000): en la simulación con la profundidad por movimiento, el error del primer encaje bajó de 3,2-3,4 cm a 1-2 cm, y al repetirlo se mueve 1-2 cm.
+- Entre resultados casi iguales gana el que mejor coincide. Antes ganaba el que menos movía el 3D, y podía quedar a medio camino. Lo de «el que menos mueve» queda solo para elegir entre la pieza de frente y de espaldas.
+- La altura: si no encontró la pieza, el 3D ya no cambia de altura (un encaje rechazado lo subió 107 mm), y el piso se mide con más peso en lo que el teléfono ve de cerca (a 3-4 m saltaba varios centímetros de un encaje al otro).
+- Cada «Encajar al real» con el botón deja su captura en Descargas › MS AR, también si salió bien (antes solo cuando fallaba), para revisar la precisión en la PC con lo que midió el teléfono. Quedan las 30 últimas.
+- Incluye la 4.39.2, que no se publicó: un 3D que llega acostado, de costado o cabeza abajo se para sobre su base al encajar, y la actualización acepta solo la APK de su propia marca.
+
+Verificado con profundidad simulada: en 774 casos (tres piezas, cinco orientaciones del archivo, ruido normal a triple, sin la pieza real y con un gabinete en su lugar) encajan a menos de 5 cm 411 de 450 (la 4.39.2: 383), nunca con una base equivocada, y sin la pieza real ni con el gabinete no cambia nada respecto de la 4.39.2. Con error propio en cada imagen de profundidad y vistas desde lugares distintos en cada intento (lo más parecido al teléfono), el primer encaje queda a 1-2 cm de mediana en las tres piezas. 30 baterías Java (nuevas: el pulido y el peso del piso), gate, 98 comprobaciones del puente con navegador real y las dos APK compiladas y verificadas. Falta probarlo en el teléfono.
+
+Instalar cada APK 4.39.3 sobre la anterior, sin desinstalar.
+
+MS AR y 3DDUT AR 4.39.2
+
+- Encajar al real con un 3D que llega acostado, de costado o cabeza abajo. La 4.39.1, probada en el taller, no encontraba la pieza: buscaba la pieza parada solo hasta unos 80 cm del toque, y con la profundidad del teléfono la base correcta no llegaba a sus umbrales. Ahora cada eje del archivo se prueba hacia abajo, buscando tan lejos como con el 3D como llegó, y gana la base que mejor explica lo que mide el teléfono: el 3D donde la cámara ve superficie, y lo real sobre su planta que queda pegado al 3D. Si ninguna se destaca con claridad, la base no se cambia.
+- Si el archivo ya viene derecho y encaja sin dudas, no se prueban las otras bases: unos segundos menos.
+- Si la pieza se parece de arriba y de abajo, el aviso explica cómo darla vuelta (Ajustar › Girar › «Volcar 90°» dos veces).
+- Si no encuentra la pieza, el aviso explica cómo pararla a mano: Ajustar › Girar › «Tocar la base», tocar la cara que va en el piso y después Encajar › «Encajar al real».
+- «Deshacer encaje» recupera también la orientación anterior.
+- El Diagnóstico anota cada base probada. La captura que queda en Descargas cuando no encaja lleva también los ejes del archivo, para repetir la búsqueda en la PC tal cual.
+- Actualizaciones (de la 4.39.1, que no se publicó): la app solo acepta la APK de su propia marca; verifica el repositorio, el nombre del archivo y el enlace. El botón de descarga dice qué aplicación baja y rechaza enlaces de otra marca. Antes de publicar se comprueban el identificador Android, el nombre, la web incluida, la firma y el SHA-256 de cada APK.
+
+Verificado con profundidad simulada en 774 casos: tres piezas, cinco orientaciones del archivo, ruido normal a triple (la profundidad por movimiento del teléfono), sin la pieza real y con un gabinete cerrado en su lugar. Con la pieza real nunca eligió una base equivocada: 383 de 450 encajan a menos de 5 cm, 41 quedan con la base correcta pero más lejos (casi todos con el triple de ruido) y 26 no encajan. Sin la pieza real, 161 de 162 no se mueven. En los 168 casos con que se reprodujo la falla, encajan bien 131 (la 4.39.1: 109) y no encajan 22 (la 4.39.1: 55). Además: 30 baterías Java (1.683 comprobaciones nuevas de orientación), gate, 98 comprobaciones del puente con navegador real y las dos APK compiladas y verificadas. Falta probarlo en el teléfono con la pieza real.
+
+Instalar cada APK 4.39.2 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.39.0
 
 - Encajar con lo real también corrige la altura: mientras mide la pieza, mide el piso que la rodea y apoya el 3D en él. ARCore calcula el piso donde se toca para apoyar y en el taller lo dejaba unos centímetros alto («queda más arriba»); ahora la base del 3D va al piso real medido al lado de la pieza (en las pruebas, a 1-2 mm). El aviso dice cuánto lo bajó o lo subió, y «Deshacer encaje» lo deja como estaba. Si el piso no se ve claro, la altura no se toca.
